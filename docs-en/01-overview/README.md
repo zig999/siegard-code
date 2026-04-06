@@ -52,9 +52,10 @@ graph TB
         DVORC --> PLAN --> UIAG --> DEVAG --> QAAG
         QAAG -->|REJECTED| DEVAG
     end
-    REQ --> RSORC & SPORC
-    RSWRT -->|{SPECS_DIR} draft| SPORC
-    SPVAL -->|VALID + {SPECS_DIR}| DVORC
+    REQ --> RSORC
+    REQ --> SPORC
+    RSWRT -->|specs draft| SPORC
+    SPVAL -->|VALID| DVORC
     QAAG -->|APPROVED| END[Delivery]
 ```
 
