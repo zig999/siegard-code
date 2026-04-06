@@ -1,17 +1,18 @@
 # Dev Orchestrator
 
-Central coordinator of the Dev team. Exists in two variants:
+Central coordinator of the Dev team. Exists in three variants:
 - `u-be-orchestrator-core.md` -- Backend orchestrator
 - `u-fe-orchestrator-core.md` -- Frontend orchestrator
+- `u-fullstack-orchestrator.md` -- Fullstack meta-orchestrator
 
-Both share the same core logic but differ in pipeline (FE includes UI Agent) and context-mounting protocols.
+The backend and frontend orchestrators share the same core logic but differ in pipeline (FE includes UI Agent) and context-mounting protocols. The fullstack meta-orchestrator coordinates both by running them sequentially.
 
 ## Responsibilities
 
 - Detect operating mode (spec-first, improve, bug, resume)
 - Validate inputs and resolve variables
 - Manage agent handoff and Story lifecycle
-- Track progress in `log-orchestrator-dev.md`
+- Track progress in session logs
 - Emit execution plan and progress panel before each step
 - Never proceed without human confirmation
 
@@ -21,14 +22,15 @@ Both share the same core logic but differ in pipeline (FE includes UI Agent) and
 2. Check for `improve##.md` in `{SESSIONS_DIR}/{SESSION}/` -> **Improve**
 3. Check for `bug##.md` in `{SESSIONS_DIR}/{SESSION}/` -> **Bug**
 4. Check for both -> **Bug+Improve** (bugs processed first)
-5. Check for incomplete `log-orchestrator-dev.md` -> **Resume**
+5. Check for incomplete session log -> **Resume**
 6. None found -> **Error** (halt with guidance)
 
 ## Execution flow
 
+### Backend / Frontend
 ```
 1. Resolve variables (SPECS_DIR, SESSIONS_DIR, SESSION)
-2. Create log-orchestrator-dev.md
+2. Create session log (log-orchestrator-dev.md)
 3. Detect mode
 4. Present pre-execution estimate
 5. Wait for human confirmation
@@ -44,6 +46,30 @@ Both share the same core logic but differ in pipeline (FE includes UI Agent) and
 10. Log completion
 ```
 
+### Fullstack
+```
+1. Resolve variables (SPECS_DIR, SESSIONS_DIR, SESSION)
+2. Create session log (log-fullstack.md)
+3. Detect mode
+4. Activate Planner with unified backlog (stories tagged with scope:)
+5. Phase 1 -- Backend: delegate to u-be-orchestrator-core
+   (processes scope: backend and scope: both BE portions)
+6. Generate handoff-be-to-fe.md (implemented endpoints, deviations)
+7. Phase 2 -- Frontend: delegate to u-fe-orchestrator-core
+   (processes scope: frontend and scope: both FE portions)
+8. Phase 3 -- E2E integration validation (if cross-domain stories exist)
+9. Log completion
+```
+
+## Session logs
+
+| Domain | Log file |
+|--------|----------|
+| `backend` or `frontend` | `log-orchestrator-dev.md` |
+| `fullstack` (meta) | `log-fullstack.md` |
+| `fullstack` (BE phase) | `log-be.md` |
+| `fullstack` (FE phase) | `log-fe.md` |
+
 ## Available protocols
 
 Referenced via the protocol index file (`u-be-orchestrator-protocols.md` / `u-fe-orchestrator-protocols.md`):
@@ -57,10 +83,12 @@ Referenced via the protocol index file (`u-be-orchestrator-protocols.md` / `u-fe
 - Cleanup
 - Bug mode
 - Improve mode
+- Fullstack coordination (BE→FE handoff, E2E validation)
 
 ## Behavioral rules
 
 - Never skip human confirmation
 - Escalate without blocking
-- Max 3 parallel Stories
+- Max 3 parallel Stories (within each phase for fullstack)
 - Long context management for 15+ Story backlogs (compress per-Story logs)
+- In fullstack mode, Phase 2 only starts after Phase 1 completes

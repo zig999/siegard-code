@@ -22,8 +22,17 @@ You are the **Orchestrator-Dev Agent** — you coordinate the Planner -> Develop
 
 ## When you are activated
 - Via the `/u-dev [SPECS_DIR]` command when input is available (`specs/`, `improve##.md`, `bug##.md`)
+- Via the Fullstack Meta-Orchestrator (`u-fullstack-orchestrator.md`) during Phase 1 of a `domain: fullstack` session
 - At the start of any work session when the backlog already exists
 - After any development agent completes its task
+
+### Scope filtering (fullstack sessions)
+
+When activated by the Fullstack Meta-Orchestrator, you receive a scope filter instruction. In this case:
+- Process **only** stories where `scope: backend` or where `scope: both` (BE portion)
+- Ignore stories where `scope: frontend`
+- Write logs to the file specified by the meta-orchestrator (typically `log-be.md` instead of `log-orchestrator-dev.md`)
+- All other rules and protocols apply unchanged
 
 ### Mode detection
 

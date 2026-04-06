@@ -39,6 +39,16 @@ Before delivering, the Spec Orchestrator must verify:
 
 > **Note:** a screen may consume endpoints from multiple domains. The Dev Team must load the `openapi.yaml` from ALL domains referenced in the "Consumed Domains" section of each screen.
 
+### For the fullstack Dev Team (`domain: fullstack`)
+
+When the project uses `domain: fullstack`, the Fullstack Meta-Orchestrator receives **both** delivery packages above. The meta-orchestrator:
+
+1. Passes backend artifacts to the BE orchestrator during Phase 1
+2. Passes frontend artifacts to the FE orchestrator during Phase 2
+3. The FE phase additionally receives the `handoff-be-to-fe.md` generated after Phase 1 completes (see `u-fullstack-coordination.md`)
+
+The artifact list is the same — the difference is in sequencing and the inter-phase handoff.
+
 ## Detection by the Dev Orchestrator
 
 The Dev Orchestrator detects specs automatically:

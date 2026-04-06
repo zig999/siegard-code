@@ -23,7 +23,7 @@ If `SESSION` is not provided, triage runs normally but when generating improve##
 
 ## Initial Validation
 
-1. Read `CLAUDE.md` (project root). Confirm the field `domain: frontend` or `domain: backend` exists. If the field is missing, **stop** and request: "Set the field `domain: frontend` or `domain: backend` in CLAUDE.md before continuing."
+1. Read `CLAUDE.md` (project root). Confirm the field `domain: frontend`, `domain: backend`, or `domain: fullstack` exists. If the field is missing, **stop** and request: "Set the field `domain: frontend`, `domain: backend`, or `domain: fullstack` in CLAUDE.md before continuing."
 
 2. Confirm that `SPECS_DIR` was resolved. If not, stop and request: "Configure `specs_dir:` in CLAUDE.md or provide it as an argument: `/u-spec-triage [specs_dir] [session]`".
 

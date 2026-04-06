@@ -4,13 +4,15 @@ Resume an interrupted session from the exact stopping point.
 
 ## When triggered
 
-The orchestrator detects an existing `log-orchestrator-*.md` file with incomplete stages.
+The orchestrator detects an existing session log with incomplete stages:
+- `log-orchestrator-dev.md` for backend/frontend sessions
+- `log-fullstack.md` for fullstack sessions (the meta-orchestrator also checks `log-be.md` and `log-fe.md` for phase-level state)
 
 ## How it works
 
 1. Read the orchestrator log file
 2. Reconstruct pipeline state from the log and disk artifacts
-3. Identify the last completed step
+3. Identify the last completed step (or phase, for fullstack)
 4. Emit a resume plan (what was done, what remains)
 5. Wait for human confirmation
 6. Continue from the next incomplete step

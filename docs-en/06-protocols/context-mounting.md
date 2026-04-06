@@ -35,6 +35,12 @@ Loading all artifacts for every agent would waste tokens and degrade output qual
 | Developer | `ui-epic-XX.md` + `.screen.md` + `.flow.md` + `openapi.yaml` + current Story |
 | QA | Code + Story + relevant specs + design system |
 
+### Fullstack sessions
+
+In fullstack mode, context mounting follows the same per-agent rules above. The Meta-Orchestrator additionally provides:
+- **BE orchestrator**: receives the scope filter instruction (process only `scope: backend` stories)
+- **FE orchestrator**: receives the scope filter instruction (process only `scope: frontend` stories) plus `handoff-be-to-fe.md` with implemented endpoint details
+
 ## Separate protocols
 
 Each agent has its own context-mounting protocol file in the `protocols/` directory:
@@ -45,3 +51,4 @@ Each agent has its own context-mounting protocol file in the `protocols/` direct
 - `u-fe-context-mounting-developer.md`
 - `u-fe-context-mounting-qa.md`
 - `u-fe-context-mounting-ui.md`
+- `u-fullstack-coordination.md` (BE→FE handoff and E2E validation)

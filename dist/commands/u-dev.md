@@ -33,7 +33,9 @@ Immediately after resolving the session directory, before any other action — i
 
 1. Create `{SESSIONS_DIR}/{SESSION}/` if it does not exist.
 
-2. Record a start entry in `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`:
+2. Record a start entry in the session log file:
+   - For `domain: frontend` or `domain: backend`: use `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`
+   - For `domain: fullstack`: use `{SESSIONS_DIR}/{SESSION}/log-fullstack.md`
    - If the file **does not exist**: create with the header below
    - If the file **already exists**: append to the end (indicates session resumption — do not overwrite)
 
@@ -43,6 +45,7 @@ Immediately after resolving the session directory, before any other action — i
    **SPECS_DIR:** {SPECS_DIR}
    **SESSIONS_DIR:** {SESSIONS_DIR}
    **Session dir:** {SESSIONS_DIR}/{SESSION}
+   **Domain:** {domain value}
    **Mode:** [to be detected]
    ```
 
@@ -56,10 +59,11 @@ Read the `domain:` field in `CLAUDE.md` (project root). This field determines wh
 |------------------|-------------|-----------|
 | `frontend` | `.claude/agents/dev/u-fe-orchestrator-core.md` | `.claude/agents/dev/u-fe-orchestrator-protocols.md` |
 | `backend` | `.claude/agents/dev/u-be-orchestrator-core.md` | `.claude/agents/dev/u-be-orchestrator-protocols.md` |
+| `fullstack` | `.claude/agents/dev/u-fullstack-orchestrator.md` | `.claude/agents/dev/protocols/u-fullstack-coordination.md` |
 
-> If the `domain:` field does not exist in CLAUDE.md, **stop** and request from the human: "Set the field `domain: frontend` or `domain: backend` in CLAUDE.md before continuing."
+> If the `domain:` field does not exist in CLAUDE.md, **stop** and request from the human: "Set the field `domain: frontend`, `domain: backend`, or `domain: fullstack` in CLAUDE.md before continuing."
 >
-> If the `domain:` field exists but contains a value other than `frontend` or `backend`, **stop** and request from the human: "Invalid value for `domain:` in CLAUDE.md: `{value}`. Accepted values are: `frontend` or `backend`."
+> If the `domain:` field exists but contains a value other than `frontend`, `backend`, or `fullstack`, **stop** and request from the human: "Invalid value for `domain:` in CLAUDE.md: `{value}`. Accepted values are: `frontend`, `backend`, or `fullstack`."
 
 ## Files to Read
 
@@ -123,13 +127,15 @@ Input: {improve##.md: N files | bug##.md: N files | {SPECS_DIR}: N domains}
 | Stage | Agents | Estimated Tokens | Estimated Time |
 |-------|--------|-----------------|----------------|
 | Planner | 1 | ~5K | 2-3 min |
-| UI Agent | 1 (if FE) | ~4K per Epic | 2-3 min |
+| UI Agent | 1 (if FE or fullstack) | ~4K per Epic | 2-3 min |
 | Developer | 1 per Story | ~6K per Story | 5-10 min |
 | QA | 1 per Story | ~4K per Story | 3-5 min |
+| E2E Integration | 1 (if fullstack) | ~3K | 2-4 min |
 | **Total** | — | **~{N}K** | **~{N} min** |
 
 Note: Lean Improve mode skips UI Agent (~30% reduction).
 Note: Parallel Stories (max 3) reduce total time.
+Note: Fullstack mode runs BE phase then FE phase sequentially — total time is additive.
 
 Proceed? [Y / N]
 ```
@@ -138,7 +144,8 @@ Proceed? [Y / N]
 - Per Story (full): ~14K tokens, ~10-18 min
 - Per Story (lean improve): ~10K tokens, ~8-13 min
 - Planner overhead: ~5K tokens (once)
-- UI Agent overhead: ~4K tokens per Epic (once, if frontend)
+- UI Agent overhead: ~4K tokens per Epic (once, if frontend or fullstack)
+- E2E Integration overhead: ~3K tokens (once, if fullstack)
 
 ---
 

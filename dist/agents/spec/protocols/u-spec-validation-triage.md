@@ -352,7 +352,7 @@ Generated file: {SESSIONS_DIR}/{SESSION}/improve##.md
 Next step:
   /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION] — the Planner will generate a backlog from the triage improvements
 
-Requirement: CLAUDE.md (project root) must contain the field `domain: frontend` or `domain: backend`.
+Requirement: CLAUDE.md (project root) must contain the field `domain: frontend`, `domain: backend`, or `domain: fullstack`.
 ```
 
 ---

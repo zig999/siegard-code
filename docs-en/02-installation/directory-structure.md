@@ -8,7 +8,7 @@ Complete directory tree after installation, for both the source repository and t
 siegard-code/
   dist/
     agents/
-      dev/                      # Dev team agents (FE + BE)
+      dev/                      # Dev team agents (FE + BE + Fullstack)
         protocols/              # On-demand protocols
       spec/                     # Spec team agents
         protocols/              # On-demand protocols
@@ -65,7 +65,12 @@ project/
       us-XX-pending-items.md    # Blockers/dependencies (permanent)
       ui-epic-XX.md             # UI specifications (-> _temp/)
       tech-debt.md              # Technical debt registry (permanent)
-      log-orchestrator-dev.md   # Dev orchestrator log (permanent)
+      log-orchestrator-dev.md   # Dev orchestrator log (permanent, BE/FE)
+      log-fullstack.md          # Meta-orchestrator log (permanent, fullstack)
+      log-be.md                 # Backend phase log (permanent, fullstack)
+      log-fe.md                 # Frontend phase log (permanent, fullstack)
+      handoff-be-to-fe.md       # BE→FE handoff summary (fullstack)
+      e2e-validation.md         # E2E integration results (fullstack)
       _temp/                    # Archived artifacts
 ```
 

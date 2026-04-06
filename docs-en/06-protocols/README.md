@@ -18,6 +18,7 @@ On-demand behavioral protocols activated by orchestrators (not by agents directl
 | [Tech debt](tech-debt.md) | Dev orchestrator | Register technical debt |
 | [Bug mode](bug-mode.md) | Dev orchestrator | Specialized bug fix pipeline |
 | [Improve mode](improve-mode.md) | Dev orchestrator | Incremental improvement pipeline |
+| [Fullstack coordination](fullstack-coordination.md) | Fullstack meta-orchestrator | BE→FE handoff and E2E integration validation |
 | [Spec fast-track](spec-fast-track.md) | Spec orchestrator | Simplified spec pipeline for minor changes |
 | [Spec versioning](spec-versioning.md) | Spec orchestrator | Semantic versioning for specs |
 | [Reverse spec merge](reverse-spec-merge.md) | Reverse Spec orchestrator | Merge strategy for existing specs |

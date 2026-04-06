@@ -6,7 +6,7 @@ How to configure the target project's `CLAUDE.md` so the agents operate correctl
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `domain:` | `frontend` or `backend` -- determines pipeline routing | `domain: backend` |
+| `domain:` | `frontend`, `backend`, or `fullstack` -- determines pipeline routing | `domain: backend` |
 | `stack:` | Technology stack used in the project | `stack: Node.js, Express, PostgreSQL` |
 | `specs_dir:` | Path to the specifications directory | `specs_dir: docs/specs` |
 | `sessions_dir:` | Path to the sessions directory | `sessions_dir: docs/sessions` |

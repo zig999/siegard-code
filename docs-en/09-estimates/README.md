@@ -26,6 +26,11 @@ Token consumption and approximate time per operating mode. These are estimates b
 |------|-----------------|---------------|-------|
 | **Per Story (spec-first)** | ~14K | 10-18 min | Per Story |
 | **Per Story (improve)** | ~10K | 8-13 min | Per Story |
+| **E2E integration (fullstack)** | ~3K | 2-4 min | Per session |
+
+### Fullstack overhead
+
+Fullstack sessions run BE and FE phases sequentially, so total time is additive. The E2E integration validation adds ~3K tokens when cross-domain stories exist. The meta-orchestrator itself has minimal overhead (~1K tokens for phase coordination).
 
 ## Pre-execution estimate
 
@@ -33,6 +38,7 @@ Before starting, every orchestrator presents a token and time projection based o
 - Number of domains (spec) or Stories (dev)
 - Operating mode
 - Complexity indicators
+- For fullstack: stories per phase and cross-domain story count
 
 The user can proceed or abort based on this estimate.
 
@@ -42,3 +48,4 @@ The user can proceed or abort based on this estimate.
 - **Context mounting** loads only what each agent needs
 - **Triage** processes 5-10 items per session instead of all at once
 - **Compressed logs** for sessions with 15+ Stories
+- **Scope filtering** in fullstack mode ensures each phase loads only relevant stories

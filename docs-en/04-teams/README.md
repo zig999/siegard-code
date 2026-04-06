@@ -14,7 +14,7 @@ graph LR
 | Team | Agents | Entry point | Output |
 |------|--------|-------------|--------|
 | **[Spec](spec/README.md)** | 6 | `/u-spec` | Approved specifications |
-| **[Dev](dev/README.md)** | 9 | `/u-dev` | Implemented and tested code |
+| **[Dev](dev/README.md)** | 9 (+1 meta-orchestrator for fullstack) | `/u-dev` | Implemented and tested code |
 | **[Reverse Spec](reverse-spec/README.md)** | 3 | `/u-reverse-spec` | Draft specifications from code |
 
 ## Handoff between teams

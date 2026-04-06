@@ -12,7 +12,7 @@ Complete reference of all system variables and identifiers.
 | `SESSION` | Last command argument | -- | Current session name |
 | `{SESSIONS_DIR}/{SESSION}/` | Computed | -- | Current session working dir |
 | `CODE_DIR` | Command argument | -- | Source code dir (reverse spec) |
-| `domain:` | CLAUDE.md | -- | `frontend` or `backend` |
+| `domain:` | CLAUDE.md | -- | `frontend`, `backend`, or `fullstack` |
 | `stack:` | CLAUDE.md | -- | Project technology stack |
 
 ## Directory variables

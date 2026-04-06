@@ -12,6 +12,8 @@ Determines the operating mode for each orchestrator based on available artifacts
 | **Bug+Improve** | Both `improve##.md` and `bug##.md` exist (bugs processed first) |
 | **Error** | None of the above -- halts with guidance |
 
+Mode detection works identically for all domain values (`backend`, `frontend`, `fullstack`). In fullstack mode, the Meta-Orchestrator detects the mode once and passes it to both domain orchestrators -- they do not re-detect.
+
 ## Spec orchestrator modes
 
 | Mode | Detection criteria |

@@ -197,4 +197,4 @@ If **2** or **3**: `Run: /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION]`
 
 > **Note:** `/u-dev` automatically detects `bug##.md` and operates in **bug mode**. The bug's `type:` determines whether it uses the lean pipeline (visual/UI) or the full pipeline (logic/contract).
 
-> **Important:** `/u-dev` requires the field `domain: frontend` or `domain: backend` in `CLAUDE.md`. Verify that the field exists before guiding the next step. If it does not exist, alert the human: "The `CLAUDE.md` file must contain the field `domain: frontend` or `domain: backend` before running `/u-dev`."
+> **Important:** `/u-dev` requires the field `domain: frontend`, `domain: backend`, or `domain: fullstack` in `CLAUDE.md`. Verify that the field exists before guiding the next step. If it does not exist, alert the human: "The `CLAUDE.md` file must contain the field `domain: frontend`, `domain: backend`, or `domain: fullstack` before running `/u-dev`."

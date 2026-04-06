@@ -44,12 +44,15 @@ This skill defines the standards, templates, and quality rules for the Planner A
 
 **Origin:** [UC-NN (spec) | improve##.md | bug##.md | direct requirement]
 **Type:** [Feature | Improve | Bugfix | Refactoring]
+**Scope:** [backend | frontend | both]
 **Estimate:** S (< 4h, 1 component or isolated fix) | M (4-12h, multiple components or screen flow) | L (> 12h, feature with multiple screens — must be broken down)
 **Dependencies:** [US-XX] | None
 **Status:** Backlog
 ```
 
 > **Status field:** the Planner always initializes as `Backlog`. The Orchestrator-Dev is responsible for updating to `In development`, `In testing`, `Done`, etc. as the cycle progresses.
+
+> **Scope field:** determines which domain orchestrator processes the story. For `domain: backend` projects, all stories default to `backend`. For `domain: frontend`, all stories default to `frontend`. For `domain: fullstack`, the Planner must explicitly set `backend`, `frontend`, or `both` per story. Stories with `scope: both` must be split into two linked stories (see granularity rules).
 
 ---
 
@@ -78,6 +81,7 @@ If any criterion fails -> reformulate or break down the Story before including i
 | Story has more than 6 acceptance criteria | Likely 2 stories |
 | Story spans more than 2 screens or distinct flows (e.g., list + detail + form) | Split into stories per screen or flow |
 | Story depends on another not yet started | Record dependency and reorder |
+| Story has `scope: both` | Must be split into two linked stories: one `scope: backend` and one `scope: frontend` with explicit dependency (FE depends on BE) |
 | Backlog with more than 15 Stories | Deliver by Epic — do not process the entire file at once |
 
 ---
@@ -194,10 +198,10 @@ _Last updated: YYYY-MM-DD_
 
 ## Story overview
 
-| ID | Title | Persona | Priority | Epic | Status |
-|----|-------|---------|----------|------|--------|
-| US-01 | [title] | [persona] | P0 | EPIC-01 | Backlog |
-| US-02 | [title] | [persona] | P1 | EPIC-01 | Backlog |
+| ID | Title | Persona | Priority | Epic | Scope | Status |
+|----|-------|---------|----------|------|-------|--------|
+| US-01 | [title] | [persona] | P0 | EPIC-01 | backend | Backlog |
+| US-02 | [title] | [persona] | P1 | EPIC-01 | frontend | Backlog |
 
 ---
 

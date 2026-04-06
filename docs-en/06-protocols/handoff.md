@@ -20,6 +20,13 @@ The handoff bundles all artifacts the Dev team needs:
 - Validator's compliance report
 - Pinned spec version
 
+### Fullstack projects
+
+For `domain: fullstack`, the handoff delivers **both** backend and frontend artifact packages. The Fullstack Meta-Orchestrator distributes them:
+- Backend artifacts are passed to the BE orchestrator during Phase 1
+- Frontend artifacts are passed to the FE orchestrator during Phase 2
+- After Phase 1 completes, a `handoff-be-to-fe.md` is generated with implemented endpoint details and any deviations from the spec
+
 ## Spec version pinning
 
 The handoff includes the exact spec version used. If specs change after the handoff (e.g., during development), the system generates a `spec-changelog-notify.md` to inform the Dev team of changes.

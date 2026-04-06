@@ -29,16 +29,23 @@ Complete feature development starting from requirements through specification an
 
 ### Phase 2: Development (`/u-dev`)
 
-**Backend:**
+**Backend (`domain: backend`):**
 1. Planner creates backlog from approved specs
 2. Developer implements each Story
 3. QA validates and approves
 
-**Frontend:**
+**Frontend (`domain: frontend`):**
 1. Planner creates backlog from approved specs
 2. UI Agent generates visual specifications
 3. Developer implements each Story
 4. QA validates and approves
+
+**Fullstack (`domain: fullstack`):**
+1. Planner creates unified backlog with `scope:` per Story
+2. Phase 1 -- Backend stories are implemented and tested
+3. BE→FE handoff generated (`handoff-be-to-fe.md`)
+4. Phase 2 -- Frontend stories are implemented and tested
+5. Phase 3 -- E2E integration validation (if cross-domain stories exist)
 
 ### Phase 3: Delivery
 

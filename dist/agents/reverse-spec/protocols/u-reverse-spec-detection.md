@@ -129,7 +129,7 @@ If `CLAUDE.md` contains stack information, use it as the primary source:
 
 ```
 Grep in CLAUDE.md for:
-- "domain: frontend" or "domain: backend"
+- "domain: frontend", "domain: backend", or "domain: fullstack"
 - "stack:" or "framework:"
 - "database:" or "db:"
 ```

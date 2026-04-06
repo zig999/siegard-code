@@ -41,12 +41,16 @@ Transforms requirements into a structured backlog with Epics and User Stories. E
 
 `u-planning` -- Provides canonical Epic/Story templates, INVEST framework checklist, granularity rules, P0/P1/P2 priority system, dependency map format, and journey map structure.
 
+## Fullstack-specific behavior
+
+When activated in a `domain: fullstack` session, the Planner generates a unified backlog where each Story includes a `scope:` field (`backend`, `frontend`, or `both`). Stories with `scope: both` are split into linked pairs -- one backend and one frontend -- with an explicit dependency (FE depends on BE). Backend stories are ordered before frontend stories that depend on them.
+
 ## Output
 
 `{SESSIONS_DIR}/{SESSION}/backlog.md` containing:
 - Personas
 - Epics with descriptions
-- Story overview table (ID, title, Epic, priority, status, dependencies)
+- Story overview table (ID, title, Epic, priority, scope, status, dependencies)
 - Dependency map
 - Journey maps
 - Open questions (if any)

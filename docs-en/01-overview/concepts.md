@@ -8,7 +8,7 @@ Fundamental structures and terms used throughout the Dev Team Agents system.
 
 Project-level configuration file. Contains essential fields that agents read to determine behavior:
 
-- `domain:` -- Defines whether the project is `frontend` or `backend` (determines pipeline routing)
+- `domain:` -- Defines whether the project is `frontend`, `backend`, or `fullstack` (determines pipeline routing)
 - `stack:` -- Technology stack used in the project (read by agents, never hardcoded)
 - `specs_dir:` -- Path where specifications are stored
 
