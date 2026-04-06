@@ -6,15 +6,15 @@ The system is organized into 3 specialized teams that work in sequence to delive
 
 ```mermaid
 graph LR
-    RSPEC["Reverse Spec (3)"] -->|draft specs| SPEC["Spec Team (7)"]
-    SPEC -->|approved specs| DEV["Dev Team (11)"]
+    RSPEC["Reverse Spec (3)"] -->|draft specs| SPEC["Spec Team (6)"]
+    SPEC -->|approved specs| DEV["Dev Team (9)"]
     DEV -->|feedback| SPEC
 ```
 
 | Team | Agents | Entry point | Output |
 |------|--------|-------------|--------|
-| **[Spec](spec/README.md)** | 7 | `/u-spec` | Approved specifications |
-| **[Dev](dev/README.md)** | 11 | `/u-dev` | Implemented and tested code |
+| **[Spec](spec/README.md)** | 6 | `/u-spec` | Approved specifications |
+| **[Dev](dev/README.md)** | 9 | `/u-dev` | Implemented and tested code |
 | **[Reverse Spec](reverse-spec/README.md)** | 3 | `/u-reverse-spec` | Draft specifications from code |
 
 ## Handoff between teams

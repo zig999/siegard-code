@@ -2,22 +2,20 @@
 
 Complete directory tree after installation, for both the source repository and the target project.
 
-## Source repository (dev-team/)
+## Source repository (siegard-code/)
 
 ```
-dev-team/
+siegard-code/
   dist/
-    .claude/
-      agents/
-        dev/                    # Dev team agents (FE + BE)
-          protocols/            # On-demand protocols
-        spec/                   # Spec team agents
-          protocols/            # On-demand protocols
-        reverse-spec/           # Reverse Spec team agents
-          protocols/            # On-demand protocols
-      commands/                 # Slash commands (/u-spec, /u-dev, etc.)
-      skills/                   # Reusable skill catalog
-  docs/                         # Portuguese documentation
+    agents/
+      dev/                      # Dev team agents (FE + BE)
+        protocols/              # On-demand protocols
+      spec/                     # Spec team agents
+        protocols/              # On-demand protocols
+      reverse-spec/             # Reverse Spec team agents
+        protocols/              # On-demand protocols
+    commands/                   # Slash commands (/u-spec, /u-dev, etc.)
+    skills/                     # Reusable skill catalog
   docs-en/                      # English documentation
 ```
 

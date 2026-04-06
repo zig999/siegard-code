@@ -76,7 +76,7 @@ graph TB
         SPVAL -->|INVALID front| SPFRT
     end
 
-    subgraph DEV["Dev Team · 11 agents"]
+    subgraph DEV["Dev Team · 9 agents"]
         DVORC[Orchestrator-Dev]
         PLAN[Planner]
         UIAG[UI Agent]

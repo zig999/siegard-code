@@ -5,32 +5,36 @@ This chapter describes how to install the Dev Team Agents into a target project.
 ## Prerequisites
 
 - **Claude Code** installed and functional on the machine
-- Access to the `dev-team/` repository (source repo)
+- Access to the `siegard-code/` repository (source repo)
 - Target project already created with a basic folder structure
 
 ## Installation
 
-Copy the contents of `dist/.claude/` into the target project's `.claude/` directory:
+Copy the contents of `dist/` into the target project's `.claude/` directory:
 
 ```bash
-cp -r dev-team/dist/.claude/ /path/to/your-project/.claude/
+cp -r siegard-code/dist/agents/ /path/to/your-project/.claude/agents/
+cp -r siegard-code/dist/commands/ /path/to/your-project/.claude/commands/
+cp -r siegard-code/dist/skills/ /path/to/your-project/.claude/skills/
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-Copy-Item -Recurse -Force dev-team\dist\.claude\* your-project\.claude\
+Copy-Item -Recurse -Force siegard-code\dist\agents your-project\.claude\
+Copy-Item -Recurse -Force siegard-code\dist\commands your-project\.claude\
+Copy-Item -Recurse -Force siegard-code\dist\skills your-project\.claude\
 ```
 
 This copies all agents, skills, and commands into the target project.
 
 ## What is copied
 
-| Source (dev-team/dist/) | Destination (project/) | Description |
-|-------------------------|------------------------|-------------|
-| `.claude/commands/` | `.claude/commands/` | The 6 slash commands available |
-| `.claude/agents/` | `.claude/agents/` | All agents from the 3 teams |
-| `.claude/skills/` | `.claude/skills/` | Complete skill catalog |
+| Source (siegard-code/dist/) | Destination (project/.claude/) | Description |
+|-----------------------------|--------------------------------|-------------|
+| `commands/` | `commands/` | The 6 slash commands available |
+| `agents/` | `agents/` | All agents from the 3 teams |
+| `skills/` | `skills/` | Complete skill catalog |
 
 ### Overwrite behavior
 
