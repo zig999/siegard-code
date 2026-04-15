@@ -48,6 +48,7 @@ MANDATORY:
   domains/{domain}/{domain}.spec.md (APPROVED)
   .claude/skills/u-spec-globals/conventions.md
   .claude/skills/u-spec-templates/TEMPLATE.back.md
+  .claude/skills/u-spec-back-writing/SKILL.md
   CLAUDE.md (stack section)
 
 CONDITIONAL (if rewrite after validation):
@@ -57,20 +58,32 @@ CONDITIONAL (if rewrite after validation):
 ### Front Spec Agent
 ```
 MANDATORY:
-  domains/{domain}/openapi.yaml (APPROVED) — one for each domain involved in the screens
+  domains/{domain}/openapi.yaml (APPROVED) — one for each domain involved in the features
   domains/{domain}/{domain}.spec.md (APPROVED) — one for each domain
   .claude/skills/u-spec-globals/error-codes.md
   .claude/skills/u-spec-templates/TEMPLATE.front.md
-  .claude/skills/u-spec-templates/TEMPLATE.screen.md
+  .claude/skills/u-spec-templates/TEMPLATE.feature.spec.md
+  .claude/skills/u-spec-templates/TEMPLATE.component.spec.md
   .claude/skills/u-spec-templates/TEMPLATE.flow.md
   CLAUDE.md (stack section)
 
 CONDITIONAL (if front.md already exists — additional feature):
   front/front.md (current version — to update instead of rewriting from scratch)
 
+CONDITIONAL (design-system does not exist — creating):
+  .claude/skills/u-spec-templates/TEMPLATE.design-system/_index.md
+  .claude/skills/u-spec-templates/TEMPLATE.design-system/tokens.md
+  .claude/skills/u-spec-templates/TEMPLATE.design-system/composition.md
+  .claude/skills/u-spec-templates/TEMPLATE.design-system/components.md
+  .claude/skills/u-spec-templates/TEMPLATE.design-system/implementation.md
+  .claude/skills/u-spec-templates/TEMPLATE.design-system-rules.md
+
+CONDITIONAL (design-system exists — updating):
+  {SPECS_DIR}/front/design-system/_index.md
+
 CONDITIONAL (if rewrite after validation):
   Spec Validator report
-  front/screens/{screen}.screen.md affected (only the invalidated ones)
+  front/features/{feature}.feature.spec.md affected (only the invalidated ones)
 ```
 
 ### Spec Validator
@@ -86,9 +99,9 @@ INCREMENTAL — back phase (as available):
 
 INCREMENTAL — front phase (after Front Spec Agent completes):
   front/front.md
-  front/screens/{screen}.screen.md (all screens for the requirement)
+  front/features/{feature}.feature.spec.md (all features for the requirement)
   front/_flows/{flow}.flow.md (all flows for the requirement)
-  domains/{domain}/openapi.yaml for each domain consumed by the screens
+  domains/{domain}/openapi.yaml for each domain consumed by the features
 ```
 
 ## Short mode (reactivation in the same session)

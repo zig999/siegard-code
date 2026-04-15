@@ -1,0 +1,25 @@
+# INVALID FLOW: status=failed but missing_inputs is populated — violates FLOW-013
+# Use conflicts when failed, missing_inputs when blocked.
+blocked:
+  id: BLK-20260409-160000
+  reported_by: u-spec-validator
+  artifact: TC-01
+  timestamp: "2026-04-09T16:00:00Z"
+  layer: semi-permanent
+
+status: failed
+reason: Execution encountered an unrecoverable contradiction.
+
+missing_inputs:
+  - field: openapi.yaml
+    expected: OpenAPI 3.0 contract for auth domain.
+    source: domains/auth/openapi.yaml
+
+conflicts:
+  - id: CONFLICT-001
+    description: Endpoint POST /auth/login contradicts error-codes.md.
+    location: specs/auth/back.md §4
+
+resolution:
+  required_action: Review conflicting spec sections and resolve contradiction.
+  escalate_to: human

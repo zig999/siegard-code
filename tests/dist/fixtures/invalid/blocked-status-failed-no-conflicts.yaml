@@ -1,0 +1,15 @@
+# INVALID FLOW: status=failed but conflicts is absent — violates FLOW-012
+# Passes JSON Schema (conflicts is optional) but fails Layer 5 flow invariant.
+blocked:
+  id: BLK-20260409-140000
+  reported_by: u-spec-validator
+  artifact: TC-01
+  timestamp: "2026-04-09T14:00:00Z"
+  layer: semi-permanent
+
+status: failed
+reason: Execution encountered an unrecoverable contradiction in spec.
+
+resolution:
+  required_action: Review conflicting spec sections and resolve contradiction.
+  escalate_to: human

@@ -1,0 +1,28 @@
+improve_scope:
+  source: spec-triage
+  generated_on: "2026-04-12"
+  session: "fix-contract-errors"
+  affected_specs:
+    - "docs/specs/domains/payments/openapi.yaml"
+    - "docs/specs/domains/payments/payments.back.md"
+    - "docs/specs/front/features/checkout.feature.spec.md"
+  estimated_task_contracts: 3
+  task_contracts:
+    - description: "Fix orphaned operationId UI-05 reference in checkout feature spec"
+      type: bugfix
+      priority: P1
+      affected_files:
+        - "docs/specs/front/features/checkout.feature.spec.md"
+    - description: "Align POST /payments endpoint contract with approved UC-12 flow"
+      type: bugfix
+      priority: P1
+      affected_files:
+        - "docs/specs/domains/payments/openapi.yaml"
+        - "docs/specs/domains/payments/payments.back.md"
+    - description: "Update §9 BDD scenario S-07 to reflect corrected endpoint response"
+      type: bugfix
+      priority: P2
+      affected_files:
+        - "docs/specs/front/features/checkout.feature.spec.md"
+  planner_required: true
+  spec_change_status: completed

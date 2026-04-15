@@ -187,24 +187,24 @@ src/
 
 | What to search for | Search pattern | Spec artifact |
 |--------------------|---------------|---------------|
-| Pages (Next pages) | Files in `pages/` or `app/` | screens -> .screen.md |
-| Page components | `export default function.*Page` | screens -> .screen.md |
+| Pages (Next pages) | Files in `pages/` or `app/` | features -> .feature.spec.md |
+| Page components | `export default function.*Page` | features -> .feature.spec.md |
 | API calls | `fetch\(` or `axios\.(get\|post)` or `useQuery\(` | consumed domains |
 | Custom hooks | `function use[A-Z]` or `const use[A-Z]` | state logic |
-| State stores | `create\(` (zustand) or `createSlice\(` (redux) | state strategy -> screen.md (Requests and Cache section) |
+| State stores | `create\(` (zustand) or `createSlice\(` (redux) | state strategy -> feature.spec.md (§4 Requests, Order, and Cache) |
 | Routes | `<Route` or `<Link` or `useRouter` or `useNavigate` | flows -> .flow.md |
-| Forms | `<form` or `useForm\(` or `Formik` | validations -> .screen.md |
-| Error boundaries | `componentDidCatch` or `ErrorBoundary` | error handling -> screen.md (Error Mapping section) |
-| Loading states | `isLoading` or `isPending` or `<Skeleton` or `<Spinner` | UI states -> .screen.md |
+| Forms | `<form` or `useForm\(` or `Formik` | validations -> .feature.spec.md (§5) |
+| Error boundaries | `componentDidCatch` or `ErrorBoundary` | error handling -> .feature.spec.md (§6) |
+| Loading states | `isLoading` or `isPending` or `<Skeleton` or `<Spinner` | UI states -> .feature.spec.md (§2) |
 
 ### Vue / Nuxt (Frontend)
 
 | What to search for | Search pattern | Spec artifact |
 |--------------------|---------------|---------------|
-| Pages | Files in `pages/` (`.vue`) | screens -> .screen.md |
+| Pages | Files in `pages/` (`.vue`) | features -> .feature.spec.md |
 | Components | `defineComponent\(` or `<script setup>` | screen components |
 | API calls | `useFetch\(` or `$fetch\(` or `axios` | consumed domains |
-| State | `defineStore\(` (Pinia) or `new Vuex.Store` | state strategy -> screen.md (Requests and Cache section) |
+| State | `defineStore\(` (Pinia) or `new Vuex.Store` | state strategy -> feature.spec.md (§4 Requests, Order, and Cache) |
 | Router | `createRouter\(` or `<RouterLink` | flows -> .flow.md |
 | Guards | `beforeEach\(` or `beforeEnter` | navigation rules -> .flow.md |
 
@@ -216,8 +216,8 @@ src/
 | Services | `@Injectable\(` + `HttpClient` | consumed domains |
 | Routes | `Routes` or `RouterModule` | flows -> .flow.md |
 | Guards | `canActivate` or `CanActivateFn` | navigation rules |
-| Forms | `FormGroup` or `FormControl` | validations -> .screen.md |
-| State | `@ngrx/store` or `BehaviorSubject` | state strategy -> screen.md (Requests and Cache section) |
+| Forms | `FormGroup` or `FormControl` | validations -> .feature.spec.md (§5) |
+| State | `@ngrx/store` or `BehaviorSubject` | state strategy -> feature.spec.md (§4 Requests, Order, and Cache) |
 
 ---
 

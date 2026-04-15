@@ -19,7 +19,7 @@ For visual/UI bugs only:
 ## Full pipeline
 
 For behavioral, integration, or unknown bugs:
-- Planner generates fix Stories with priority classification
+- Planner generates fix Task Contracts with priority classification
 - Developer implements with TDD approach
 - Full QA validation
 

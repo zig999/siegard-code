@@ -1,0 +1,9 @@
+# IMPV-011 violation: planner_required=false but estimated_task_contracts=2
+improve_scope:
+  description: "Redesign dashboard layout"
+  type: implementation_only
+  spec_change_status: not_required
+  affected_specs: []
+  estimated_task_contracts: 2
+  planner_required: false
+  planner_skip_reason: "No affected spec"

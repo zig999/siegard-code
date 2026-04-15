@@ -26,9 +26,9 @@ Before testing, extract from `CLAUDE.md`:
 
 ---
 
-## Verification scope by Story type
+## Verification scope by Task Contract type
 
-> Refer to the unified **mandatory tests per Story type** table in `standards/SKILL.md`. Apply only the required checks for the Story type — do not run the universal checklist on narrow-scope Stories.
+> Refer to the unified **mandatory tests per Task Contract type** table in `standards/SKILL.md`. Apply only the required checks for the Task Contract type — do not run the universal checklist on narrow-scope Task Contracts.
 
 ---
 
@@ -84,7 +84,7 @@ The diagnosis must be **actionable** — the Developer should be able to fix the
 
 The QA fills the matrix based on tests **delivered by the Developer**, not tests created by the QA.
 
-For each acceptance criterion: locate the test in `us-XX-delivery.md` ("Tests written" section) and record it in the matrix. If it does not exist, record the absence as a BUG.
+For each acceptance criterion: locate the test in `tc-XX-delivery.md` ("Tests written" section) and record it in the matrix. If it does not exist, record the absence as a BUG.
 
 ```markdown
 | ID    | Scenario                                   | Type        | Priority | Test file                           | Result |
@@ -96,7 +96,7 @@ For each acceptance criterion: locate the test in `us-XX-delivery.md` ("Tests wr
 | T-05  | Edge: unauthenticated request (401)        | Integration | High     | `__tests__/integration/user.spec.ts` (L.102)| Passed |
 ```
 
-High priority -> must pass to approve the Story.
+High priority -> must pass to approve the Task Contract.
 Medium/Low priority -> absence generates a caveat, not automatic rejection.
 
 ---
@@ -132,7 +132,7 @@ In the SDD flow, behavior documentation already exists in the spec (`openapi.yam
 
 ## Definition of Done — full checklist
 
-A Story can only move to `Done` when **all** items below are checked:
+A Task Contract can only move to `Done` when **all** items below are checked:
 
 **Tests:**
 - [ ] All acceptance criteria have at least one corresponding test
@@ -153,9 +153,9 @@ A Story can only move to `Done` when **all** items below are checked:
 - [ ] Authentication and authorization validated on new endpoints
 
 **Traceability:**
-- [ ] QA report generated at `{SESSIONS_DIR}/{SESSION}/us-XX-qa.md` with round number
+- [ ] QA report generated at `{SESSIONS_DIR}/{SESSION}/tc-XX-qa.md` with round number
 - [ ] Bugs logged with severity and reproduction steps
-- [ ] Story status in `backlog.md` updated to `Done`
+- [ ] Task Contract status in `backlog.md` updated to `Done`
 - [ ] Orchestrator-Dev notified of the final verdict
 
 **Round protocol:**
@@ -167,4 +167,17 @@ A Story can only move to `Done` when **all** items below are checked:
 
 ## QA report template
 
-> When generating `us-XX-qa.md`, read the full template at `.claude/skills/u-be-templates/qa-report.md`.
+> When generating `tc-XX-qa.md`, read the full template at `.claude/skills/u-be-templates/qa-report.md`.
+
+---
+
+## Short Mode Activation
+
+Activated by the Orchestrator from the 2nd invocation of this agent in the same session, and for all post-QA correction cycles.
+
+In short mode, the Orchestrator passes a compact reminder instead of the full skill. The reminder must include:
+1. Test command from `CLAUDE.md` (e.g., `npm test`)
+2. Acceptance criteria list from the Task Contract
+3. Verdict format: `approved | rejected | approved_with_reservations`
+
+Full skill re-read is skipped — agent relies on established standards from the first invocation.

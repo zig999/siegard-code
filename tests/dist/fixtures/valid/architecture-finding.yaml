@@ -1,0 +1,17 @@
+scan:
+  id: "ARCH-20260410-140000"
+  reviewed_by: "u-architecture-reviewer"
+  epic: "EPIC-03"
+  timestamp: "2026-04-10T14:00:00Z"
+  layer: "semi-permanent"
+  deliveries_scanned:
+    - "TC-030"
+    - "TC-031"
+findings: []
+summary:
+  total_findings: 0
+  by_action:
+    create_refactoring_tc: 0
+    create_tech_debt_tc: 0
+    escalate_to_human: 0
+  tcs_to_create: []

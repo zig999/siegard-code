@@ -1,0 +1,20 @@
+# INVALID FLOW: status=failed but escalate_to=orchestrator — violates FLOW-015
+# status=failed means unrecoverable execution error — must escalate to human, not orchestrator.
+blocked:
+  id: BLK-20260409-170000
+  reported_by: u-spec-validator
+  artifact: TC-05
+  timestamp: "2026-04-09T17:00:00Z"
+  layer: semi-permanent
+
+status: failed
+reason: Execution encountered an unrecoverable contradiction between back.md and openapi.yaml.
+
+conflicts:
+  - id: CONFLICT-001
+    description: Response schema for POST /auth/login in openapi.yaml contradicts §4 of back.md.
+    location: specs/auth/back.md §4
+
+resolution:
+  required_action: Review and resolve the contradiction between back.md and openapi.yaml.
+  escalate_to: orchestrator

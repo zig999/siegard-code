@@ -1,0 +1,25 @@
+# VALID: fast_track handoff — change_summary required and present
+handoff:
+  id: HANDOFF-20260409-170000
+  delivered_by: u-spec-orchestrator
+  delivered_at: "2026-04-09T17:00:00Z"
+  layer: semi-permanent
+  type: fast_track
+
+domains:
+  - name: auth
+    spec_version: 1.1.0
+    back_version: 1.1.0
+    openapi_version: 1.1.0
+    compliance_report: "Incremental validation passed."
+
+backend_package:
+  - path: specs/auth/openapi.yaml
+    artifact: openapi
+
+change_summary:
+  type: minor
+  cr: none
+  changed_files:
+    - specs/auth/openapi.yaml
+  dev_impact: reevaluate_task_contracts

@@ -18,7 +18,7 @@ Writer -> Reviewer -> Back Spec Agent(s) -> Validator -> Front Spec Agent -> Val
 - **Reviewer** approves or rejects (max 3 rejection cycles)
 - **Back Spec Agent** produces `{domain}.back.md` per domain
 - **Validator** performs incremental validation after each `.back.md`
-- **Front Spec Agent** runs after ALL `.back.md` files are valid (screens compose multiple domains)
+- **Front Spec Agent** runs after ALL `.back.md` files are valid (features compose multiple domains)
 - **Validator** performs final cross-reference validation
 - **Handoff** packages artifacts for the Dev team
 
@@ -46,7 +46,8 @@ For minor/patch changes, a simplified pipeline is activated:
 - `{domain}.spec.md` -- Use cases, business rules, state machines
 - `{domain}.back.md` -- Backend technical specification
 - `front.md` -- Global frontend specification
-- `{screen}.screen.md` -- Per-screen UI specification
+- `{feature}.feature.spec.md` -- Per-feature/route UI specification (§9 BDD and §10 Components are placeholders after reverse engineering)
+- `{name}.component.spec.md` -- Shared component spec (conditional, created manually after review)
 - `{flow}.flow.md` -- Navigation flow specification
 - `openapi.root.yaml` -- Root aggregator
 - `log-orchestrator-spec.md` -- Orchestrator execution log

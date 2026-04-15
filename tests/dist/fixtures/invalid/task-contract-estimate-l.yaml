@@ -1,0 +1,43 @@
+# INVALID: estimate=L is prohibited — must split into two task_contracts
+task_contract:
+  id: TC-03
+  epic: EPIC-01
+  origin: UC-03
+  type: feature
+  priority: P2
+  scope: frontend
+  estimate: L
+  dependencies: []
+  persona_coverage:
+    - admin
+  bdd_ref: null
+
+execution_contract:
+  exec_type: code_generation
+  objective: Implement the full dashboard with all widgets.
+  input:
+    references:
+      - path: specs/dashboard/front.md
+        section: "§2"
+        version: 1.0.0
+    known_context: []
+    assumptions_allowed: []
+  constraints:
+    - Use design system tokens only.
+  output:
+    format: yaml
+    schema:
+      - files_created
+      - files_modified
+      - acceptance_criteria_coverage
+      - edge_cases
+      - spec_divergences
+      - tech_debt
+      - tests
+      - inference_log
+  validation:
+    criteria:
+      - Dashboard renders all required widgets.
+  fallback:
+    on_missing_input: blocked
+    template: .claude/skills/u-shared-templates/blocked-report.yaml

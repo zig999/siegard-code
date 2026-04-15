@@ -19,11 +19,26 @@ Generates specification artifacts from the Analyzer's report using the same temp
 
 ## Generation order
 
-1. `openapi.yaml` per domain (MANDATORY first -- other artifacts reference it)
+1. `openapi.yaml` per domain (MANDATORY first — other artifacts reference it)
 2. `{domain}.spec.md` per domain
 3. `{domain}.back.md` per domain
-4. Frontend: `screens/{screen}.screen.md`, then `_flows/{flow}.flow.md`
+4. Frontend: `features/{feature}.feature.spec.md`, then `_flows/{flow}.flow.md`
 5. Global files: `error-codes.md`, `glossary.md`, `openapi.root.yaml`
+
+## Frontend: feature granularity
+
+When generating frontend specs, apply the same granularity rule as the Front Spec Agent:
+- **1 feature = 1 URL/route** — derive from actual routes in the code
+- Modals without URL change → states of the same feature (§2)
+- File name = route slug (e.g., `/login` → `login.feature.spec.md`)
+
+## Sections that cannot be reverse-engineered
+
+The following sections of `feature.spec.md` are left as `<!-- TO CONFIRM -->` placeholders:
+- **§9 BDD Scenarios** — intent and invariants cannot be reliably inferred from code alone
+- **§10 Components to Create/Update** — component classification requires informed review
+
+These must be filled in manually after human review via `/u-spec`.
 
 ## Mandatory rules
 
@@ -31,13 +46,14 @@ Generates specification artifacts from the Analyzer's report using the same temp
 - All artifacts receive `draft` status
 - Uncertainties marked with `<!-- TO CONFIRM -->` for human review
 - Use same template structure as the Spec Writer
+- Never invent BDD scenarios — mark as `<!-- TO CONFIRM -->`
 
 ## Output
 
 - `{SPECS_DIR}/domains/{domain}/openapi.yaml` (draft)
 - `{SPECS_DIR}/domains/{domain}/{domain}.spec.md` (draft)
 - `{SPECS_DIR}/domains/{domain}/back/{domain}.back.md` (draft)
-- `{SPECS_DIR}/front/screens/{screen}.screen.md` (draft)
+- `{SPECS_DIR}/front/features/{feature}.feature.spec.md` (draft — §9 and §10 are placeholders)
 - `{SPECS_DIR}/front/_flows/{flow}.flow.md` (draft)
 - `{SPECS_DIR}/_global/error-codes.md` (draft)
 - `{SPECS_DIR}/_global/glossary.md` (draft)

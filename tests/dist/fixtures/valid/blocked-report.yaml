@@ -1,0 +1,19 @@
+blocked:
+  id: BLK-20260409-120000
+  reported_by: u-spec-validator
+  artifact: domains/auth/openapi.yaml
+  timestamp: "2026-04-09T12:00:00Z"
+  layer: permanent
+
+status: blocked
+reason: missing_input
+reason_detail: Required input openapi.yaml is absent.
+
+missing_inputs:
+  - field: openapi.yaml
+    expected: OpenAPI 3.0 contract for auth domain.
+    source: domains/auth/openapi.yaml
+
+resolution:
+  required_action: Provide openapi.yaml for the auth domain.
+  escalate_to: orchestrator

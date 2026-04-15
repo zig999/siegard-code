@@ -1,0 +1,27 @@
+# VALID: resolved CR with status=accepted and non-empty timestamp
+id: CR-05
+reported_by: u-fe-developer
+timestamp: "2026-04-09T12:00:00Z"
+task: TC-05
+epic: EPIC-02
+artifact:
+  path: specs/auth/front.md
+  section: "§3 Business Rules"
+  version: 1.0.0
+type: spec_gap
+description: Minimum password length not defined in the spec.
+evidence:
+  - Section §3 does not specify minimum password length.
+proposed_change: Add rule — password must be at least 8 characters.
+impact:
+  dev_blocked: true
+  task_contracts_affected:
+    - TC-05
+  scope: low
+resolution:
+  status: accepted
+  decided_by: u-spec-orchestrator
+  decision: Add minimum password length of 8 characters to §3.
+  spec_updated: true
+  delivery_updated: false
+  timestamp: "2026-04-09T14:00:00Z"

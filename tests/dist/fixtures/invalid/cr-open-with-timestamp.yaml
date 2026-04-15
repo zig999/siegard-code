@@ -1,0 +1,28 @@
+# INVALID FLOW: resolution.status=open but timestamp is non-empty — violates FLOW-020
+# Passes JSON Schema but fails Layer 5 flow invariant.
+id: CR-02
+reported_by: u-be-developer
+timestamp: "2026-04-09T12:00:00Z"
+task: TC-02
+epic: EPIC-01
+artifact:
+  path: specs/auth/back.md
+  section: "§4 Endpoints"
+  version: 1.0.0
+type: spec_error
+description: POST /auth/login response schema contradicts error-codes.md.
+evidence:
+  - Error code 401 is not registered in error-codes.md.
+proposed_change: Add error code 401 to error-codes.md.
+impact:
+  dev_blocked: false
+  task_contracts_affected:
+    - TC-02
+  scope: low
+resolution:
+  status: open
+  decided_by: ""
+  decision: ""
+  spec_updated: false
+  delivery_updated: false
+  timestamp: "2026-04-09T15:00:00Z"

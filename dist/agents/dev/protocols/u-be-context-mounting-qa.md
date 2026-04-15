@@ -21,14 +21,18 @@ Read in parallel:
 
 Copy into the prompt:
 ```
-## Target Story (extracted from backlog.md)
-[complete US-XX block: title, narrative, acceptance criteria, type, estimate, dependencies, affected modules]
+## Target Task Contract (extracted from backlog.md)
+[complete TC-XX block: title, narrative, acceptance criteria, type, estimate, dependencies, affected modules]
+[execution_contract YAML block — QA reads validation.criteria for self-validation checks Developer declared]
 
-## Tests written (extracted from us-XX-delivery.md)
-[test file table: File | Covers]
+## Delivery gate (extracted from tc-XX-delivery.md — first YAML block)
+[full delivery-gate YAML: status, spec_consumed, tests, acceptance_criteria, spec_divergences, tech_debt, qa_ready, qa_notes]
+
+## Delivery body (extracted from tc-XX-delivery.md — second YAML block)
+[full delivery-body YAML: files_created, files_modified, acceptance_criteria_coverage, edge_cases, inference_log]
 
 ## Round: N
-[1 if first time, 2+ if retest — include previous diagnosis/QA report if round 2+]
+[1 if first time, 2+ if retest — include previous tc-XX-qa.md if round 2+]
 ```
 
 
@@ -42,10 +46,10 @@ Full context — include skills and all Epic artifacts:
 ## Target Epic: EPIC-XX — [Name]
 
 ## Epic deliveries
-[full content of each us-XX-delivery.md from the Epic]
+[full content of each tc-XX-delivery.md from the Epic]
 
 ## Epic QA Reports
-[full content of each us-XX-qa.md from the Epic]
+[full content of each tc-XX-qa.md from the Epic]
 
 ## Approved domain specs (if they exist)
 [relevant endpoints from openapi.yaml for the Epic]

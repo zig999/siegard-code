@@ -73,7 +73,7 @@ Read the `domain:` field in `CLAUDE.md` (project root). This field determines wh
 4. `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md` (if exists — session resumption)
 
 ### Based on mode:
-- **Improve / Bug + Improve:** read all `{SESSIONS_DIR}/{SESSION}/improve*.md`
+- **Improve / Bug + Improve:** read `improve_scope` block from `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`
 - **Bug / Bug + Improve:** read all `{SESSIONS_DIR}/{SESSION}/bug*.md`
 
 ### Spec Detection
@@ -96,7 +96,7 @@ If `{SPECS_DIR}/` exists:
    - **Do not activate Spec-first mode** with draft specs.
 
 ### No Input Available
-If `{SPECS_DIR}`, `improve##.md`, `bug##.md`, and `backlog.md` do not exist:
+If `{SPECS_DIR}`, improve_scope block in log, `bug##.md`, and `backlog.md` do not exist:
 
 1. Check if the project has existing source code (package.json, requirements.txt, src/, etc.) but no `{SPECS_DIR}`:
    - **If yes:** suggest reverse engineering:
@@ -122,27 +122,27 @@ Before initializing, present an estimate to the human:
 ## Estimate — /u-dev [SPECS_DIR] {SESSION}
 
 Mode: {detected mode} | Domain: {frontend|backend}
-Input: {improve##.md: N files | bug##.md: N files | {SPECS_DIR}: N domains}
+Input: {improve_scope: N TCs estimated | bug##.md: N files | {SPECS_DIR}: N domains}
 
 | Stage | Agents | Estimated Tokens | Estimated Time |
 |-------|--------|-----------------|----------------|
 | Planner | 1 | ~5K | 2-3 min |
 | UI Agent | 1 (if FE or fullstack) | ~4K per Epic | 2-3 min |
-| Developer | 1 per Story | ~6K per Story | 5-10 min |
-| QA | 1 per Story | ~4K per Story | 3-5 min |
+| Developer | 1 per Task Contract | ~6K per Task Contract | 5-10 min |
+| QA | 1 per Task Contract | ~4K per Task Contract | 3-5 min |
 | E2E Integration | 1 (if fullstack) | ~3K | 2-4 min |
 | **Total** | — | **~{N}K** | **~{N} min** |
 
 Note: Lean Improve mode skips UI Agent (~30% reduction).
-Note: Parallel Stories (max 3) reduce total time.
+Note: Parallel Task Contracts (max 3) reduce total time.
 Note: Fullstack mode runs BE phase then FE phase sequentially — total time is additive.
 
 Proceed? [Y / N]
 ```
 
 **Simplified calculation:**
-- Per Story (full): ~14K tokens, ~10-18 min
-- Per Story (lean improve): ~10K tokens, ~8-13 min
+- Per Task Contract (full): ~14K tokens, ~10-18 min
+- Per Task Contract (lean improve): ~10K tokens, ~8-13 min
 - Planner overhead: ~5K tokens (once)
 - UI Agent overhead: ~4K tokens per Epic (once, if frontend or fullstack)
 - E2E Integration overhead: ~3K tokens (once, if fullstack)
@@ -161,6 +161,6 @@ The Orchestrator reads specs from `{SPECS_DIR}/` and writes dev artifacts to `{S
 
 Use the Orchestrator-Dev Core instructions to coordinate the development cycle.
 ### Mode Protocols (load based on detection)
-- If `improve##.md` detected: load `.claude/agents/dev/protocols/u-improve-mode.md`
+- If `improve_scope` block detected in session log: load `.claude/agents/dev/protocols/u-improve-mode.md`
 - If `bug##.md` detected: load `.claude/agents/dev/protocols/u-bug-mode.md`
 - Other protocols: load on demand per the domain orchestrator-protocols index

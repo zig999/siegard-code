@@ -1,80 +1,125 @@
 # Project
 
 domain: frontend
-stack: React 18, TypeScript 5, Next.js 14 (App Router), Tailwind CSS 3, Zustand, React Query, Vitest, Playwright
+stack: {framework} {version}, {language} {version}, {css-framework}, {state-management}, {data-fetching}, {test-runner}, {e2e-runner}
 specs_dir: docs/specs
 sessions_dir: docs/sessions
+runtime_dir: docs/runtime/logs
+
+design_system:
+  path: docs/specs/front/design-system/      # path to design-system/ directory — agents resolve tokens.md, components.md etc from here
+  token_prefix: "--color-"                   # CSS custom property prefix for color tokens (Tailwind v4 @theme naming); e.g. --color-primary, --color-surface
+  color_mode: dark-only | light-only | both  # default: both
+  component_library: {shadcn | mui | tremor | antd | radix | none}  # default: none
+  enforce_tokens: true                        # true = agents reject hardcoded values as BUG; false = warnings only. default: true
+  motion_policy: strict | permissive          # strict = duration-* and ease-* Tailwind classes required on all transitions; permissive = only bans transition:all. default: strict
+  tailwind_integration: theme                 # theme = Tailwind v4 @theme {} in global.css, no tailwind.config.ts (default and required for v4 projects)
+
+# design_system block is optional. When absent, all agents apply the defaults listed above.
+# Canonical defaults (single source of truth — do not redefine in agent files):
+#   path:              {specs_dir}/front/design-system/
+#   token_prefix:      "--color-"
+#   color_mode:        both
+#   component_library: none
+#   enforce_tokens:    true
+#   motion_policy:     strict
+
+# Available validation skill:
+#   /u-fe-validate [TARGET] [SPECS_DIR] — validates frontend code against design system tokens and rules
+
+## Directory Structure
+
+```
+docs/
+  specs/                    # Layer: permanent — versioned, reviewed, source of truth
+    _global/                #   conventions.md, error-codes.md, glossary.md
+    _validation/            #   validation-result.yaml + validation.md per domain
+    domains/{domain}/       #   openapi.yaml, {domain}.spec.md, back/{domain}.back.md
+    front/                  #   front.md, features/, components/, _flows/, design-system/
+    handoff-manifest.yaml   # Layer: semi-permanent — last spec-to-dev delivery record
+    decisions.md            # Layer: semi-permanent — active architectural decisions
+
+  sessions/{session}/       # Layer: semi-permanent — versioned, traceability
+    backlog.md              #   Epics and Task Contracts
+    log-orchestrator-dev.md #   Dev orchestrator session log
+    tc-XX-delivery.md       #   Developer delivery (includes delivery-gate YAML block)
+    us-XX-qa.md             #   QA report
+    session-decisions.md    #   Cross-session persistent decisions
+    _temp/                  #   Consumed inputs moved here after processing (not deleted)
+
+  runtime/logs/             # Layer: ephemeral — NOT committed to repo
+    *.yaml                  #   Interaction logs, agent run traces, debug output
+```
+
+**.gitignore rule (add to project root):**
+```
+docs/runtime/
+```
+
+> Agents write session logs to `sessions_dir`. Runtime logs (ephemeral traces, debug output) go to `runtime_dir` and are never committed. The `handoff-manifest.yaml` and `decisions.md` live directly in `specs_dir` as semi-permanent artifacts.
+
+---
 
 ## Architecture
 
-- Next.js App Router with server and client components
-- Feature-based folder structure under `src/features/{feature}/`
-- Shared UI components under `src/components/ui/`
-- API consumption via React Query (TanStack Query v5)
-- Client state via Zustand (one store per feature)
-- Server state exclusively via React Query cache
-- Authentication via NextAuth.js with JWT
+- Rendering strategy: {SSR | SSG | SPA | hybrid}
+- Routing: {strategy}
+- Shared UI: `src/components/ui/`
+- Data fetching: {library}
+- Client state: {library}
+- Authentication: {strategy}
+
+---
 
 ## Conventions
 
 - Language: TypeScript strict mode
-- Naming: camelCase for variables/functions, PascalCase for components/types, UPPER_SNAKE_CASE for constants
-- File naming: kebab-case (e.g., `user-profile-card.tsx`)
-- Component files: one component per file, named export (not default)
-- Hooks: `use-` prefix, colocated in `hooks/` within the feature folder
-- Types: colocated in `types.ts` per feature; shared types in `src/types/`
-- Pages: Next.js App Router conventions (`page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`)
+- Folder structure: `src/features/{feature}/` with `hooks/`, `types.ts`, `api/`
 
-## Component Patterns
+---
 
-- Presentational components: props-driven, no internal state management
-- Container components: connect to stores/queries, pass data down
-- Server components by default; add `"use client"` only when needed
-- Forms: React Hook Form + Zod for validation
-- Modals/dialogs: Radix UI primitives
-- Icons: Lucide React
+## Stack
 
-## Styling
+### CSS framework
+{framework} — design tokens in `{config-file}`
 
-- Tailwind CSS with project-specific design tokens in `tailwind.config.ts`
-- No inline styles or CSS modules
-- Responsive: mobile-first with `sm:`, `md:`, `lg:` breakpoints
-- Dark mode: `class` strategy via `next-themes`
-- Animation: Tailwind `animate-` utilities + Framer Motion for complex transitions
+### Component library
+{library}
+> Canonical reference: `design_system.component_library` in the header above. Keep in sync.
+
+### Icons
+{library}
+
+### Forms & validation
+{form-library} + {validation-library}
+
+### Animation
+{library}
+
+### HTTP client
+{client} — base URL via `{ENV_VAR_NAME}`
+
+---
 
 ## Testing
 
-- Unit tests: Vitest + Testing Library, colocated as `*.test.tsx`
-- E2E tests: Playwright under `e2e/`
-- Minimum coverage: 80% for hooks/utils, 60% for components
-- MSW (Mock Service Worker) for API mocking in tests
+- Unit: {runner}
+- E2E: {runner} under `e2e/`
+- API mocking: {strategy}
+
+---
 
 ## Personas
 
-- End User: authenticated user navigating the application
-- Administrator: user with elevated permissions for management screens
-- Guest: unauthenticated visitor with limited access
+- {Role}: {description}
 
-## Error Handling
-
-- API errors: React Query `onError` callbacks + global error boundary
-- Form validation: Zod schemas with inline error messages
-- Network errors: retry with exponential backoff (React Query default)
-- 401/403: redirect to login via NextAuth session check
-- Unexpected errors: `error.tsx` boundary per route segment
-
-## API Integration
-
-- Base URL configured via `NEXT_PUBLIC_API_URL` environment variable
-- HTTP client: Axios instance with interceptors for auth token injection
-- All API calls wrapped in React Query hooks under `src/features/{feature}/api/`
-- Optimistic updates for mutations where applicable
+---
 
 ## Environment
 
-- Node: v20 LTS
-- Package manager: pnpm
-- Linter: ESLint with eslint-config-next + @typescript-eslint
-- Formatter: Prettier + prettier-plugin-tailwindcss
-- CI: GitHub Actions
-- Dev server: `next dev` with Turbopack
+- Node: {version}
+- Package manager: {pnpm | npm | yarn | bun}
+- Linter: {config}
+- Formatter: {config}
+- CI: {platform}
+- Dev server: {command}

@@ -1,71 +1,132 @@
 ---
 name: u-fe-standards
-description: Shared quality standards used by both Developer and QA agents (frontend). Defines mandatory tests per Story type, universal edge-case checklist, and test quality criteria. Single source of truth to avoid divergence between implementation and verification.
+description: Shared quality standards used by both Developer and QA agents (frontend). Defines mandatory tests per Task Contract type, code quality rules, visual design rules, universal edge-case checklist, and bug severity criteria. Single source of truth to avoid divergence between implementation and verification.
 user-invocable: false
 ---
 
 # SKILL: Standards (shared)
 
 ## Purpose
+
 This skill is the **single source of truth** for the quality standards the Developer must follow when implementing and the QA must use when verifying. Both agents receive this file in context — any change here automatically propagates to both sides.
 
 ---
 
-## Mandatory tests per Story type
+## 1. Test Requirements by Task Contract Type
 
-| Story type | What the Developer must deliver | What the QA must verify |
+> TC type values match `exec_type` in the Task Contract YAML. Use exact strings below — case-sensitive.
+
+| Task Contract type | What the Developer must deliver | What the QA must verify |
 |---|---|---|
-| **New feature** | Unit for utils/hooks + Component for each new component + Integration for API flows | All criteria + edge cases. Documentation required for new artifacts |
-| **Improvement** | Tests for modified behaviors (unit or component) + update of affected existing tests | Modified criteria + in-scope edge cases. Regression required. Docs if new artifacts |
-| **Refactoring** | Tests for preserved behaviors must keep passing; do not add new logic without a test | Preserved behaviors. Regression required. Docs only if the interface changed |
-| **Visual fix** | Snapshot or render test confirming the component still renders correctly. Verify that tokens used exist in `design-system/` | Visual behavior + accessibility + design-system/ conformance. Visual regression required |
-| **Bugfix** | Regression test required: reproduces the bug before the fix and confirms it passes after | Only the reported case + immediate regression |
+| **feature** | Unit for utils/hooks + Component for each new component + Integration for API flows | All criteria + edge cases. Documentation required for new artifacts |
+| **enhancement** | Tests for modified behaviors (unit or component) + update of affected existing tests | Modified criteria + in-scope edge cases. Regression required. Docs if new artifacts |
+| **refactoring** | Tests for preserved behaviors must keep passing; do not add new logic without a test | Preserved behaviors. Regression required. Docs only if the interface changed |
+| **visual-adjustment** | Snapshot or render test confirming the component still renders correctly. Verify that tokens used exist in `design-system/` | Visual behavior + accessibility + design-system/ conformance. Visual regression required |
+| **bugfix** | Regression test required: reproduces the bug before the fix and confirms it passes after | Only the reported case + immediate regression |
 
 ---
 
-## Test quality criteria
+## 2. Code Quality Rules
 
-These criteria apply to both writing (Developer) and validation (QA).
+### 2.1 Test Coverage
 
 | Criterion | Approved | Rejected (quality BUG) |
 |---|---|---|
 | Criteria coverage | Every acceptance criterion has at least 1 test | Criterion without test — High BUG |
-| Edge case coverage | Required edge cases for the Story type have tests | Edge case without test — Medium BUG |
+| Edge case coverage | Required edge cases for the Task Contract type have tests | Edge case without test — Medium BUG |
 | Test behavior | `expect(screen.getByText(...))` | `expect(component.state...)` — Medium BUG |
 | Integration covers API error | There is a 4xx/5xx mock + visual feedback verification | Only tests success — Medium BUG |
 | Regression on bugfix | Reproduces the bug and confirms the fix | Missing — High BUG |
 | Tests pass | All tests pass on execution | Failure — High BUG |
+
+### 2.2 Code Standards
+
+| Criterion | Approved | Rejected (quality BUG) |
+|---|---|---|
 | Design system | Visual styles use `var(--token-name)` from `design-system/tokens.md` — no hardcoded color, font, or spacing values | Hardcode detected or invented token — Medium BUG |
 | Inline CSS | No use of `style=""` or `style={{}}` in JSX — all styling via CSS classes, CSS Modules, or Tailwind | Inline CSS detected — Medium BUG |
-| `transition: all` | CSS transitions must specify explicit properties (e.g., `transition: opacity 200ms`) — never `transition: all` | `transition: all` detected — Medium BUG |
-| `TODO`/`FIXME` | Forbidden in committed code — open an issue/task before committing. Exception: `// TODO(US-XX):` linked to an active Story | `TODO`/`FIXME` without issue reference — Medium BUG |
-| `eslint-disable` | Forbidden without a comment justifying the reason on the same line or the line above | `eslint-disable` without justification — Medium BUG |
-| Animation accessibility | Animations and transitions must respect `@media (prefers-reduced-motion: reduce)` — disable or reduce motion | Animation without `prefers-reduced-motion` — Medium BUG |
-
-**Additional rules:**
-- Test **behavior**, not implementation: prefer `expect(screen.getByText("Saved!")).toBeVisible()` over `expect(component.state.saved).toBe(true)`
-- Each acceptance criterion of the Story must have at least one mapped test
-- Edge cases handled in production code must have a corresponding test
-- Integration tests with API must cover both success **and** error responses
-- Avoid tests that always pass (`expect(true).toBe(true)`) — the QA will reject them
+| `transition` | CSS transitions must specify explicit properties (e.g., `transition: opacity 200ms`) — never `transition: all` | `transition: all` detected — Medium BUG |
+| `TODO`/`FIXME` | Forbidden in committed code. Exception: `// TODO(TC-XX):` linked to an active Task Contract | `TODO`/`FIXME` without issue reference — Medium BUG |
+| `eslint-disable` | Forbidden without a comment justifying the reason on the same or preceding line | `eslint-disable` without justification — Medium BUG |
+| i18n (when `i18n: true`) | No hardcoded user-facing strings — all text via translation keys | Hardcoded string in rendered output — Medium BUG |
+| Commented-out code | Delete disabled code — do not commit commented-out blocks | Commented-out code block detected — Low BUG |
+| XSS — `dangerouslySetInnerHTML` | Forbidden without DOMPurify sanitization + `// eslint-disable-next-line react/no-danger` with justification comment | Raw HTML injection without sanitization — **Critical BUG** |
+| XSS — user input in attributes | User input never interpolated into `href`, `src`, or event handler strings | Unsanitized input in href/src — **Critical BUG** |
+| Error Boundary | Each page/route component wrapped in `<ErrorBoundary>` with non-empty fallback | Missing ErrorBoundary at page level — High BUG |
+| Code splitting | Routes use `React.lazy` + `Suspense` — no eager import of page components | All pages imported eagerly — Medium BUG |
+| Bundle imports | Named imports only for tree-shaking (`import { format } from 'date-fns'`) | `import *` from large library — Medium BUG |
+| Animation accessibility | Animations and transitions wrapped in `@media (prefers-reduced-motion: no-preference)` | Animation without `prefers-reduced-motion` — Medium BUG |
 
 ---
 
-## Edge cases — universal checklist
+## 2.3 Security, Architecture, and Accessibility
 
-For every Story, verify the following:
+> Full rationale, code examples, and enforcement patterns: `.claude/skills/u-fe-development/SKILL.md` §Security, §Error boundaries, §Performance.
+> The rows in §2.2 above are the enforcement checklist — this section is the reference for implementation guidance.
 
-**Handling patterns (Developer):**
+---
 
-| Scenario | How to handle |
-|---|---|
-| Null or undefined input | Guard clause at the beginning of the function |
-| Empty list | Return `[]`, never `null` |
-| Resource not found | Return `null` or throw `NotFoundError` (document which one) |
-| API call returns error (4xx/5xx) | Throw typed error with status, never let it propagate as `unknown` |
-| Data outside expected range | Validate at the input layer (DTO/schema) before processing |
+## 3. Visual Design Rules
 
-**Input data:**
+> **Canonical thresholds:** `u-ui-design/anti-patterns.md` is the single source of truth for detection thresholds. In case of conflict between this section and `anti-patterns.md`, `anti-patterns.md` prevails.
+
+### 3.1 Typography
+
+| Rule | Compliant | Violation (quality BUG) |
+|---|---|---|
+| Line height | `line-height ≥ 1.3` on elements with ≥ 2 lines of text | `line-height < 1.3` on multi-line text — Medium BUG |
+| Body text size | `font-size ≥ 12px` on content elements | `font-size < 12px` on text content — Medium BUG |
+| All-caps body | `text-transform: uppercase` restricted to labels and headings with ≤ 20 characters | `text-transform: uppercase` on element with > 20 characters of text content — Medium BUG |
+| Letter spacing | `letter-spacing ≤ 0.05em` on paragraph and body-level elements | `letter-spacing > 0.05em` on body text — Medium BUG |
+| Heading hierarchy | Heading levels increment by 1 in DOM order (h1 → h2 → h3) | Heading level skips (e.g. h1 → h3 with no h2) — Medium BUG |
+| Justified text | `text-align: left` or `text-align: start` for body text | `text-align: justify` without `hyphens: auto` — Medium BUG |
+
+### 3.2 Color
+
+| Rule | Compliant | Violation (quality BUG) |
+|---|---|---|
+| Gray on color | Text on colored background uses a shade of the background hue — not a neutral gray | Neutral gray text (HSL saturation < 10%) on non-neutral background — Medium BUG |
+| Pure black background | Large surfaces tinted toward brand hue (e.g. `oklch(12% 0.01 250)`) | `background-color: #000` or `rgb(0,0,0)` or `oklch(0% 0 0)` on large surfaces — Medium BUG |
+| Gradient text | Text color is a solid value | `background-clip: text` combined with any gradient function — Medium BUG |
+
+### 3.3 Layout
+
+| Rule | Compliant | Violation (quality BUG) |
+|---|---|---|
+| Line length | Text containers have `max-width` between `65ch` and `75ch` | `<p>`, `<li>`, `<article>` body text with no `max-width` constraint and rendered width > 75ch — Medium BUG |
+| Container padding | Elements with `border` or non-neutral `background-color` have `padding ≥ 8px` | Padding < 8px on bordered or colored container with text content — Medium BUG |
+
+### 3.4 Motion
+
+| Rule | Compliant | Violation (quality BUG) |
+|---|---|---|
+| Layout property animation | Transitions and animations target only `transform` and `opacity`. For height transitions: use `grid-template-rows: 0fr → 1fr` | `transition` or `animation` targeting `width`, `height`, `padding`, or `margin` — Medium BUG |
+| Easing | Easing uses `cubic-bezier` values within `[0, 1]` range (e.g. `cubic-bezier(0.25, 1, 0.5, 1)`) | `cubic-bezier` with y1 or y2 outside `[0, 1]` (overshoot / bounce) — Medium BUG |
+
+### 3.5 CSS Patterns
+
+| Rule | Compliant | Violation (quality BUG) |
+|---|---|---|
+| Side-tab border | Cards and containers use full border, background tint, or no side indicator | `border-left` or `border-right` ≥ 3px with non-neutral color on card/container — or ≥ 1px when `border-radius` is set — Medium BUG |
+| Border on rounded element | Rounded elements (`border-radius > 8px`) do not use top/bottom accent borders | `border-top` or `border-bottom` ≥ 2px with non-neutral color on element with `border-radius > 8px` — Medium BUG |
+
+---
+
+## 4. Edge Case Checklist
+
+> **Accessibility single source of truth:** this section (§4 WCAG 2.1 AA checklist) is the canonical accessibility reference. All other files that reference accessibility (UI spec, design system implementation.md, QA checklist) defer to this section.
+
+### Handling patterns
+
+| Scenario | Developer: handle as | QA: verify |
+|---|---|---|
+| Null or undefined input | Guard clause at function entry | Guard clause present and covered by test |
+| Empty list | Return `[]`, never `null` | `[]` returned and rendered without crash |
+| Resource not found | Return `null` or throw `NotFoundError` — document which | Behavior matches documented contract |
+| API error (4xx/5xx) | Throw typed error with status — never propagate as `unknown` | Typed error thrown and visual feedback shown to user |
+| Data outside expected range | Validate at input layer (DTO/schema) before processing | Boundary values tested |
+
+### Input data
 - [ ] Null or undefined input
 - [ ] Empty string `""`
 - [ ] Zero or negative number
@@ -73,31 +134,41 @@ For every Story, verify the following:
 - [ ] Boundary values (e.g., max characters, min/max of a range)
 - [ ] Special characters and unicode in text fields
 
-**System state:**
+### System state
 - [ ] Behavior when the requested resource does not exist (404 vs error 500)
 - [ ] Behavior with unauthorized user
 - [ ] Behavior with expired session
 
-**API calls (front end consumes as a black box):**
+### API calls
 - [ ] Behavior when the API returns an error (4xx / 5xx) — error message shown to the user?
 - [ ] Behavior with network timeout — loading state interrupted correctly?
 - [ ] Behavior with malformed payload or missing field — crash or graceful fallback?
 
-**Interaction and accessibility:**
-- [ ] Interactive elements work with keyboard (Tab, Enter, Esc)
-- [ ] Images have alt text; forms have associated labels
-- [ ] Focus indicator is visible on focusable elements
+### Interaction and accessibility (WCAG 2.1 AA)
+- [ ] Interactive elements work with keyboard (Tab, Enter, Esc, Space for toggles)
+- [ ] Images have meaningful `alt` text; decorative images use `alt=""`
+- [ ] Forms have associated `<label>` or `aria-label` for every input
+- [ ] Focus indicator visible on all focusable elements (`outline` not suppressed without replacement)
+- [ ] Dynamic content updates announced via `aria-live` or focus management (e.g., modals trap focus)
+- [ ] ARIA roles are semantically correct (`role="button"` only on non-button elements that behave as buttons)
+- [ ] Color is not the only means of conveying information (error state uses icon + text, not red color alone)
+- [ ] Contrast ratio meets WCAG AA: 4.5:1 for normal text, 3:1 for large text and UI components
 
-> **Developer:** handle the applicable scenarios for your Story and document them in the delivery file.
+### Responsive design
+- [ ] Layout is usable at 320px (mobile), 768px (tablet), 1024px (desktop), and 1440px (wide)
+- [ ] No horizontal scroll at any standard breakpoint
+- [ ] Touch targets are at least 44 × 44px on mobile
+
+> **Developer:** handle the applicable scenarios for your Task Contract and document them in the delivery file.
 > **QA:** verify that applicable scenarios were handled and have a corresponding test.
 
 ---
 
-## Bug severity classification
+## 5. Bug Severity Classification
 
-| Severity | Criterion | Impact on the Story |
+| Severity | Criterion | Impact on the Task Contract |
 |---|---|---|
 | **Critical** | System crashes, data corruption, security breach | Reject + block other tests |
-| **High** | Acceptance criterion not met, main flow broken | Reject the Story |
+| **High** | Acceptance criterion not met, main flow broken | Reject the Task Contract |
 | **Medium** | Edge case not handled, inconsistent behavior | Approve with mandatory caveat |
 | **Low** | Cosmetic issue, unclear error message | Log it, does not block approval |

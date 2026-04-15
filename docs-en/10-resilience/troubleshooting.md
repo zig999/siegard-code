@@ -18,11 +18,11 @@ Quick diagnostics for common problems.
 - Use short mode for agent reactivations
 - Divide sessions (1 domain at a time, 1 Epic at a time)
 - Use `/u-spec-triage` instead of fixing all validation errors at once
-- For large backlogs (15+ Stories), the orchestrator auto-compresses logs
+- For large backlogs (15+ Task Contracts), the orchestrator auto-compresses logs
 
-## "Story blocked without apparent reason"
+## "Task Contract blocked without apparent reason"
 
-**Check:** Review `backlog.md` for dependency declarations. A Story may be waiting for another Story to complete first.
+**Check:** Review `backlog.md` for dependency declarations. A Task Contract may be waiting for another Task Contract to complete first.
 
 ## "Spec rejected repeatedly"
 
@@ -40,4 +40,4 @@ Quick diagnostics for common problems.
 
 **Cause:** Token overflow -- the agent's context is saturated and it starts dropping instructions.
 
-**Fix:** Reduce session scope. Process fewer domains or Stories per session.
+**Fix:** Reduce session scope. Process fewer domains or Task Contracts per session.

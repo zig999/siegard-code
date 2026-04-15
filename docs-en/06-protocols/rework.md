@@ -1,6 +1,6 @@
 # Rework Protocol
 
-Correction cycle triggered when QA rejects a Story.
+Correction cycle triggered when QA rejects a Task Contract.
 
 ## Flow
 
@@ -13,19 +13,19 @@ QA rejects -> Developer reactivated (short mode) -> Developer fixes -> QA retest
 1. QA generates rejection report in `us-XX-qa.md` with specific issues
 2. Developer is reactivated in **short mode** (only receives delta + QA feedback)
 3. Developer fixes the identified issues
-4. QA retests the Story
+4. QA retests the Task Contract
 
 ## Limits
 
-- Max **3 rework rounds** per Story
-- If QA still rejects after 3 rounds, the Story is **blocked** and escalated to human
+- Max **3 rework rounds** per Task Contract
+- If QA still rejects after 3 rounds, the Task Contract is **blocked** and escalated to human
 - Escalation includes all 3 QA reports for human review
 
 ## Short mode in rework
 
 The Developer receives only:
 - Agent identity
-- Current Story reference
+- Current Task Contract reference
 - QA rejection report with specific issues
 - Instructions for what to fix
 

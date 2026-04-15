@@ -19,7 +19,7 @@ Extract from `$ARGUMENTS`:
 
 If `SESSION` is provided, the session directory is `{SESSIONS_DIR}/{SESSION}/`.
 
-If `SESSION` is not provided, triage runs normally but when generating improve##.md (Step 5), it will ask the human which session to save to.
+If `SESSION` is not provided, triage runs normally but when writing the improve_scope block (Step 5), it will ask the human which session to save to.
 
 ## Initial Validation
 
@@ -92,7 +92,7 @@ Result:
   - {N} errors pending (not selected)
   - {N} errors escalated to human
 
-File generated: {SESSIONS_DIR}/{SESSION}/improve##.md (work input for /u-dev)
+improve_scope block written to: {SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md
 
 Next steps:
   - Implement the fixes: /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION]

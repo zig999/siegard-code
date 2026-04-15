@@ -119,3 +119,13 @@ Fields:
 - CRs are numbered sequentially per project: CR-01, CR-02, CR-03...
 - Recorded in the Orchestrator log
 - Referenced in the Changelog of each affected file
+
+### CR YAML Artifact
+
+Every CR must also produce a machine-readable artifact:
+
+**Path:** `{SESSIONS_DIR}/{SESSION}/cr-NN.yaml`
+**Schema:** `.claude/skills/u-shared-templates/cr.schema.yaml`
+**NN:** sequential number within the session (match CR-NN number)
+
+Create this file immediately when the CR is opened. The handoff gate reads all `cr-NN.yaml` files in the session to check for blocking open CRs before delivering to the Dev group.

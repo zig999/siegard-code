@@ -24,21 +24,21 @@ Token consumption and approximate time per operating mode. These are estimates b
 
 | Mode | Tokens (approx) | Time (approx) | Scope |
 |------|-----------------|---------------|-------|
-| **Per Story (spec-first)** | ~14K | 10-18 min | Per Story |
-| **Per Story (improve)** | ~10K | 8-13 min | Per Story |
+| **Per Task Contract (spec-first)** | ~14K | 10-18 min | Per Task Contract |
+| **Per Task Contract (improve)** | ~10K | 8-13 min | Per Task Contract |
 | **E2E integration (fullstack)** | ~3K | 2-4 min | Per session |
 
 ### Fullstack overhead
 
-Fullstack sessions run BE and FE phases sequentially, so total time is additive. The E2E integration validation adds ~3K tokens when cross-domain stories exist. The meta-orchestrator itself has minimal overhead (~1K tokens for phase coordination).
+Fullstack sessions run BE and FE phases sequentially, so total time is additive. The E2E integration validation adds ~3K tokens when cross-domain Task Contracts exist. The meta-orchestrator itself has minimal overhead (~1K tokens for phase coordination).
 
 ## Pre-execution estimate
 
 Before starting, every orchestrator presents a token and time projection based on:
-- Number of domains (spec) or Stories (dev)
+- Number of domains (spec) or Task Contracts (dev)
 - Operating mode
 - Complexity indicators
-- For fullstack: stories per phase and cross-domain story count
+- For fullstack: Task Contracts per phase and cross-domain Task Contract count
 
 The user can proceed or abort based on this estimate.
 
@@ -47,5 +47,5 @@ The user can proceed or abort based on this estimate.
 - **Short mode** reduces reactivation from ~15K to ~2K tokens
 - **Context mounting** loads only what each agent needs
 - **Triage** processes 5-10 items per session instead of all at once
-- **Compressed logs** for sessions with 15+ Stories
-- **Scope filtering** in fullstack mode ensures each phase loads only relevant stories
+- **Compressed logs** for sessions with 15+ Task Contracts
+- **Scope filtering** in fullstack mode ensures each phase loads only relevant Task Contracts

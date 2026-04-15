@@ -1,0 +1,104 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/compliance-finding.schema.yaml"
+title: compliance-finding
+description: >
+  Structured output of u-spec-compliance.
+  Produced during the spec pipeline after Final Validator, before handoff.
+  Each finding maps to a deterministic action — no regulatory interpretation by downstream agents.
+  action=block_handoff: spec cannot be delivered until the finding is resolved.
+  action=create_spec_cr: a Change Request must be opened to resolve the gap.
+  action=add_warning: advisory — Developer must be aware but handoff is not blocked.
+  Regulation support is declared in CLAUDE.md under compliance: [gdpr, pci_dss, hipaa, sox, lgpd].
+type: object
+required:
+  - scan
+  - findings
+  - verdict
+additionalProperties: false
+properties:
+
+  scan:
+    type: object
+    required: [id, reviewed_by, domain, spec_version, timestamp, layer, regulations_checked]
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        pattern: "^CMP-[0-9]{8}-[0-9]{6}$"
+        description: "Format: CMP-YYYYMMDD-HHMMSS"
+      reviewed_by:
+        type: string
+        const: "u-spec-compliance"
+      domain:
+        type: string
+      spec_version:
+        type: string
+        pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+      timestamp:
+        type: string
+        pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+      layer:
+        type: string
+        const: "permanent"
+      regulations_checked:
+        type: array
+        items:
+          type: string
+          enum: [gdpr, pci_dss, hipaa, sox, lgpd]
+        minItems: 1
+
+  findings:
+    type: array
+    items:
+      type: object
+      required: [id, regulation, article_or_control, type, location, gap_description, action]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^CFND-[0-9]{3}$"
+        regulation:
+          type: string
+          enum: [gdpr, pci_dss, hipaa, sox, lgpd]
+        article_or_control:
+          type: string
+          description: "e.g. GDPR Art.5(1)(b) | PCI DSS Req 6.3 | HIPAA 164.312(a)(1)"
+        type:
+          type: string
+          enum:
+            - missing_data_retention_policy
+            - missing_consent_mechanism
+            - missing_audit_log
+            - pii_field_undeclared
+            - missing_encryption_at_rest
+            - missing_encryption_in_transit
+            - missing_access_control_definition
+            - missing_data_minimization
+            - missing_breach_notification_spec
+            - missing_right_to_erasure
+            - hardcoded_pii_in_spec_example
+            - missing_segregation_of_duties
+        location:
+          type: object
+          required: [file, section]
+          additionalProperties: false
+          properties:
+            file:
+              type: string
+            section:
+              type: string
+              description: "e.g. §3 Business Rules | paths: POST /users"
+        gap_description:
+          type: string
+          description: "Single sentence: what is missing or non-compliant. No regulatory interpretation — states the structural gap only."
+        action:
+          type: string
+          enum: [block_handoff, create_spec_cr, add_warning]
+        required_spec_change:
+          type: string
+          description: "Single sentence: what must be added or changed in the spec to resolve. Populated when action=block_handoff or create_spec_cr."
+
+  verdict:
+    type: string
+    enum: [compliant, compliant_with_crs, non_compliant]
+    description: "compliant: no findings or only add_warning. compliant_with_crs: medium findings with CRs created. non_compliant: any block_handoff finding."

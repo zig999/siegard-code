@@ -46,7 +46,7 @@ Detection is based on dependency manifests, file patterns, and import analysis. 
 All artifacts use the same templates as the Spec Writer but receive `draft` status:
 - `domains/{domain}/openapi.yaml`
 - `{domain}.spec.md`, `{domain}.back.md`
-- `front/screens/{screen}.screen.md`
+- `front/features/{feature}.feature.spec.md`
 - `front/_flows/{flow}.flow.md`
 - `_meta/origin-reverse-spec.md` -- Origin marker for `/u-spec` detection
 

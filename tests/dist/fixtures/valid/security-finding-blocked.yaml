@@ -1,0 +1,20 @@
+scan:
+  id: "SEC-20260410-150000"
+  reviewed_by: "u-security-reviewer"
+  task_contract: "TC-021"
+  timestamp: "2026-04-10T15:00:00Z"
+  layer: "semi-permanent"
+  files_scanned:
+    - "src/controllers/auth.controller.ts"
+findings:
+  - id: "SFND-001"
+    type: "injection"
+    severity: "critical"
+    location:
+      file: "src/controllers/auth.controller.ts"
+      line_range: "45-52"
+      symbol: "loginUser"
+    evidence: "User input concatenated directly into SQL query without parameterization"
+    action: "block_tc"
+    cwe_id: "CWE-89"
+verdict: "blocked"

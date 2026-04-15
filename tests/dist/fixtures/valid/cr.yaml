@@ -1,0 +1,26 @@
+id: CR-01
+reported_by: u-fe-developer
+timestamp: "2026-04-09T12:00:00Z"
+task: TC-01
+epic: EPIC-01
+artifact:
+  path: specs/auth/front.md
+  section: "§3 Business Rules"
+  version: 1.0.0
+type: spec_gap
+description: Password validation rules are absent from the spec.
+evidence:
+  - Section §3 does not define minimum password length.
+proposed_change: "N/A"
+impact:
+  dev_blocked: true
+  task_contracts_affected:
+    - TC-01
+  scope: medium
+resolution:
+  status: open
+  decided_by: ""
+  decision: ""
+  spec_updated: false
+  delivery_updated: false
+  timestamp: ""

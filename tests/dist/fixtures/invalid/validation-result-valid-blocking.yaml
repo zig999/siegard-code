@@ -1,0 +1,22 @@
+# INVALID FLOW: status=VALID but blocking_count=1 — violates FLOW-002 and FLOW-003
+# Passes JSON Schema validation but fails Layer 5 flow invariant.
+validation:
+  domain: auth
+  artifact_version: 1.0.0
+  mode: incremental_back
+  validated_by: u-spec-validator
+  timestamp: "2026-04-09T13:00:00Z"
+  layer: permanent
+
+status: VALID
+blocking_count: 1
+warning_count: 0
+handoff_allowed: true
+blocking_issues:
+  - id: ISSUE-001
+    type: cross-ref
+    source: specs/auth/back.md §4
+    description: Endpoint POST /auth/login is not defined in openapi.yaml.
+    responsible: u-spec-back
+    suggested_fix: Add POST /auth/login to openapi.yaml.
+warnings: []

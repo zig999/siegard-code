@@ -1,19 +1,20 @@
-# Template: us-XX-infra-pending-items.md
+# Template: tc-XX-infra-pending-items.md
 
-Save to `{SESSIONS_DIR}/{SESSION}/us-XX-infra-pending-items.md`:
+Save to `{SESSIONS_DIR}/{SESSION}/tc-XX-infra-pending-items.md`:
 
 ```markdown
-# Infrastructure Pending Items: US-XX — [Story Title]
+# Infrastructure Pending Items: TC-XX — [Task Contract Title]
 
 **Date:** YYYY-MM-DD
-**Story:** US-XX
+**Layer:** semi-permanent
+**Task:** TC-XX
 **Overall status:** Partial block | Implementable with mocks | Total block
 
 ---
 
 ## Summary
 
-[Brief description of what the Story needs from infrastructure and the current state]
+[Brief description of what the Task Contract needs from infrastructure and the current state]
 
 ---
 

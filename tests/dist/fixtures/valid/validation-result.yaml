@@ -1,0 +1,18 @@
+validation:
+  domain: auth
+  artifact_version: 1.0.0
+  mode: final_complete
+  validated_by: u-spec-validator
+  timestamp: "2026-04-09T12:00:00Z"
+  layer: permanent
+
+status: VALID
+blocking_count: 0
+warning_count: 1
+handoff_allowed: true
+blocking_issues: []
+warnings:
+  - id: WARN-001
+    type: coverage
+    source: specs/auth/front.md §6
+    description: BDD scenario for password reset not covered.

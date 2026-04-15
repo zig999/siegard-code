@@ -1,0 +1,12 @@
+session: "2026-04-10-001"
+layer: "semi-permanent"
+generated_by: "u-fullstack-orchestrator"
+generated_at: "2026-04-10T14:00:00Z"
+be_phase_status: "in_progress"
+endpoints:
+  - task_contract: "TC-001"
+    endpoint: "/api/users"
+    methods: ["GET"]
+    status: "done"
+api_contract_status: "up_to_date"
+known_deviations_count: 0

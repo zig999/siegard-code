@@ -271,50 +271,47 @@ After the Validator returns, the **Orchestrator** (not the Validator) updates th
 
 ## Step 5: Selective handoff and Dev input generation
 
-### 5.1 Automatically generate improve##.md
+### 5.1 Write improve_scope block to session log
 
-After the selected items are successfully corrected, the Orchestrator MUST generate an `improve##.md` in the `{SESSIONS_DIR}/{SESSION}` (dev session folder) so that `/u-dev` has a work entry. This file connects the triage to the development pipeline.
+After the selected items are successfully corrected, the Orchestrator MUST write an `improve_scope` block to `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md` so that `/u-dev` has a work entry. This block connects the triage to the development pipeline.
 
-If `SESSION` was provided in the command: ``
-If `SESSION` was not provided: ask the human for the session name and create `{SESSIONS_DIR}/{SESSION}/`.
+If `SESSION` was provided in the command: use it directly.
+If `SESSION` was not provided: ask the human for the session name and create `{SESSIONS_DIR}/{SESSION}/` if it does not exist.
 
-**Number detection:** check existing `improve*.md` files in `{SESSIONS_DIR}/{SESSION}` and use the next sequential number.
+If `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md` does not exist: create it with the improve_scope block as the only content. If it already exists: append the block at the end of the file.
 
 **Format:**
 
-```markdown
-# Improve #NN — Spec corrections via triage
-
-_Generated on: {YYYY-MM-DD}_
-_Via: /u-spec-triage (automatic)_
-
----
-
-**Where:** {list of affected screens/files}
-
-## Desired behavior
-
-The following specs were corrected by the validation triage and need to be implemented:
-
-| # | Changed spec | Change | Affected UIs |
-|---|-------------|--------|--------------|
-| 1 | {screen}.screen.md | {correction description} | UI-NN |
-| 2 | ... | ... | ... |
-
-## Origin
-- Validation triage: {date}
-- Corrected items: #{list}
-- Domain(s): {list}
-
-## Open questions
-None
+```yaml
+improve_scope:
+  source: spec-triage
+  generated_on: {YYYY-MM-DD}
+  session: {SESSION}
+  affected_specs:
+    - {path to each corrected spec file}
+  estimated_task_contracts: {count of task_contracts entries}
+  task_contracts:
+    - description: "{correction description}"
+      type: bugfix
+      priority: P1
+      affected_files:
+        - {changed spec file}
+        - {affected UI or flow file if applicable}
+  planner_required: {true|false}
+  spec_change_status: completed
 ```
 
+**Field rules:**
+- `source: spec-triage` — always set (distinguishes from `/u-improve` origin)
+- `affected_specs` — list all spec files modified during triage (back.md, feature.spec.md, flow.md, etc.)
+- `estimated_task_contracts` — set to `len(task_contracts)` for compatibility with u-improve-mode.md Planner activation
+- `task_contracts` — one entry per corrected inconsistency group; type is always `bugfix`
+- `planner_required: false` — when all items are cosmetic/patch corrections (typos, missing refs, isolated fields); `true` — when corrections affect an endpoint contract, UC flow, or multiple domains
+- `spec_change_status: completed` — always set (specs were already corrected by triage before this block is written)
+
 **Rules:**
-- Generate ONE `improve##.md` per triage session (groups all corrected items)
-- If the triage only corrected back-end specs (.back.md), the improve should reflect that
-- If the triage corrected screens/front specs, list each changed screen with the specific change
-- Never overwrite existing improves — always use the next number
+- Write ONE `improve_scope` block per triage session (groups all corrected items)
+- Never overwrite an existing `improve_scope` block — append a new one if the file already contains one
 
 ### 5.2 Spec handoff
 
@@ -334,8 +331,8 @@ Update `{SPECS_DIR}/spec-changelog-notify.md` per the handoff protocol, includin
 **Summary:** {1 sentence}
 **Impact on Dev:**
 - patch: no action needed
-- minor: re-evaluate domain Stories
-- major: STOP domain Stories until re-evaluation
+- minor: re-evaluate domain Task Contracts
+- major: STOP domain Task Contracts until re-evaluation
 ```
 
 #### When pending items remain
@@ -347,7 +344,7 @@ DO NOT hand off — the domain only goes to Dev when VALID. Record in the log th
 When completing the triage, inform the human:
 
 ```
-Generated file: {SESSIONS_DIR}/{SESSION}/improve##.md
+improve_scope block written to: {SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md
 
 Next step:
   /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION] — the Planner will generate a backlog from the triage improvements
@@ -389,5 +386,5 @@ Record in `log-orchestrator-spec.md`:
 4. **Maintain idempotency** — if the same item is selected in a later session and is already resolved, detect and skip
 5. **Do not overwrite history** — each triage session ADDS to the history, never replaces
 6. **Compatibility with synchronous flow** — if the human does not use `/u-spec-triage`, the current synchronous flow continues to work normally. Persistence is additive, not substitutive
-7. **Stale reports** — if specs were modified after the report was persisted (spec timestamp > report timestamp), alert the human before starting triage: "Specs have been modified since the last validation. Recommended: revalidate with `/u-spec` before triaging."
+7. **Stale reports** — before starting triage, read `{domain}-validation-result.yaml` field `validation.artifact_version` and compare with `version:` in the frontmatter of `{domain}.spec.md`. If they differ, alert the human before proceeding: "Validation result was generated from spec v{X}, current spec is v{Y}. Recommended: revalidate with `/u-spec` before triaging."
 8. **Concurrency** — if `Triage: IN_PROGRESS`, alert the human before starting a new session: "Triage in progress for this domain. Do you want to continue the previous session or restart?"

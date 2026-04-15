@@ -34,8 +34,10 @@ Complete reference of all system variables and identifiers.
 | BR-NN | Business Rule | `.back.md` | Backend implementation rules |
 | ST-NN | State Machine state | `.back.md` | State transitions |
 | EV-NN | Domain Event | `.back.md` | Async communication |
-| UI-NN | UI State | `.screen.md` | Component states |
-| FL-NN | Navigation Flow | `.flow.md` | Screen transitions |
+| FEAT-NN | Feature (route spec) | `.feature.spec.md` header | Frontend feature; referenced as "per FEAT-NN §9" in Task Contract `bdd_ref` field |
+| UI-NN | UI State | `.feature.spec.md §2` | Feature states |
+| FL-NN | Navigation Flow | `.flow.md` | Feature transitions |
+| DEC-NN | Architecture Decision | `decisions.md` | Non-obvious decisions; active entries override SKILL defaults |
 
 ## Frontend vs Backend differences
 
@@ -43,7 +45,7 @@ Complete reference of all system variables and identifiers.
 |--------|----------|---------|
 | Pipeline | Planner -> UI Agent -> Developer -> QA | Planner -> Developer -> QA |
 | UI Agent | Yes | No |
-| Spec consumption | `.screen.md`, `.flow.md`, `front.md` | `.back.md`, `openapi.yaml` |
+| Spec consumption | `.feature.spec.md`, `.component.spec.md`, `.flow.md`, `front.md` | `.back.md`, `openapi.yaml` |
 | Traceability | UI-NN | UC-NN, BR-NN |
 | Dependency report | `us-XX-backend-pending-items.md` | `us-XX-infra-pending-items.md` |
 | Context mounting | 7 protocol files (includes UI) | 6 protocol files |

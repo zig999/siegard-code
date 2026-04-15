@@ -26,9 +26,9 @@ Before testing, extract from `CLAUDE.md`:
 
 ---
 
-## Verification scope by Story type
+## Verification scope by Task Contract type
 
-> Refer to the unified **mandatory tests per Story type** table in `standards/SKILL.md`. Apply only the required checks for the Story type — do not run the universal checklist on narrow-scope Stories.
+> Refer to the unified **mandatory tests per Task Contract type** table in `.claude/skills/u-fe-standards/SKILL.md`. Apply only the required checks for the Task Contract type — do not run the universal checklist on narrow-scope Task Contracts.
 
 ---
 
@@ -85,7 +85,7 @@ The diagnosis must be **actionable** — the Developer should be able to fix the
 
 The QA fills the matrix based on tests **delivered by the Developer**, not tests created by the QA.
 
-For each acceptance criterion: locate the test in `us-XX-delivery.md` ("Tests written" section) and record it in the matrix. If it does not exist, record the absence as a BUG.
+For each acceptance criterion: locate the test in `tc-XX-delivery.md` ("Tests written" section) and record it in the matrix. If it does not exist, record the absence as a BUG.
 
 ```markdown
 | ID    | Scenario                                   | Type        | Priority | Test file                      | Result |
@@ -97,14 +97,14 @@ For each acceptance criterion: locate the test in `us-XX-delivery.md` ("Tests wr
 | T-05  | Edge: API returns error 500                | Integration | High     | `page.spec.tsx` (L.102)       | Passed |
 ```
 
-High priority -> must pass to approve the Story.
+High priority -> must pass to approve the Task Contract.
 Medium/Low priority -> absence generates a caveat, not automatic rejection.
 
 ---
 
 ## Edge cases, severity, and quality standards
 
-> Refer to `standards/SKILL.md` (single source of truth) for: universal edge-case checklist, bug severity classification, and test quality criteria.
+> Refer to `.claude/skills/u-fe-standards/SKILL.md` (single source of truth) for: universal edge-case checklist, bug severity classification, and test quality criteria.
 
 ---
 
@@ -116,7 +116,7 @@ Medium/Low priority -> absence generates a caveat, not automatic rejection.
 
 ## Documentation verification
 
-In the SDD flow, behavior documentation already exists in the spec (`screen.md`, `flow.md`, `openapi.yaml`). The QA’s role is not to generate documentation — it is to verify that the Developer delivered the required inline documentation.
+In the SDD flow, behavior documentation already exists in the spec (`feature.spec.md`, `flow.md`, `openapi.yaml`). The QA’s role is not to generate documentation — it is to verify that the Developer delivered the required inline documentation.
 
 ### What to verify
 
@@ -132,7 +132,18 @@ In the SDD flow, behavior documentation already exists in the spec (`screen.md`,
 
 ## Definition of Done — full checklist
 
-A Story can only move to `Done` when **all** items below are checked:
+A Task Contract can only move to `Done` when **all** items below are checked:
+
+**Code quality (verify before running tests):**
+- [ ] No `console.log` in modified production files — Quality BUG (Medium) if found
+- [ ] No `dangerouslySetInnerHTML` without DOMPurify — Security BUG (Critical) if found
+- [ ] No `export default` for components or types — Quality BUG (Medium) if found
+- [ ] No `any` without justification comment — Quality BUG (Medium) if found
+- [ ] No `TODO`/`FIXME` without Task Contract reference — Quality BUG (Medium) if found
+- [ ] No commented-out code blocks — Quality BUG (Low) if found
+- [ ] No inline CSS (`style=` / `style={{`) — Quality BUG (Medium) if found
+- [ ] ErrorBoundary present at page/route level for new pages — Quality BUG (High) if missing
+- [ ] No hardcoded user-facing strings when `i18n: true` — Quality BUG (Medium) if found
 
 **Tests:**
 - [ ] All acceptance criteria have at least one corresponding test
@@ -146,9 +157,9 @@ A Story can only move to `Done` when **all** items below are checked:
 - [ ] New environment variables are in `.env.example` — if missing: quality BUG (Low)
 
 **Traceability:**
-- [ ] QA report generated at `{SESSIONS_DIR}/{SESSION}/us-XX-qa.md` with round number
+- [ ] QA report generated at `{SESSIONS_DIR}/{SESSION}/tc-XX-qa.md` with round number
 - [ ] Bugs logged with severity and reproduction steps
-- [ ] Story status in `backlog.md` updated to `Done`
+- [ ] Task Contract status in `backlog.md` updated to `Done`
 - [ ] Orchestrator-Dev notified of the final verdict
 
 **Round protocol:**
@@ -160,4 +171,4 @@ A Story can only move to `Done` when **all** items below are checked:
 
 ## QA report template
 
-> When generating `us-XX-qa.md`, read the full template at `.claude/skills/u-fe-templates/qa-report.md`.
+> When generating `tc-XX-qa.md`, read the full template at `.claude/skills/u-fe-templates/qa-report.md`.

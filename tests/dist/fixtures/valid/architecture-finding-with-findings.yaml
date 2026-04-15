@@ -1,0 +1,32 @@
+scan:
+  id: "ARCH-20260410-150000"
+  reviewed_by: "u-architecture-reviewer"
+  epic: "EPIC-04"
+  timestamp: "2026-04-10T15:00:00Z"
+  layer: "semi-permanent"
+  deliveries_scanned:
+    - "TC-040"
+    - "TC-041"
+    - "TC-042"
+findings:
+  - id: "AFND-001"
+    pattern: "god_service"
+    severity: "P1"
+    locations:
+      - file: "src/services/order.service.ts"
+        symbol: "OrderService"
+    detection_evidence: "OrderService has 18 public methods spanning order creation, inventory, payment, and notification concerns"
+    action: "create_refactoring_tc"
+    suggested_tc_objective: "Split OrderService into OrderCoreService, InventoryService, and NotificationService"
+summary:
+  total_findings: 1
+  by_action:
+    create_refactoring_tc: 1
+    create_tech_debt_tc: 0
+    escalate_to_human: 0
+  tcs_to_create:
+    - type: "refactoring"
+      priority: "P1"
+      scope: "backend"
+      objective: "Split OrderService into OrderCoreService, InventoryService, and NotificationService"
+      origin_finding: "AFND-001"

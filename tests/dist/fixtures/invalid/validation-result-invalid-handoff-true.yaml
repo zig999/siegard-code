@@ -1,0 +1,28 @@
+# INVALID FLOW: status=INVALID but handoff_allowed=true — violates FLOW-002
+# Passes JSON Schema validation but fails Layer 5 flow invariant.
+validation:
+  domain: auth
+  artifact_version: 1.0.0
+  mode: final_complete
+  validated_by: u-spec-validator
+  timestamp: "2026-04-09T12:00:00Z"
+  layer: permanent
+
+status: INVALID
+blocking_count: 2
+warning_count: 0
+handoff_allowed: true
+blocking_issues:
+  - id: ISSUE-001
+    type: cross-ref
+    source: specs/auth/back.md §4
+    description: Endpoint POST /auth/login is not defined in openapi.yaml.
+    responsible: u-spec-back
+    suggested_fix: Add POST /auth/login to openapi.yaml.
+  - id: ISSUE-002
+    type: missing-file
+    source: specs/auth/front.md
+    description: Front spec file not found.
+    responsible: u-spec-front
+    suggested_fix: Create specs/auth/front.md.
+warnings: []

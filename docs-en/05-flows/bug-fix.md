@@ -27,7 +27,7 @@ Structured bug documentation and correction.
 3. If the bug reveals a spec gap:
    - Run `/u-spec` to correct the specification first
 4. Run `/u-dev` -- The orchestrator detects Bug mode
-5. Planner classifies bug priority (P0/P1) and generates fix Stories
+5. Planner classifies bug priority (P0/P1) and generates fix Task Contracts
 
 ### Bug pipeline variants
 

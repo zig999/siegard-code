@@ -1,0 +1,43 @@
+task_contract:
+  id: TC-02
+  epic: EPIC-01
+  origin: UC-02
+  type: bugfix
+  priority: P1
+  scope: backend
+  estimate: S
+  dependencies: []
+  persona_coverage:
+    - end-user
+  bdd_ref: "FEAT-01 §9"
+
+execution_contract:
+  exec_type: code_generation
+  objective: Fix null pointer exception in user profile endpoint.
+  input:
+    references:
+      - path: specs/users/users.back.md
+        section: "§2"
+        version: 1.0.0
+    known_context:
+      - User profiles are stored in PostgreSQL.
+    assumptions_allowed: []
+  constraints: []
+  output:
+    format: yaml
+    schema:
+      - files_created
+      - files_modified
+      - acceptance_criteria_coverage
+      - edge_cases
+      - spec_divergences
+      - tech_debt
+      - tests
+      - inference_log
+  validation:
+    criteria:
+      - Endpoint returns 200 when user exists.
+      - Endpoint returns 404 when user does not exist.
+  fallback:
+    on_missing_input: blocked
+    template: .claude/skills/u-shared-templates/blocked-report.yaml

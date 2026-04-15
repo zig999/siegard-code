@@ -73,13 +73,14 @@ If `{SPECS_DIR}/` already exists, do not overwrite _global/ or _templates/.
     {domain}/                   <- one folder per domain (kebab-case)
       back/                     <- subfolder for backend spec
       front/                    <- subfolder for frontend spec
-  front/                        <- separate folder for screens (frontend)
-    screens/                    <- one screen per file
+  front/                        <- separate folder for features (frontend)
+    features/                   <- one feature spec per file (1 feature = 1 URL)
+    components/                 <- component specs (shared components only)
     _flows/                     <- navigation flows
   _meta/                        <- system markers
 ```
 
-> **CRITICAL RULE:** Each domain has its own folder inside `{SPECS_DIR}/domains/`. NEVER place spec files at the root of `{SPECS_DIR}/` or create domain folders directly in `{SPECS_DIR}/`. The folder structure follows the pattern defined in `manual-spec-agents.md` section 2.
+> **CRITICAL RULE:** Each domain has its own folder inside `{SPECS_DIR}/domains/`. NEVER place spec files at the root of `{SPECS_DIR}/` or create domain folders directly in `{SPECS_DIR}/`. The folder structure follows the naming conventions defined in `.claude/skills/u-spec-globals/conventions.md`.
 
 Concrete example for a project with domains `auth` and `tasks`:
 
@@ -101,9 +102,10 @@ Concrete example for a project with domains `auth` and `tasks`:
       back/
         tasks.back.md
   front/
-    screens/
-      login.screen.md
-      task-list.screen.md
+    features/
+      login.feature.spec.md
+      task-list.feature.spec.md
+    components/                 <- only shared components (2+ features or complex logic)
     _flows/
       auth.flow.md
   openapi.root.yaml
@@ -131,9 +133,9 @@ DOMAIN: {domain}
   [Next domain]
 ```
 
-**Frontend — different flow: SCREENS first, domains derived:**
+**Frontend — different flow: FEATURES first, domains derived:**
 
-> In frontend, the primary entities are SCREENS and FLOWS, not domains. Domains are derived from the APIs each screen consumes. A screen can consume multiple domains. State/fetching/error decisions per domain are documented directly in each screen's `.screen.md`.
+> In frontend, the primary entities are FEATURES (= routes/URLs) and FLOWS, not domains. Domains are derived from the APIs each feature consumes. A feature can consume multiple domains. State/fetching/error decisions per domain are documented directly in each feature's `.feature.spec.md`. Modals without URL change = states of the same feature. Multi-step wizards that change URL = multiple features.
 
 ```
 PHASE A: Ensure openapi.yaml per consumed domain
@@ -146,11 +148,11 @@ PHASE A: Ensure openapi.yaml per consumed domain
        - If not: generate openapi.yaml with endpoints consumed by the frontend
   |
   v
-PHASE B: Generate .screen.md per screen
+PHASE B: Generate .feature.spec.md per feature (route)
   |
-  For each screen identified in the analysis-report:
+  For each feature/route identified in the analysis-report:
     v
-    3. Generate {SPECS_DIR}/front/screens/{screen}.screen.md  <- UI states, APIs, validations, fetching
+    3. Generate {SPECS_DIR}/front/features/{feature}.feature.spec.md  <- UI states, APIs, validations, BDD
   |
   v
 PHASE C: Generate .flow.md per flow
@@ -160,7 +162,7 @@ PHASE C: Generate .flow.md per flow
     4. Generate {SPECS_DIR}/front/_flows/{flow}.flow.md  <- navigation, guards, deep links
 ```
 
-> **IMPORTANT (merge mode with backend specs):** If `{SPECS_DIR}/domains/{domain}/openapi.yaml` and `{SPECS_DIR}/domains/{domain}/{domain}.spec.md` already exist (copied from backend), do NOT overwrite. Only generate frontend artifacts: `.screen.md`, `.flow.md`.
+> **IMPORTANT (merge mode with backend specs):** If `{SPECS_DIR}/domains/{domain}/openapi.yaml` and `{SPECS_DIR}/domains/{domain}/{domain}.spec.md` already exist (copied from backend), do NOT overwrite. Only generate frontend artifacts: `.feature.spec.md`, `.flow.md`.
 
 > **CRITICAL RULE: Each domain MUST have its own `openapi.yaml` at `{SPECS_DIR}/domains/{domain}/openapi.yaml`. There is ONE openapi.yaml PER DOMAIN — not a single global file. The `openapi.root.yaml` at the root of `{SPECS_DIR}/` is only a `$ref` aggregator generated afterward. NEVER skip generating a domain's openapi.yaml.**
 
@@ -226,32 +228,37 @@ Using `TEMPLATE.back.md`:
 - **Events (EV-NN):** events with payload and consumers
 - **External Integrations:** external HTTP calls, SDKs
 
-#### 3.4 Generate `{SPECS_DIR}/front/screens/{screen}.screen.md` (frontend — one per SCREEN)
+#### 3.4 Generate `{SPECS_DIR}/front/features/{feature}.feature.spec.md` (frontend — one per FEATURE/ROUTE)
 
-Path: **`{SPECS_DIR}/front/screens/{screen}.screen.md`** — in `{SPECS_DIR}/front/screens/`, OUTSIDE the domain folder.
+Path: **`{SPECS_DIR}/front/features/{feature}.feature.spec.md`** — in `{SPECS_DIR}/front/features/`, OUTSIDE the domain folder.
 
-> A screen can consume multiple domains. The `.screen.md` lists ALL consumed domains and their endpoints. The division does not follow domains — it follows actual screens in the code.
+> A feature = 1 URL/route. Modals without URL change = states of the same feature. A feature can consume multiple domains. The `.feature.spec.md` lists ALL consumed domains and their endpoints. The division does not follow domains — it follows actual routes in the code.
 
-Use the "Identified Screens" section from the analysis-report (section 5.X).
+Use the "Identified Screens/Routes" section from the analysis-report (section 5.X). File name = route slug (e.g., `login.feature.spec.md`, `order-detail.feature.spec.md`).
 
-Using `TEMPLATE.screen.md`, for each screen:
-- **Consumed Domains:** table with domain + operationId + endpoint + purpose
-  - Derive from the "Consumed APIs (by domain)" subsection of the screen in the analysis-report
-  - A screen consuming 3 domains will have 3+ rows in this table
-- **Screen States (UI-NN):**
+Using `TEMPLATE.feature.spec.md`, for each feature:
+- **§1 Consumed Endpoints:** table with Domain | operationId | Purpose
+  (Method+Path and Auth required are in the domain's openapi.yaml, accessible by operationId — do not duplicate here)
+  - Derive from the "Consumed APIs (by domain)" subsection in the analysis-report
+  - A feature consuming 3 domains will have 3+ rows
+- **§2 Feature States (UI-NN):** include explicit `Entry condition` for each state
   - UI-01 idle: always include
-  - UI-02 loading: if skeleton/spinner found in analysis-report, describe; if ABSENT, mark `<!-- TO CONFIRM: loading state not found in code -->`
+  - UI-02 loading: if skeleton/spinner found in analysis-report; if ABSENT, mark `<!-- TO CONFIRM: loading state not found in code -->`
   - UI-03 success: always include
   - UI-04 error: if handler found; if ABSENT, mark as gap
   - UI-05 empty: if empty state found; if ABSENT, mark as gap
   - Add custom states found in the analysis-report
-- **Behavior per State:** table with state, what to display, action, transition
-- **Requests and Order:** list API calls by priority (critical/normal/lazy)
-- **Input Validations:** from forms found in the analysis-report
-  - Fields, rules, messages, and when it validates (blur/submit/change)
-- **API Error -> UI Mapping:** for EACH consumed endpoint, how the error is handled
-  - Derive from the "Error handling per API" subsection of the screen in the analysis-report
+- **§3 State Transition Table:** From | Trigger | To | Side Effect
+  - Side effects: cache invalidation, redirects, analytics, local state reset
+- **§4 Requests, Order and Cache:** list API calls by priority (critical/normal/lazy), TTL, revalidation
+- **§5 Input Validations:** from forms found in the analysis-report; fields, rules, messages, timing
+- **§6 API Error → UI Mapping:** for EACH consumed endpoint, how the error is handled
+  - Derive from the "Error handling per API" subsection in the analysis-report
   - Gaps (unhandled errors) marked explicitly
+- **§7 Shared Components Used:** only globally reusable components found in the code
+- **§8 Feature Accessibility:** derive from aria attributes, keyboard handlers found in code
+- **§9 BDD Scenarios:** leave as `<!-- TO CONFIRM: BDD scenarios cannot be reliably reverse-engineered — define manually after review -->`. Do NOT invent scenarios.
+- **§10 Components to Create/Update:** leave as `<!-- TO CONFIRM: component classification requires review -->`
 
 #### 3.5 Generate `{SPECS_DIR}/front/_flows/{flow}.flow.md` (frontend — one per FLOW)
 
@@ -329,6 +336,7 @@ Before delivering, verify:
 - [ ] Changelog populated in all files
 - [ ] No vague terms: "adequate", "generally", "etc."
 - [ ] Uncertain items marked with `<!-- TO CONFIRM -->`
+- [ ] Feature specs (§9 BDD and §10 Components) have `<!-- TO CONFIRM -->` placeholders — never invented
 
 ---
 
@@ -348,7 +356,7 @@ Before delivering, verify:
 - `{SPECS_DIR}/domains/{domain}/openapi.yaml` — HTTP contract (backend)
 - `{SPECS_DIR}/domains/{domain}/{domain}.spec.md` — business spec
 - `{SPECS_DIR}/domains/{domain}/back/{domain}.back.md` — backend spec (if backend)
-- `{SPECS_DIR}/front/screens/{screen}.screen.md` — screen specs (if frontend)
+- `{SPECS_DIR}/front/features/{feature}.feature.spec.md` — feature specs (if frontend; §9 and §10 are `<!-- TO CONFIRM -->` placeholders)
 - `{SPECS_DIR}/front/_flows/{flow}.flow.md` — flow specs (if frontend)
 - `{SPECS_DIR}/_global/error-codes.md` — error catalog
 - `{SPECS_DIR}/_global/glossary.md` — glossary

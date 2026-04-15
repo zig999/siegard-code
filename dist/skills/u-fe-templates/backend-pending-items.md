@@ -1,12 +1,13 @@
-# Template: us-XX-backend-pending-items.md
+# Template: tc-XX-backend-pending-items.md
 
-Save to `{SESSIONS_DIR}/{SESSION}/us-XX-backend-pending-items.md`:
+Save to `{SESSIONS_DIR}/{SESSION}/tc-XX-backend-pending-items.md`:
 
 ```markdown
-# Backend Pending Items: US-XX — [Story Title]
+# Backend Pending Items: TC-XX — [Task Contract Title]
 
 **Date:** YYYY-MM-DD
-**Story:** US-XX
+**Layer:** semi-permanent
+**Task:** TC-XX
 **Frontend owner:** Developer Agent
 **Overall status:** Partial block | Implementable with mocks | Total block
 
@@ -14,7 +15,7 @@ Save to `{SESSIONS_DIR}/{SESSION}/us-XX-backend-pending-items.md`:
 
 ## Summary
 
-[Brief description of what the Story needs from the backend and the current state of dependencies]
+[Brief description of what the Task Contract needs from the backend and the current state of dependencies]
 
 ---
 
@@ -61,5 +62,5 @@ _(repeat for each required endpoint)_
 
 - **What works without the backend:** [features that run with mocks]
 - **What is blocked:** [features that depend on real integration]
-- **When the backend is ready:** remove mocks marked with `// TODO(US-XX)` and test integration
+- **When the backend is ready:** remove mocks marked with `// TODO(TC-XX)` and test integration
 ```

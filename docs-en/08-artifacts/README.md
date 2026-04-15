@@ -22,8 +22,8 @@ graph LR
 | `log-orchestrator-spec.md` | Spec Orchestrator | Permanent | `{SPECS_DIR}/` |
 | `backlog.md` | Planner | Permanent | `{SESSIONS_DIR}/{SESSION}/` |
 | `ui-epic-XX.md` | UI Agent | Archived post-Epic | `{SESSIONS_DIR}/{SESSION}/` -> `_temp/` |
-| `us-XX-delivery.md` | Developer | Archived post-Story | `{SESSIONS_DIR}/{SESSION}/` -> `_temp/` |
-| `us-XX-qa.md` | QA | Archived post-Story | `{SESSIONS_DIR}/{SESSION}/` -> `_temp/` |
+| `us-XX-delivery.md` | Developer | Archived post-Task Contract | `{SESSIONS_DIR}/{SESSION}/` -> `_temp/` |
+| `us-XX-qa.md` | QA | Archived post-Task Contract | `{SESSIONS_DIR}/{SESSION}/` -> `_temp/` |
 | `us-XX-pending-items.md` | Developer | Permanent | `{SESSIONS_DIR}/{SESSION}/` |
 | `tech-debt.md` | Orchestrator | Permanent | `{SESSIONS_DIR}/{SESSION}/` |
 | `log-orchestrator-dev.md` | Dev Orchestrator | Permanent | `{SESSIONS_DIR}/{SESSION}/` |

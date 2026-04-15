@@ -1,0 +1,24 @@
+# VALID: warnings present but no blocking issues — handoff is still allowed
+# Warnings do not block handoff; only blocking_issues do.
+validation:
+  domain: auth
+  artifact_version: 1.1.0
+  mode: final_complete
+  validated_by: u-spec-validator
+  timestamp: "2026-04-09T13:00:00Z"
+  layer: permanent
+
+status: VALID
+blocking_count: 0
+warning_count: 2
+handoff_allowed: true
+blocking_issues: []
+warnings:
+  - id: WARN-001
+    type: coverage
+    source: specs/auth/front.md §6
+    description: BDD scenario for password reset not covered.
+  - id: WARN-002
+    type: bdd
+    source: specs/auth/front.md §9
+    description: BDD scenario for session expiry not linked to a UC.

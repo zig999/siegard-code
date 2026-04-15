@@ -1,0 +1,10 @@
+improve_scope:
+  description: "Change pagination to infinite scroll on activity feed — diverges from spec §3"
+  type: spec_change_required
+  spec_change_status: divergence_accepted
+  affected_specs:
+    - path: "front/features/activity-feed.feature.spec.md"
+      sections: ["§3"]
+      change_summary: "Replace paginated navigation (FL-04) with infinite scroll — spec not updated"
+  estimated_task_contracts: 1
+  planner_required: true

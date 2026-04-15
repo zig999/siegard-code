@@ -36,8 +36,8 @@ In fullstack mode, a **Meta-Orchestrator** coordinates both phases sequentially 
 
 | Mode | Trigger | Behavior |
 |------|---------|----------|
-| **Spec-first** | Approved specs exist in `{SPECS_DIR}` | Full pipeline with spec-anchored Stories |
-| **Improve** | `improve##.md` exists in `{SESSIONS_DIR}/{SESSION}/` | Stories generated from improvement requests |
+| **Spec-first** | Approved specs exist in `{SPECS_DIR}` | Full pipeline with spec-anchored Task Contracts |
+| **Improve** | `improve##.md` exists in `{SESSIONS_DIR}/{SESSION}/` | Task Contracts generated from improvement requests |
 | **Bug** | `bug##.md` exists in `{SESSIONS_DIR}/{SESSION}/` | Bug fix pipeline (lean or full based on type) |
 | **Bug+Improve** | Both `improve##.md` and `bug##.md` exist | Bugs processed first, then improvements |
 | **Error** | No specs, no improve, no bug artifacts | Halts with guidance on required input |
@@ -55,17 +55,17 @@ Before any agent activation, the orchestrator:
 
 ## Parallelism
 
-- Up to **3 independent Stories** can be processed in parallel within each phase
-- Story status transitions: `Backlog` -> `In development` -> `In testing` -> `Done` -> `Merged`
+- Up to **3 independent Task Contracts** can be processed in parallel within each phase
+- Task Contract status transitions: `Backlog` -> `In development` -> `In testing` -> `Done` -> `Merged`
 - The orchestrator never proceeds to the next step without human confirmation
 - In fullstack mode, Phase 2 (FE) only starts after Phase 1 (BE) completes
 
 ## Scope field (fullstack)
 
-In fullstack sessions, each Story in the backlog includes a `scope:` field (`backend`, `frontend`, or `both`). Stories with `scope: both` are split by the Planner into linked pairs -- one backend and one frontend -- with an explicit dependency (FE depends on BE).
+In fullstack sessions, each Task Contract in the backlog includes a `scope:` field (`backend`, `frontend`, or `both`). Task Contracts with `scope: both` are split by the Planner into linked pairs -- one backend and one frontend -- with an explicit dependency (FE depends on BE).
 
 ## Estimates
 
-- **Per Story (spec-first)**: ~14K tokens, 10-18 min
-- **Per Story (improve)**: ~10K tokens, 8-13 min
-- **Fullstack overhead**: E2E integration validation adds ~3K tokens when cross-domain stories exist
+- **Per Task Contract (spec-first)**: ~14K tokens, 10-18 min
+- **Per Task Contract (improve)**: ~10K tokens, 8-13 min
+- **Fullstack overhead**: E2E integration validation adds ~3K tokens when cross-domain Task Contracts exist

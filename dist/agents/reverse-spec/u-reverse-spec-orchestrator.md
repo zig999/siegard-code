@@ -2,7 +2,7 @@
 name: u-reverse-spec-orchestrator
 description: Reverse engineering pipeline orchestrator. Coordinates the stack detection, code analysis, and spec generation phases. Manages merge mode when specs already exist. Produces specs with draft status for later review via /u-spec.
 user-invocable: false
-model: claude-opus-4-6
+model: claude-sonnet-4-6
 ---
 
 # Agent: Reverse Engineering Orchestrator

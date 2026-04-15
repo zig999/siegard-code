@@ -1,0 +1,26 @@
+# INVALID FLOW: new_domain handoff includes change_summary — violates FLOW-033
+# new_domain means no prior version exists; change_summary is meaningless here.
+handoff:
+  id: HANDOFF-20260409-200000
+  delivered_by: u-spec-orchestrator
+  delivered_at: "2026-04-09T20:00:00Z"
+  layer: semi-permanent
+  type: new_domain
+
+domains:
+  - name: payments
+    spec_version: 1.0.0
+    back_version: 1.0.0
+    openapi_version: 1.0.0
+    compliance_report: "Validation passed."
+
+backend_package:
+  - path: specs/payments/openapi.yaml
+    artifact: openapi
+
+change_summary:
+  type: major
+  cr: none
+  changed_files:
+    - specs/payments/openapi.yaml
+  dev_impact: stop_domain_task_contracts

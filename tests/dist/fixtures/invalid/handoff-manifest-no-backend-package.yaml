@@ -1,0 +1,16 @@
+# INVALID FLOW: backend_package is absent — violates FLOW-032
+handoff:
+  id: HANDOFF-20260409-140000
+  delivered_by: u-spec-orchestrator
+  delivered_at: "2026-04-09T14:00:00Z"
+  layer: semi-permanent
+  type: new_domain
+
+domains:
+  - name: auth
+    spec_version: 1.0.0
+    back_version: 1.0.0
+    openapi_version: 1.0.0
+    compliance_report: "Validation passed."
+
+backend_package: []

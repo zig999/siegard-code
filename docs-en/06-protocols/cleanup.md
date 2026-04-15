@@ -7,13 +7,13 @@ Archives temporary artifacts after they have been consumed. Never deletes -- alw
 | Trigger | Artifacts archived |
 |---------|-------------------|
 | **Post-Planner** | `improve##.md`, `bug##.md` -> `_temp/` |
-| **Post-Story** | `us-XX-delivery.md`, `us-XX-qa.md` -> `_temp/` |
+| **Post-Task Contract** | `us-XX-delivery.md`, `us-XX-qa.md` -> `_temp/` |
 | **Post-Epic** | `ui-epic-XX.md` -> `_temp/` |
 
 ## What is NOT archived
 
 These artifacts remain in place permanently:
-- `backlog.md` -- Story tracking reference
+- `backlog.md` -- Task Contract tracking reference
 - `us-XX-pending-items.md` -- Infrastructure/dependency blockers
 - `tech-debt.md` -- Technical debt registry
 - `log-orchestrator-dev.md` -- Execution log

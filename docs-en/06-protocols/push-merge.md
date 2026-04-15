@@ -1,6 +1,6 @@
 # Push/Merge Protocol
 
-Git operations executed after QA approves a Story.
+Git operations executed after QA approves a Task Contract.
 
 ## Flow
 
@@ -11,7 +11,7 @@ git add -> git commit (standardized message) -> git push -> git merge (if config
 ## Standardized commit message
 
 Commit messages follow a consistent format that includes:
-- Story identifier (us-XX)
+- Task Contract identifier (us-XX, kept for historical compatibility)
 - Brief description of what was implemented
 - Reference to the Epic
 

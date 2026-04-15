@@ -70,8 +70,8 @@ The main flow follows the sequence:
 **Input** --> **Spec** --> **Dev** --> **Delivery**
 
 1. **Input** -- A feature requirement or existing code enters the system
-2. **Spec** -- The Spec Writer creates the initial specification (openapi.yaml + spec.md). The Reviewer approves or rejects it. After approval, the Back Spec Agent produces the backend technical spec per domain. Only after all .back.md files are valid does the Front Spec Agent produce the frontend spec (front.md, screens, flows) -- since screens may compose multiple domains. The Validator ensures cross-reference consistency
-3. **Dev** -- The Planner creates the Story backlog. Each Story is implemented by the Developer (or UI Agent for frontend). QA validates and approves or rejects
+2. **Spec** -- The Spec Writer creates the initial specification (openapi.yaml + spec.md). The Reviewer approves or rejects it. After approval, the Back Spec Agent produces the backend technical spec per domain. Only after all .back.md files are valid does the Front Spec Agent produce the frontend spec (front.md, features, flows) -- since features may compose multiple domains. The Validator ensures cross-reference consistency
+3. **Dev** -- The Planner creates the backlog of Task Contracts (TC-XX). Each Task Contract is implemented by the Developer (or UI Agent for frontend). QA validates and approves or rejects
 4. **Delivery** -- Code implemented, tested, and documented
 
 ## Automatic domain routing
@@ -80,7 +80,7 @@ The `/u-dev` command automatically routes to the appropriate pipeline based on t
 
 ## Specs as single source of truth
 
-In Spec-first mode, no code is written without an approved spec. The technical specifications (`.spec.md`, `.back.md`, `.screen.md`, `.flow.md`) are the sole source of truth for the Dev Team. Any divergence between code and spec is treated as a bug.
+In Spec-first mode, no code is written without an approved spec. The technical specifications (`.spec.md`, `.back.md`, `.feature.spec.md`, `.component.spec.md`, `.flow.md`) are the sole source of truth for the Dev Team. Any divergence between code and spec is treated as a bug.
 
 ## Next steps
 

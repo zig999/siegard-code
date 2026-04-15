@@ -1,0 +1,28 @@
+# INVALID FLOW: major_evolution but change_summary.type=patch — violates FLOW-036
+# major_evolution requires change_summary.type=major.
+handoff:
+  id: HANDOFF-20260409-220000
+  delivered_by: u-spec-orchestrator
+  delivered_at: "2026-04-09T22:00:00Z"
+  layer: semi-permanent
+  type: major_evolution
+
+domains:
+  - name: auth
+    spec_version: 2.0.0
+    back_version: 2.0.0
+    openapi_version: 2.0.0
+    compliance_report: "Validation passed."
+
+backend_package:
+  - path: specs/auth/openapi.yaml
+    artifact: openapi
+  - path: specs/auth/back.md
+    artifact: back-spec
+
+change_summary:
+  type: patch
+  cr: CR-01
+  changed_files:
+    - specs/auth/openapi.yaml
+  dev_impact: stop_domain_task_contracts

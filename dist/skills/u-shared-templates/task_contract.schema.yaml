@@ -1,0 +1,272 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/task_contract.schema.yaml"
+title: task_contract
+description: >
+  Schema for the task_contract artifact — primary planning unit.
+  Merges structural and operational fields into the execution_contract.
+  Enforced rules: scope != "both"; estimate != "L"; no narrative fields; no status field.
+type: object
+required:
+  - task_contract
+  - execution_contract
+additionalProperties: false
+properties:
+
+  task_contract:
+    type: object
+    required:
+      - id
+      - epic
+      - origin
+      - type
+      - priority
+      - scope
+      - estimate
+      - dependencies
+      - persona_coverage
+      - bdd_ref
+    additionalProperties: false
+    properties:
+
+      id:
+        type: string
+        pattern: "^TC-[0-9]+$"
+        description: "Task contract identifier. Format: TC-NN (project-scoped sequential)."
+
+      epic:
+        type: string
+        pattern: "^EPIC-[0-9]+$"
+        description: "Parent epic identifier. Format: EPIC-NN."
+
+      origin:
+        type: string
+        description: "Source of this task. Enum-controlled via pattern."
+        pattern: "^(UC-[0-9]+|improve-[0-9]+|bug-[0-9]+|component-spec-gate|direct)$"
+
+      type:
+        type: string
+        enum:
+          - feature
+          - bugfix
+          - refactoring
+          - spec
+          - tech_debt
+        description: "Task classification type."
+
+      priority:
+        type: string
+        enum:
+          - P0
+          - P1
+          - P2
+        description: "Execution priority. P0 = critical path."
+
+      scope:
+        type: string
+        enum:
+          - frontend
+          - backend
+        description: "Implementation scope. 'both' is prohibited — split into two task_contracts."
+
+      estimate:
+        type: string
+        enum:
+          - S
+          - M
+        description: "Effort estimate. 'L' is prohibited — split into two task_contracts."
+
+      dependencies:
+        type: array
+        items:
+          type: string
+          pattern: "^TC-[0-9]+$"
+        description: "Array of TC-XX ids this task depends on. Use [] for no dependencies."
+
+      persona_coverage:
+        type: array
+        items:
+          type: string
+        minItems: 1
+        description: "Actors from spec.md §2 served by this task."
+
+      bdd_ref:
+        oneOf:
+          - type: string
+            pattern: "^FEAT-[0-9]+ §9$"
+            description: "Reference to FEAT-NN §9 BDD Scenarios."
+          - type: "null"
+        description: "BDD reference from the feature spec. Null if not applicable."
+
+  execution_contract:
+    type: object
+    required:
+      - exec_type
+      - objective
+      - input
+      - constraints
+      - output
+      - validation
+      - fallback
+    additionalProperties: false
+    properties:
+
+      exec_type:
+        type: string
+        enum:
+          - code_generation
+          - bug_fix
+          - refactoring
+          - analysis
+          - design
+          - review
+          - test_generation
+          - validation
+          - documentation
+        description: "Execution type — determines which skill variant processes this contract."
+
+      objective:
+        type: string
+        description: "Single objective sentence. One intention only. No narrative."
+
+      input:
+        type: object
+        required:
+          - references
+          - known_context
+          - assumptions_allowed
+        additionalProperties: false
+        properties:
+
+          references:
+            type: array
+            items:
+              type: object
+              required:
+                - path
+                - section
+                - version
+              additionalProperties: false
+              properties:
+                path:
+                  type: string
+                  description: "Relative path to the referenced artifact."
+                section:
+                  type: string
+                  description: "Section identifier within the artifact (e.g., §3 or 'Authentication')."
+                version:
+                  type: string
+                  description: "Semver or commit ref for the referenced artifact."
+            description: "Structured references consumed by the executing agent."
+
+          known_context:
+            type: array
+            items:
+              type: string
+            description: "Explicit facts already established. No inference needed."
+
+          assumptions_allowed:
+            type: array
+            items:
+              type: string
+            description: "Assumptions the agent is permitted to make. Empty array = none allowed."
+
+      constraints:
+        type: array
+        items:
+          type: string
+        description: "Hard constraints. One rule per item."
+
+      output:
+        type: object
+        required:
+          - format
+          - schema
+        additionalProperties: false
+        properties:
+
+          format:
+            type: string
+            enum:
+              - yaml
+              - json
+              - markdown
+            description: "Output format for the agent's delivery artifact."
+
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - files_created
+                - files_modified
+                - acceptance_criteria_coverage
+                - edge_cases
+                - spec_divergences
+                - tech_debt
+                - tests
+                - inference_log
+            minItems: 1
+            description: "Required output sections. Fixed delivery schema."
+
+      validation:
+        type: object
+        required:
+          - criteria
+        additionalProperties: false
+        properties:
+          criteria:
+            type: array
+            items:
+              type: string
+            minItems: 1
+            description: "Objective verifiable criteria. No subjective criteria permitted."
+
+      fallback:
+        type: object
+        required:
+          - on_missing_input
+          - template
+        additionalProperties: false
+        properties:
+          on_missing_input:
+            type: string
+            enum:
+              - blocked
+            description: "Mandatory value: blocked. Agents must not proceed with missing inputs."
+          template:
+            type: string
+            const: ".claude/skills/u-shared-templates/blocked-report.yaml"
+            description: "Blocked-report template path. Fixed value."
+
+  non_functional_requirements:
+    type: array
+    description: "Optional. Quantified non-functional constraints validated by QA Phase 3. Omit when not applicable."
+    items:
+      type: object
+      required: [type, threshold, unit]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - latency_p99_ms
+            - latency_p95_ms
+            - throughput_rps
+            - error_rate_percent
+            - memory_mb
+            - cpu_percent
+            - bundle_size_kb
+            - time_to_interactive_ms
+          description: "NFR metric type. All thresholds are numeric upper bounds except throughput (lower bound)."
+        threshold:
+          type: number
+          minimum: 0
+        unit:
+          type: string
+          description: "Unit of measurement matching the type (ms, rps, %, mb, kb)."
+        endpoint:
+          type: string
+          description: "Specific route or component this NFR applies to. Omit for session-wide NFRs."
+        measurement_command:
+          type: string
+          description: "Exact shell command to measure this NFR. Must be runnable in the project environment."

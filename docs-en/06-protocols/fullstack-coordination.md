@@ -12,10 +12,10 @@ Coordinates the BE→FE handoff and E2E integration validation in `domain: fulls
 
 When Phase 1 completes:
 
-1. Validate all BE stories are `Done` (no `Blocked` or `Escalation`)
+1. Validate all BE Task Contracts are `Done` (no `Blocked` or `Escalation`)
 2. Collect implemented endpoints, database changes, and API contract status
 3. Generate `handoff-be-to-fe.md` with:
-   - Implemented endpoint table (Story, endpoint, method, status)
+   - Implemented endpoint table (Task Contract, endpoint, method, status)
    - Database changes
    - Known deviations from spec
    - Notes for the FE phase
@@ -23,26 +23,26 @@ When Phase 1 completes:
 
 ## Scope filtering
 
-The unified `backlog.md` contains stories tagged with `scope:`. Each domain orchestrator processes only its slice:
+The unified `backlog.md` contains Task Contracts tagged with `scope:`. Each domain orchestrator processes only its slice:
 
 - **BE orchestrator**: `scope: backend` and `scope: both` (BE portion)
 - **FE orchestrator**: `scope: frontend` and `scope: both` (FE portion, after BE dependency is `Done`)
 
-Both orchestrators write to the same `backlog.md`, updating only stories in their scope.
+Both orchestrators write to the same `backlog.md`, updating only Task Contracts in their scope.
 
 ## E2E Integration Validation
 
 After both phases complete, the meta-orchestrator assesses whether E2E validation is needed:
 
-- **Recommended**: stories with `scope: both`, or FE stories consuming endpoints from Phase 1
-- **Skippable**: all stories are independent (no cross-domain data flow)
+- **Recommended**: Task Contracts with `scope: both`, or FE Task Contracts consuming endpoints from Phase 1
+- **Skippable**: all Task Contracts are independent (no cross-domain data flow)
 
 If E2E runs, it checks: contract match, response handling, data flow, error states, and auth/session.
 
 ## E2E Failure Handling
 
-1. **Contract mismatch** (BE response != spec) → reopen BE story
-2. **FE integration bug** (FE misreads correct response) → reopen FE story
+1. **Contract mismatch** (BE response != spec) → reopen BE Task Contract
+2. **FE integration bug** (FE misreads correct response) → reopen FE Task Contract
 3. **Spec ambiguity** (both sides implemented differently) → escalate to human
 
 ## Output

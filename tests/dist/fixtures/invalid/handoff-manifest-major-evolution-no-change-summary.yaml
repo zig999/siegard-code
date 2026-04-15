@@ -1,0 +1,18 @@
+# INVALID FLOW: major_evolution without change_summary — violates FLOW-034
+handoff:
+  id: HANDOFF-20260409-190000
+  delivered_by: u-spec-orchestrator
+  delivered_at: "2026-04-09T19:00:00Z"
+  layer: semi-permanent
+  type: major_evolution
+
+domains:
+  - name: auth
+    spec_version: 2.0.0
+    back_version: 2.0.0
+    openapi_version: 2.0.0
+    compliance_report: "Validation passed."
+
+backend_package:
+  - path: specs/auth/openapi.yaml
+    artifact: openapi

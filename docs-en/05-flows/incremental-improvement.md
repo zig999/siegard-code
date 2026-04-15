@@ -28,7 +28,7 @@ Small improvements to existing functionality without requiring a complete specif
 3. If the improvement affects the API contract:
    - Run `/u-spec` to update specifications first
 4. Run `/u-dev` -- The orchestrator detects Improve mode
-5. Planner generates Stories from `improve##.md`
+5. Planner generates Task Contracts from `improve##.md`
 6. Developer implements with simplified pipeline
 7. QA validates
-8. After QA approval, orchestrator evaluates if specs need updating (post-Story spec evaluation)
+8. After QA approval, orchestrator evaluates if specs need updating (post-Task Contract spec evaluation)

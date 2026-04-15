@@ -1,0 +1,9 @@
+# IMPV-001 violation: implementation_only must have spec_change_status=not_required
+improve_scope:
+  description: "Adjust button padding on primary CTA"
+  type: implementation_only
+  spec_change_status: completed
+  affected_specs: []
+  estimated_task_contracts: 1
+  planner_required: false
+  planner_skip_reason: "Single TC, no affected spec"

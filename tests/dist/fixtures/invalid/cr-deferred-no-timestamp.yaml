@@ -1,0 +1,27 @@
+# INVALID FLOW: resolution.status=deferred but timestamp is empty — violates FLOW-021
+id: CR-04
+reported_by: u-fe-developer
+timestamp: "2026-04-09T12:00:00Z"
+task: TC-04
+epic: EPIC-02
+artifact:
+  path: specs/auth/front.md
+  section: "§6 Edge Cases"
+  version: 1.0.0
+type: spec_gap
+description: No spec for session timeout behavior on the login screen.
+evidence:
+  - Section §6 does not define the timeout duration or redirect target.
+proposed_change: "N/A"
+impact:
+  dev_blocked: false
+  task_contracts_affected:
+    - TC-04
+  scope: low
+resolution:
+  status: deferred
+  decided_by: u-spec-orchestrator
+  decision: Deferred to v1.1 — not blocking for current release.
+  spec_updated: false
+  delivery_updated: false
+  timestamp: ""

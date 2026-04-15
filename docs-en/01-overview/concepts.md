@@ -40,7 +40,7 @@ Working directory for the current session. Contains the backlog, delivery files,
 
 ### {SPECS_DIR}
 
-Root directory for all approved specifications. Organized by domain for backend and by screen/flow for frontend. Contains `_global/`, `domains/`, `front/`, `_templates/`, `_meta/`, and `_validation/` subdirectories.
+Root directory for all approved specifications. Organized by domain for backend and by feature/flow for frontend. Contains `_global/`, `domains/`, `front/`, `_templates/`, `_meta/`, and `_validation/` subdirectories.
 
 ### _temp/
 

@@ -1,0 +1,28 @@
+# INVALID FLOW: resolution.status=rejected but timestamp is empty — violates FLOW-021
+# Resolved CRs (accepted/rejected/deferred) require a non-empty timestamp.
+id: CR-03
+reported_by: u-be-developer
+timestamp: "2026-04-09T12:00:00Z"
+task: TC-03
+epic: EPIC-02
+artifact:
+  path: specs/auth/back.md
+  section: "§5 Error Codes"
+  version: 1.1.0
+type: spec_error
+description: Error code 422 is used in implementation but not registered in error-codes.md.
+evidence:
+  - POST /auth/register returns 422 but error-codes.md has no entry for 422.
+proposed_change: Add error code 422 to error-codes.md with description "Unprocessable Entity".
+impact:
+  dev_blocked: false
+  task_contracts_affected:
+    - TC-03
+  scope: low
+resolution:
+  status: rejected
+  decided_by: u-spec-orchestrator
+  decision: Error code 422 is out of scope for this version.
+  spec_updated: false
+  delivery_updated: false
+  timestamp: ""

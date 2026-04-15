@@ -1,0 +1,11 @@
+scan:
+  id: "SEC-20260410-140000"
+  reviewed_by: "u-security-reviewer"
+  task_contract: "TC-020"
+  timestamp: "2026-04-10T14:00:00Z"
+  layer: "semi-permanent"
+  files_scanned:
+    - "src/controllers/user.controller.ts"
+    - "src/services/user.service.ts"
+findings: []
+verdict: "approved"

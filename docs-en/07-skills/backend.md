@@ -19,7 +19,7 @@ Coding patterns and conventions for backend implementation:
 **Consumers**: Backend Developer, Backend QA
 
 Shared quality standards (single source of truth for both agents):
-- Mandatory tests per Story type
+- Mandatory tests per Task Contract type
 - Universal edge-case checklist
 - Test quality criteria
 - Severity classification for bugs
@@ -30,7 +30,7 @@ Shared quality standards (single source of truth for both agents):
 
 Testing types, verification scope, and documentation:
 - Test type matrix (unit, integration, E2E)
-- Coverage requirements per Story type
+- Coverage requirements per Task Contract type
 - Bug report template
 - QA report format (`us-XX-qa.md`)
 
@@ -39,6 +39,6 @@ Testing types, verification scope, and documentation:
 **Consumers**: Backend Developer, Backend QA (on-demand)
 
 On-demand templates for delivery and reporting:
-- `delivery.md` -- Story delivery file template
+- `delivery.md` -- Task Contract delivery file template
 - `infra-pending-items.md` -- Infrastructure dependency report template
 - `qa-report.md` -- QA report template

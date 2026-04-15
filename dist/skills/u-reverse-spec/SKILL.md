@@ -11,6 +11,27 @@ Define how to translate source code artifacts into specification artifacts, foll
 
 ---
 
+## AI-First Principle
+
+Specs generated here are consumed by AI implementation agents.
+
+An AI agent that finds silence in a spec will invent a value.
+An AI agent that finds ambiguity will choose an interpretation.
+
+For every implementation detail an agent would need to guess, the spec is incomplete. The following are mandatory when extractable from the code:
+
+- Numeric thresholds and derived formulas (`clamp(8, x × 0.4, 12)`, not "adaptive font")
+- CSS tokens used directly (`bg-data` / `text-data`, not "highlight color")
+- Regex and format rules (`^[A-Z0-9]+$`, not "letters and numbers only")
+- User-visible messages (verbatim text from source, not "appropriate error message")
+- Cache invalidation keys (literal array `["groups", id]`, not "invalidate groups")
+- Prop and field defaults (`decimal_places=2`, `is_active=true`)
+- Query parameters and headers effectively used per feature (not everything the endpoint accepts)
+
+**Completeness test:** if two independent AI agents, reading only this spec, produce different implementations for any detail, the spec is incomplete at that point. Mark unresolvable gaps with `<!-- TO CONFIRM: ... -->`.
+
+---
+
 ## Core Principle
 
 > Reverse engineering documents what the code **does**, not what it **should do**.
@@ -40,14 +61,14 @@ Define how to translate source code artifacts into specification artifacts, foll
 
 | Code Artifact | Spec Artifact | Target Section |
 |---------------|--------------|----------------|
-| Page/Screen component | `{screen}.screen.md` | Full screen spec |
+| Page/Screen component | `{feature}.feature.spec.md` | Full feature spec |
 | Router config / file-based routes | `{flow}.flow.md` | Section 1 — Screens Involved |
-| API call (fetch/axios/useQuery) | `{screen}.screen.md` | Section 4 — Requests, Order, and Cache |
-| State store (zustand/redux/pinia) | `{screen}.screen.md` | Section 4 — Requests, Order, and Cache |
-| Error boundary / catch handler | `{screen}.screen.md` | Section 6 — API Error -> UI Mapping |
-| Form with validation | `{screen}.screen.md` | Section 5 — Input Validations |
-| Loading/Skeleton/Spinner | `{screen}.screen.md` | Section 2 — UI States (loading) |
-| Empty state component | `{screen}.screen.md` | Section 2 — UI States (empty) |
+| API call (fetch/axios/useQuery) | `{feature}.feature.spec.md` | §4 Requests, Order, and Cache — include `Params / Headers` column with effective params/headers extracted from call site |
+| State store (zustand/redux/pinia) | `{feature}.feature.spec.md` | §4 Requests, Order, and Cache |
+| Error boundary / catch handler | `{feature}.feature.spec.md` | §6 API Error → UI Mapping |
+| Form with validation | `{feature}.feature.spec.md` | §5 Input Validations |
+| Loading/Skeleton/Spinner | `{feature}.feature.spec.md` | §2 Feature States (loading) |
+| Empty state component | `{feature}.feature.spec.md` | §2 Feature States (empty) |
 | Navigation guards / redirects | `{flow}.flow.md` | Section 4 — Navigation Rules (FL-NN) |
 | Link/navigate between pages | `{flow}.flow.md` | Section 2 — Happy Path |
 
@@ -55,12 +76,26 @@ Define how to translate source code artifacts into specification artifacts, foll
 
 ## Generation Rules
 
+### 0.5 Design System Legacy Detection
+
+Before generating any frontend spec, check for `{SPECS_DIR}/front/design-system.md` as a **single file** (pre-3.0 format).
+
+If found:
+- Preserve the file as-is during this migration run.
+- Add to its header: `<!-- TODO: migrate to design-system/ directory format via /u-spec -->`
+- Do NOT create a `design-system/` directory — that conversion requires the Front Spec writing flow with full project context.
+- Record a `<!-- TO CONFIRM: design-system.md must be migrated to directory format before next /u-spec run -->` comment in `front.md` if it exists.
+
+If `{SPECS_DIR}/front/design-system/` directory already exists: proceed normally, no action needed.
+
+---
+
 ### 1. Templates
 
 Use exactly the same templates from `.claude/skills/u-spec-templates/`:
 - `TEMPLATE.spec.md` for `.spec.md`
 - `TEMPLATE.back.md` for `.back.md`
-- `TEMPLATE.screen.md` for `.screen.md`
+- `TEMPLATE.feature.spec.md` for `.feature.spec.md`
 - `TEMPLATE.flow.md` for `.flow.md`
 
 ### 2. Conventions
@@ -121,7 +156,7 @@ For each emit/dispatch/publish found:
 ### 9. Screens (UI) — Frontend
 
 For each page/screen:
-- Minimum states: idle, loading, success, error, empty
+- Minimum states: idle, loading, success, error. Add `empty` only if the code contains an explicit empty state component or conditional rendering for a zero-record collection response. Never add it for forms or single-resource views
 - Consumed domains: derive from API calls
 - Validations: derive from forms
 - Error mapping: derive from catch/error handlers
@@ -144,7 +179,7 @@ Before delivering the generated specs, the Writer must validate:
 - [ ] Every model/entity has a schema in openapi.yaml and a table in .back.md
 - [ ] Every error throw/catch has an error.code in the catalog
 - [ ] Every UC has at least 1 alternative flow
-- [ ] Every screen has the 5 minimum states (idle, loading, success, error, empty)
+- [ ] Every screen has idle, loading, success, error states; `empty` present only when a zero-record collection path exists in the code
 - [ ] Every flow has at least 1 alternative flow
 - [ ] UC/BR/ST/EV/UI/FL prefixes follow conventions
 - [ ] Changelog filled with date and author "Reverse Spec Writer"

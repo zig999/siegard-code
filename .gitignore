@@ -7,3 +7,8 @@ claude-danger.sh
 claude.md
 tools
 examples
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+extras/
+skills-lock.json
+tests

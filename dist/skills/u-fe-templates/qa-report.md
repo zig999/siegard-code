@@ -1,13 +1,19 @@
-# Template: us-XX-qa.md
+# Template: tc-XX-qa.md
 
-Save to `{SESSIONS_DIR}/{SESSION}/us-XX-qa.md`:
+Save to `{SESSIONS_DIR}/{SESSION}/tc-XX-qa.md`:
 
 ```markdown
-# QA Report: US-XX — [Story Title]
+# QA Report: TC-XX — [Task Contract Title]
 
 **Date:** YYYY-MM-DD
+**Layer:** semi-permanent
 **Round:** 1 | 2 | 3
 **Verdict:** Approved | Approved with caveats | Rejected
+**fe-validate report:** {OUTPUT_DIR}/fe-validate-{run_id}.yaml | skipped
+
+> **Note:** This document is semi-permanent — it records the verdict and bugs, not raw test output.
+> Do not paste full console logs or CI pipeline output here; summarize in the Test Matrix below.
+> Raw execution output is ephemeral — discard after analysis.
 
 ---
 
@@ -28,7 +34,7 @@ Save to `{SESSIONS_DIR}/{SESSION}/us-XX-qa.md`:
 ### BUG-XX: [Short descriptive title]
 
 **Severity:** Critical | High | Medium | Low
-**Related Story:** US-XX
+**Related Task Contract:** TC-XX
 **File/component:** `path/file.ts` (approximate line if known)
 
 **Steps to reproduce:**
@@ -65,6 +71,6 @@ Save to `{SESSIONS_DIR}/{SESSION}/us-XX-qa.md`:
 
 ## Recommendation
 
-[Approved] Story can move to Done.
+[Approved] Task Contract can move to Done.
 [Rejected] Return to Developer Agent with BUG-01 and BUG-02 for correction.
 ```

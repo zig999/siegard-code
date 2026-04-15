@@ -1,154 +1,270 @@
 ---
 name: u-improve
-description: Interactive skill that collects small improvement requests through a quick 3-question flow and generates improve##.md files in `{SESSIONS_DIR}/{SESSION}/`. Invoked via the /u-improve command.
+description: Classifies an improvement task, identifies affected specs, defines execution scope, and writes an improve_scope block to the session log. Delegates spec changes to /u-spec (fast-track) and implementation to /u-dev. No intermediate artifacts are created.
 user-invocable: true
 ---
 
 # SKILL: Improve
 
-## Purpose
-Capture small improvements quickly and objectively. Supports multiple improvements per session. Each improvement is saved as an individual `improve##.md` file in `{SESSIONS_DIR}/{SESSION}`, ready for the dev team to implement via `/u-dev`.
+## Identity
+
+You are the improve flow orchestrator. You receive an improvement task description, classify its spec impact, identify affected spec files, write the scope block to the session log, and instruct the human on the next command to run.
+
+Constraints:
+- Do NOT modify specs directly — delegate to /u-spec fast-track
+- Do NOT implement code — delegate to /u-dev
+- Do NOT create new artifact files — write only to the session log
 
 ---
 
-## Behavior rules
+## Inputs
 
-- **Always ask the human for the desired `{SESSIONS_DIR}/{SESSION}` before any other action** — never assume, infer, or choose a directory on your own. This must be the **first question** in the flow.
-- Ask **one question at a time** — never group questions
-- Before starting, check if `improve*.md` files already exist in `{SESSIONS_DIR}/{SESSION}`:
-  - If they exist: identify the highest existing number (e.g., `improve03.md` -> next will be `improve04.md`) and ask whether to **add new improvements** starting from the next number or **recreate from scratch** (deleting existing ones with confirmation)
-  - If they don’t exist: start the flow normally from `improve01.md`
-- At the end of each improvement, display the **summary** and ask if it is correct before proceeding
-- If the human answers "I don’t know", record it as `Warning - To confirm:` — do not block the flow
-- After each confirmed improvement, ask if there are more improvements to register
+| Input | Source |
+|-------|--------|
+| `SPECS_DIR` | Resolved by command |
+| `SESSIONS_DIR` | Resolved by command |
+| `SESSION` | Resolved by command |
+| `improvement_task` | Inline or collected in Step 1 |
 
 ---
 
-## Question flow — per improvement
+## Step 1 — Collect improvement task
 
-**Q1 — What to improve?**
-```
-Describe the improvement in a short sentence.
-(E.g., "Add tooltip to the export button")
-
-[open-ended]
-```
-
-**Q2 — Where?**
-```
-On which screen, component, or area of the system?
-
-[open-ended]
-```
-
-**Q3 — How should it work?**
-```
-Describe the desired behavior after the improvement.
-(E.g., "On mouse hover over the button, display 'Export report as PDF'")
-
-[open-ended]
-```
-
-### Confirmation
-
-At the end of each improvement, display the summary before recording:
+If the improvement task was not provided inline with the command, emit exactly:
 
 ```
-## Improve #N — Summary
+Improvement task:
+```
 
-**What:** [description]
-**Where:** [screen/component]
-**How it should work:** [desired behavior]
+Wait for human input. Record as `improvement_task`.
 
-Is this improvement correct?
+Do not ask follow-up questions. Proceed to Step 2 immediately after recording.
 
-1. Yes — record and continue
-2. I want to correct something — [indicate what]
+---
+
+## Step 2 — Classify the improvement
+
+Execute classification autonomously. Do NOT ask the human to classify.
+
+### 2.1 — Identify affected spec files
+
+Search `{SPECS_DIR}` for specs related to `improvement_task`:
+
+```
+priority order:
+  1. ccc search <key terms from improvement_task>    (if ccc available)
+  2. Grep for identifiers in {SPECS_DIR}
+  3. Glob("{SPECS_DIR}/front/features/*.feature.spec.md")
+  4. Glob("{SPECS_DIR}/front/components/*.component.spec.md")
+  5. Glob("{SPECS_DIR}/domains/*/{domain}.spec.md")
+
+For each candidate: read relevant sections to confirm relevance.
+```
+
+For each confirmed affected file, record:
+
+```yaml
+path: "{relative path from SPECS_DIR}"
+sections: ["§N", "§N"]
+change_summary: "<one sentence — what changes in this file>"
+```
+
+If no affected spec file is found: set `type: implementation_only` and skip 2.2.
+
+### 2.2 — Determine change type
+
+```
+affected_specs is empty
+  → type: implementation_only
+
+affected_specs is non-empty:
+  ANY section in affected_specs is structural:
+    feature.spec.md: §1, §2, §3, §4, §5, §6, §7, §9, §10
+    component.spec.md: §1, §2, §3, §4, §5, §6, §7, §8
+    openapi.yaml, .back.md, .spec.md (any business rule section)
+    → type: spec_change_required
+
+  ALL changes are cosmetic ONLY:
+    (visual appearance, text content, token values — no section structure change)
+    → type: implementation_only
+```
+
+### 2.3 — Estimate Task Contracts
+
+```
+Rules:
+  - 1 component change = 1 TC
+  - 1 feature section change = 1 TC
+  - Multiple changes in the same component/feature = 1 TC
+  - estimate must be S or M — never L
+  - If result would be L: split into multiple TCs and increment count
+```
+
+### 2.4 — Determine planner_required
+
+```
+planner_required: false
+  ALL of the following must be true:
+    - estimated_task_contracts = 1
+    - len(affected_specs) <= 1
+    - No cross-spec dependencies detected
+    - Change does NOT affect navigation flows (flow.md or §3 transitions)
+    - Change does NOT require new component (§10 action: create)
+
+planner_required: true
+  ANY of the following is true:
+    - estimated_task_contracts > 1
+    - len(affected_specs) > 1 with cross-spec dependencies
+    - Change affects navigation flow
+    - Change requires new component
 ```
 
 ---
 
-### More improvements?
+## Step 3 — Present diagnosis
 
-After confirming each improvement:
+Emit the following structured block. No free-form text outside this template.
 
 ```
-Are there more improvements to register?
+## Improve — Diagnosis
 
-1. Yes — next improvement
-2. No — save the files now
+task: {improvement_task}
+type: {spec_change_required | implementation_only}
+affected_specs:
+{for each spec}
+  - path: {path}
+    sections: {sections}
+    change_summary: {change_summary}
+estimated_task_contracts: {N}
+planner_required: {true | false}
 ```
+
+If `type: spec_change_required`, append:
+
+```
+spec_update_required: true
+affected_files:
+{list path + sections + change_summary}
+
+Run /u-spec {SPECS_DIR} (fast-track) before implementation? [S/N]
+```
+
+Wait for human response.
+- S → set `spec_change_status: completed`; emit the fast-track handoff block below and wait for human confirmation
+- N → set `spec_change_status: divergence_accepted`
+
+**Fast-track handoff block (emit when S):**
+
+```
+## Spec fast-track — run before /u-dev
+
+Command: /u-spec {SPECS_DIR} "{improvement_task}"
+
+When the Orchestrator prompts for the requirement, it will receive it inline.
+The pipeline will classify as fast-track (impact: {minor|patch}).
+
+Files to update:
+{for each affected_spec}
+  - {path} — {change_summary} (sections: {sections})
+
+Confirm when /u-spec completes and specs are approved.
+```
+
+> The `REQUIREMENT` is passed inline via the command so the spec orchestrator does not re-prompt the human. The orchestrator classifies as `fast-track` based on the scope listed in `affected_files`.
+
+If `type: implementation_only`:
+- Set `spec_change_status: not_required`
+- Skip spec update question
+- Proceed directly to Step 4
 
 ---
 
-## Generated improve##.md template
+## Step 4 — Write scope block to session log
 
-Each improvement is saved as an individual file in `{SESSIONS_DIR}/{SESSION}` named `improve##.md` (e.g., `improve01.md`, `improve02.md`, etc.).
+Append to `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`.
+If the file does not exist, create it with this block as the first entry.
 
 ```markdown
-# Improve #NN — [Short description]
+## [YYYY-MM-DD HH:MM] — Improve scope
 
-_Generated on: YYYY-MM-DD_
-_Via: skill-improve (guided questionnaire)_
+```yaml
+improve_scope:
+  description: "{improvement_task}"
+  type: {spec_change_required | implementation_only}
+  spec_change_status: {completed | divergence_accepted | not_required}
+  affected_specs:
+    - path: "{path}"
+      sections: ["{§N}"]
+      change_summary: "{one sentence}"
+  estimated_task_contracts: {N}
+  planner_required: {true | false}
+  planner_skip_reason: "{reason — required only when planner_required: false}"
+```
+```
+
+`spec_change_status` semantics:
+- `completed` — human confirmed /u-spec fast-track executed; specs are updated
+- `divergence_accepted` — human declined /u-spec; divergence accepted; proceed to implementation
+- `not_required` — type was implementation_only
+
+`planner_skip_reason` — required only when `planner_required: false`. Single sentence citing which criteria were met.
 
 ---
 
-**Where:** [screen or component]
+## Step 5 — Handoff instructions
 
-## Desired behavior
-[description of how it should work after the improvement]
+### If planner_required: false
 
-## Open questions
-[List of Warning - To confirm: unanswered items, or "None"]
+Emit:
+
+```
+planner_skip_eligible: true
+estimated_task_contracts: 1
+
+Skip Planner and route directly to Developer? [S/N]
+```
+
+If S:
+
+```
+next_command: /u-dev {SESSION}
+note: SPECS_DIR and SESSIONS_DIR are read from CLAUDE.md by /u-dev
+orchestrator_instruction: skip_planner=true
+scope:
+  {list of affected_specs}
+```
+
+If N:
+
+```
+next_command: /u-dev {SESSION}
+note: SPECS_DIR and SESSIONS_DIR are read from CLAUDE.md by /u-dev
+planner_scope:
+  {list of affected_specs}
+```
+
+### If planner_required: true
+
+Emit:
+
+```
+next_command: /u-dev {SESSION}
+note: SPECS_DIR and SESSIONS_DIR are read from CLAUDE.md by /u-dev
+planner_scope:
+  {list of affected_specs}
 ```
 
 ---
 
-## File generation rules
+## Behavioral rules
 
-- Save each improvement in `{SESSIONS_DIR}/{SESSION}/improve##.md` (two-digit numbering: `improve01.md`, `improve02.md`, etc.)
-- Numbering is sequential and continuous — if `improve01.md` and `improve02.md` already exist, the next will be `improve03.md`
-- Never overwrite existing files without confirming with the human
-- After saving all improvements, display a consolidated summary:
-  - Total improvements recorded in the session
-  - List of created files
-- After the summary, execute the **next step flow** described below
-
----
-
-## Next step flow
-
-After all improvements are confirmed and saved, ask:
-
-```
-Do any of these improvements involve:
-
-1. Significant visual changes (layout, screen flow, new interaction)
-   -> Go through the UX Team before development
-2. Changes to API contracts, endpoints, or business rules
-   -> Go through the Spec Team before development
-3. Internal adjustments only (no visual or API impact)
-   -> Go straight to development
-4. I don't know — decide later
-```
-
-### If **1 (Visual changes)** or **2 (API/contract changes)**:
-```
-Next steps:
-1. /u-spec [SPECS_DIR] [SESSION] — update the technical specifications (fast-track for minor changes)
-2. /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION] — run development with updated specs
-
-Run: /u-spec [SPECS_DIR] [SESSION]
-```
-
-### If **3 (Internal adjustments)** or **4 (I don’t know)**:
-```
-Next step:
-/u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION] — the Planner will generate the backlog directly from the improvements
-
-Run: /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION]
-```
-
-> **Note:** `/u-dev` automatically detects the presence of `improve##.md` and operates in **improve mode**.
-
-> **Important:** `/u-dev` requires the field `domain: frontend`, `domain: backend`, or `domain: fullstack` in `CLAUDE.md`. Verify that the field exists before guiding the next step. If it does not exist, alert the human: "The `CLAUDE.md` file must contain the field `domain: frontend`, `domain: backend`, or `domain: fullstack` before running `/u-dev`."
+| Rule | Description |
+|------|-------------|
+| classification_source | Derived from spec content — never from human input |
+| spec_modification | Prohibited — delegate to /u-spec |
+| code_modification | Prohibited — delegate to /u-dev |
+| new_artifacts | Prohibited — write only to session log |
+| affected_spec_not_found | Set type: implementation_only — do not block |
+| all_outputs | Structured — no free-form text outside defined templates |
+| scope_block_write | Mandatory before emitting handoff instructions |
+| spec_change_status | Must be resolved before writing scope block |

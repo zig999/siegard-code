@@ -1,0 +1,37 @@
+# blocked-report — canonical template
+# Produced by: any agent that cannot execute its task
+# Consumed by: calling Orchestrator
+# Schema: .claude/skills/u-shared-templates/blocked-report.schema.yaml
+# Layer: ephemeral — do NOT commit to repo. Return directly to the calling Orchestrator.
+# Rules:
+#   - Never invent or assume missing inputs — always emit blocked
+#   - Never return a partial result if preconditions are unmet
+#   - missing_inputs and conflicts are mutually exclusive — use only the applicable one
+#   - reason must be a single, objective sentence — no narrative
+
+blocked:
+  id: BLK-<YYYYMMDD-HHMMSS>
+  reported_by: <agent-name>
+  artifact: <artifact-name>
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: permanent | semi-permanent
+
+status: blocked | failed
+
+reason: missing_input | dependency | infeasibility
+
+reason_detail: <optional single objective sentence expanding on the reason>
+
+missing_inputs:
+  - field: <file or field name>
+    expected: <what was expected>
+    source: <where this input should come from>
+
+conflicts:
+  - id: CONFLICT-001
+    description: <what conflicts with what>
+    location: <artifact-name § section or line>
+
+resolution:
+  required_action: <concrete action needed to unblock>
+  escalate_to: orchestrator | human

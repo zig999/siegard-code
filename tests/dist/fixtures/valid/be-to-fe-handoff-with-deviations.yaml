@@ -1,0 +1,18 @@
+session: "2026-04-10-001"
+layer: "semi-permanent"
+generated_by: "u-fullstack-orchestrator"
+generated_at: "2026-04-10T15:30:00Z"
+be_phase_status: "complete_with_deviations"
+endpoints:
+  - task_contract: "TC-003"
+    endpoint: "/api/orders"
+    methods: ["GET", "POST"]
+    status: "done"
+  - task_contract: "TC-004"
+    endpoint: "/api/orders/{id}"
+    methods: ["GET"]
+    status: "done_with_deviations"
+api_contract_status: "has_deviations"
+known_deviations_count: 1
+fe_notes:
+  - "TC-004: DELETE method was descoped — FE must not render delete button for orders"

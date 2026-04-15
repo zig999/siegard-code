@@ -10,6 +10,18 @@ This chapter describes how to install the Dev Team Agents into a target project.
 
 ## Installation
 
+### Recommended: differential sync via `install.sh`
+
+Run the sync script from the `siegard-code/` repository:
+
+```bash
+bash install.sh /path/to/your-project
+```
+
+`install.sh` copies new files, updates modified ones, and removes obsolete ones — non-invasive to unmanaged files already present in the target project's `.claude/` directory.
+
+### Manual installation (alternative)
+
 Copy the contents of `dist/` into the target project's `.claude/` directory:
 
 ```bash
@@ -26,20 +38,19 @@ Copy-Item -Recurse -Force siegard-code\dist\commands your-project\.claude\
 Copy-Item -Recurse -Force siegard-code\dist\skills your-project\.claude\
 ```
 
-This copies all agents, skills, and commands into the target project.
-
 ## What is copied
 
 | Source (siegard-code/dist/) | Destination (project/.claude/) | Description |
 |-----------------------------|--------------------------------|-------------|
-| `commands/` | `commands/` | The 6 slash commands available |
+| `commands/` | `commands/` | Slash commands |
 | `agents/` | `agents/` | All agents from the 3 teams |
 | `skills/` | `skills/` | Complete skill catalog |
 
 ### Overwrite behavior
 
-- Agents, skills, and commands are **always overwritten** on re-copy (full update)
-- The target project's `CLAUDE.md` must be created and configured manually -- it is never generated or overwritten
+- `install.sh`: copies new, updates modified, removes obsolete — preserves unmanaged files
+- Manual copy: agents, skills, and commands are **always overwritten**
+- The target project's `CLAUDE.md` must be created and configured manually — it is never generated or overwritten
 
 ## After installation
 

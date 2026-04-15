@@ -1,0 +1,17 @@
+# INVALID FLOW: mode=incremental_back but handoff_allowed=true — violates FLOW-005
+# incremental_back validates only the back spec phase.
+# Handoff requires final_complete validation — never incremental_back.
+validation:
+  domain: auth
+  artifact_version: 1.0.0
+  mode: incremental_back
+  validated_by: u-spec-validator
+  timestamp: "2026-04-09T11:00:00Z"
+  layer: permanent
+
+status: VALID
+blocking_count: 0
+warning_count: 0
+handoff_allowed: true
+blocking_issues: []
+warnings: []

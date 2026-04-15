@@ -1,0 +1,10 @@
+improve_scope:
+  description: "Add optional filters to the transaction list — date range and status"
+  type: spec_change_required
+  spec_change_status: completed
+  affected_specs:
+    - path: "front/features/transactions.feature.spec.md"
+      sections: ["§2", "§3", "§9"]
+      change_summary: "New UI states for filter panel open/closed and filtered empty state"
+  estimated_task_contracts: 2
+  planner_required: true

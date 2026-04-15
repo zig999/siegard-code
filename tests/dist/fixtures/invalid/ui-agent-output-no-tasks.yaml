@@ -1,0 +1,20 @@
+epic: "EPIC-02"
+layer: "semi-permanent"
+produced_by: "u-fe-ui"
+timestamp: "2026-04-10T14:00:00Z"
+tasks_covered: []
+ui_nn_covered:
+  - feature: "checkout"
+    source: "specs/front/features/checkout.feature.spec.md"
+    states: ["UI-01"]
+    all_states_covered: true
+bdd_scenarios_covered:
+  - scenario_id: "S-01"
+    screen: "Checkout"
+    states: ["UI-01"]
+    coverage: "full"
+design_system:
+  source: "specs/front/design-system/"
+  rules_applied: true
+open_questions_count: 0
+ready_for_development: false

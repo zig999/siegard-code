@@ -1,0 +1,83 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/design-system-gate-report.schema.yaml"
+title: design-system-gate-report
+description: >
+  Structured report emitted by u-fe-ui when it cannot proceed due to a missing or incomplete
+  design system. Consumed by u-fe-orchestrator-core to escalate as a blocking dependency.
+  Rule: status=blocked when design system is entirely absent; status=partial when present
+  but missing required tokens or component definitions.
+type: object
+required:
+  - gate
+  - status
+  - reason
+  - missing_elements
+  - resolution
+additionalProperties: false
+properties:
+
+  gate:
+    type: object
+    required: [id, reported_by, epic, timestamp, layer]
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        pattern: "^DSG-[0-9]{8}-[0-9]{6}$"
+        description: "Format: DSG-YYYYMMDD-HHMMSS"
+      reported_by:
+        type: string
+        const: "u-fe-ui"
+      epic:
+        type: string
+        pattern: "^EPIC-[0-9]+$"
+      timestamp:
+        type: string
+        pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+      layer:
+        type: string
+        const: "semi-permanent"
+
+  status:
+    type: string
+    enum: [blocked, partial]
+    description: "blocked = design system directory absent; partial = present but missing required elements."
+
+  reason:
+    type: string
+    description: "Single objective sentence — what prevented the UI Agent from proceeding."
+
+  missing_elements:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required: [type, identifier, blocking]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [directory, file, token, component_definition]
+        identifier:
+          type: string
+          description: "Path, token name, or component name that is missing."
+        blocking:
+          type: boolean
+          description: "true if this element must exist before the UI Agent can produce output for any screen."
+        affected_screens:
+          type: array
+          items:
+            type: string
+          description: "Screen names blocked by this missing element. Empty if all screens are affected."
+
+  resolution:
+    type: object
+    required: [required_action, escalate_to]
+    additionalProperties: false
+    properties:
+      required_action:
+        type: string
+        description: "Concrete action: run /u-spec to generate design system, or provide specific tokens."
+      escalate_to:
+        type: string
+        enum: [orchestrator, human]

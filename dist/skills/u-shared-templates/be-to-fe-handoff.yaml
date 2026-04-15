@@ -1,0 +1,34 @@
+# Template: be-to-fe-handoff
+# Schema: .claude/skills/u-shared-templates/be-to-fe-handoff.schema.yaml
+# Producer: u-fullstack-orchestrator (after Phase 1 completes)
+# Consumer: u-fe-orchestrator-core (validates before starting Phase 2)
+# This YAML gate block must appear first in handoff-be-to-fe.md, inside a yaml code fence.
+
+session: <SESSION>
+layer: semi-permanent
+generated_by: u-fullstack-orchestrator
+generated_at: <YYYY-MM-DDTHH:MM:SSZ>
+
+be_phase_status: complete
+
+endpoints:
+  - task_contract: TC-XX
+    endpoint: /api/resource
+    methods:
+      - GET
+      - POST
+    status: done
+  - task_contract: TC-YY
+    endpoint: /api/resource/:id
+    methods:
+      - GET
+      - PUT
+      - DELETE
+    status: done
+
+api_contract_status: up_to_date
+known_deviations_count: 0
+
+database_changes: []
+
+fe_notes: []

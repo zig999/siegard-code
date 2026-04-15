@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/version-1.0.0-blue?style=flat-square" alt="Version" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/version-1.1.0-blue?style=flat-square" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License" /></a>
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/works%20with-Claude%20Code-7C3AED?style=flat-square" alt="Works with Claude Code" /></a>
   <a href="#"><img src="https://img.shields.io/badge/agents-18-orange?style=flat-square" alt="18 Agents" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/skills-20+-yellow?style=flat-square" alt="20+ Skills" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/skills-24+-yellow?style=flat-square" alt="24+ Skills" /></a>
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 
 Most AI coding tools help you write code. **Siegard Code** manages the entire development lifecycle — it writes specifications, plans backlogs, implements features, runs QA, and delivers tested code. All autonomously, all traceable, all through Claude Code.
 
-You describe what you want. Siegard's agents handle the rest: the Spec team writes and validates technical specifications, the Dev team plans and implements Stories with automated QA, and the Reverse Spec team can even document existing codebases. Every step produces artifacts. Every decision is logged. Every quality gate has teeth.
+You describe what you want. Siegard's agents handle the rest: the Spec team writes and validates technical specifications, the Dev team plans and implements Task Contracts with automated QA, and the Reverse Spec team can even document existing codebases. Every step produces artifacts. Every decision is logged. Every quality gate has teeth.
 
 > **This is not a product.** It is the agent infrastructure you install into your own projects.
 
@@ -34,11 +34,12 @@ You describe what you want. Siegard's agents handle the rest: the Spec team writ
 
 | Pain point | How Siegard solves it |
 |---|---|
-| "AI writes code but ignores the spec" | Specs are the **single source of truth** — agents trace every line back to a Use Case |
+| "AI writes code but ignores the spec" | Specs are the **single source of truth** — agents trace every line back to a Task Contract |
 | "No one documents anything" | Documentation is a **byproduct**, not a chore — specs, backlogs, QA reports generated automatically |
 | "Context gets lost between sessions" | **Session resume protocol** reconstructs state from disk artifacts — pick up where you left off |
 | "AI makes changes I didn't ask for" | **Human confirmation required** at every major gate — nothing ships without your approval |
-| "Testing is always an afterthought" | **QA is built into the pipeline** — every Story passes through automated test validation |
+| "Testing is always an afterthought" | **QA is built into the pipeline** — every Task Contract passes through automated gate validation before delivery |
+| "Design tokens drift across components" | **25 hard design system rules** (R1–R25) + Tailwind v4 token naming enforced by `/u-fe-validate` |
 
 ---
 
@@ -109,13 +110,13 @@ graph TB
 
 ### Install into your project
 
-Copy the `dist/.claude/` directory into your project:
+Run the differential sync script:
 
 ```bash
-cp -r dev-team/dist/.claude/ /path/to/your-project/.claude/
+bash install.sh /path/to/your-project
 ```
 
-This copies all agents, skills, and commands into your project's `.claude/` directory.
+`install.sh` copies new files, updates modified ones, and removes obsolete ones — non-invasive to unmanaged files in your project's `.claude/` directory.
 
 ### Configure your project
 
@@ -125,6 +126,10 @@ Add these fields to your project's `CLAUDE.md`:
 domain: backend           # or "frontend" — determines which pipeline runs
 stack: Node.js, Express   # your tech stack (agents adapt, not hardcode)
 specs_dir: docs/specs     # where specifications live
+
+design_system:            # frontend projects only
+  path: docs/design-system
+  token_prefix: color     # Tailwind v4 @theme token prefix
 ```
 
 ### Run your first command
@@ -143,7 +148,7 @@ That's it. The orchestrator detects the mode, activates the right agents, and gu
 
 ## Commands
 
-Six slash commands cover the entire development lifecycle:
+Slash commands cover the entire development lifecycle:
 
 | Command | Purpose | Output |
 |---|---|---|
@@ -151,35 +156,46 @@ Six slash commands cover the entire development lifecycle:
 | `/u-dev` | Run a development session (plan → implement → QA) | Tested, delivered code |
 | `/u-reverse-spec` | Generate specs from existing source code | Draft specs for review |
 | `/u-spec-triage` | Fix spec validation errors incrementally | Corrected specs |
-| `/u-improve` | Capture an improvement request | `improve##.md` |
+| `/u-improve` | Capture an improvement request | `improve_scope` YAML block |
 | `/u-bug-report` | Capture a structured bug report | `bug##.md` |
+| `/u-fe-validate` | Frontend code audit against design system rules | `fe-validate-{run_id}.yaml` |
+| `/u-fe-review` | Ad-hoc frontend review with optional `--fix` mode | Structured findings |
+| `/u-ui-design` | Design amplification and anti-pattern detection | Validated UI spec |
 
 ### Workflows
 
 ```
-Feature (full):       /u-spec  →  /u-dev
+Feature (full):       /u-spec  →  /u-dev  →  /u-fe-validate
 Quick improvement:    /u-improve  →  /u-dev
 Bug fix:              /u-bug-report  →  /u-dev
 Reverse + evolve:     /u-reverse-spec  →  /u-spec  →  /u-dev
+Frontend audit:       /u-fe-validate  (standalone, any codebase)
 ```
 
 ---
 
 ## Key Features
 
+### Task Contract Model
+Every feature starts with a **Task Contract** — a formally structured execution unit that defines `task_contract` metadata (id, type, scope, dependencies) and an `execution_contract` (exec_type, input references, constraints, output schema, validation criteria). User Stories are not valid execution units. All agent-to-agent communication uses structured YAML envelopes validated against 13 YAML schemas.
+
 ### Spec-First Development
-Every feature starts with a validated specification — `openapi.yaml`, use cases, business rules, state machines, screen specs, and navigation flows. No code is written without an approved spec.
+Specifications are the single source of truth — `openapi.yaml`, use cases, business rules, state machines, `feature.spec.md` (§1–§9 prescriptive structure), and `component.spec.md` (formal props contracts). No code is written without an approved spec.
 
 ### Automatic Mode Detection
 The orchestrator reads your project state and selects the right mode: **Spec-first**, **Improve**, **Bug**, **Resume**, or **Reverse-eng review**. No flags, no configuration — it just works.
 
 ### Frontend & Backend Pipelines
-One command, two pipelines. The `domain:` field in your `CLAUDE.md` routes to the correct agents. Frontend gets a UI Agent for visual specs; backend gets infrastructure dependency tracking.
+One command, two pipelines. The `domain:` field in your `CLAUDE.md` routes to the correct agents. Frontend gets a UI Agent that gates on `ui-spec-gate { ready_for_development: true }` before developer proceeds; backend gets DI / DTO / pagination pattern validation.
+
+### Design System Enforcement (R1–R25)
+25 hard constraints cover spacing, typography, color usage (60-30-10 rule), border radius, touch targets, animations, z-index, and empty states. All tokens use Tailwind v4 `@theme` naming — inline `var(--token)` styles are a code quality violation. The `/u-fe-validate` skill checks 72 rules and produces a structured verdict (`approved` / `approved_with_caveats` / `rejected`).
 
 ### Quality Gates with Escalation
 - **Spec Reviewer**: Max 3 rejection cycles before human escalation
 - **Spec Validator**: Cross-reference validation with coverage reports
-- **QA Agent**: Test-gate + full mode with max 3 rework rounds
+- **Developer Agent**: Emits `blocked-report.yaml` if execution_contract is missing; opens CR (`type: spec_gap`) on spec gaps
+- **QA Agent**: Runs `/u-fe-validate`; test-gate with max 3 rework rounds
 - Nothing passes silently — every gate produces artifacts
 
 ### Token-Efficient Context Management
@@ -201,18 +217,23 @@ your-project/
 │   │   ├── dev/                  # Dev team (FE + BE agents + protocols)
 │   │   ├── spec/                 # Spec team (6 agents + protocols)
 │   │   └── reverse-spec/         # Reverse Spec team (3 agents + protocols)
-│   ├── commands/                 # 6 slash commands
-│   └── skills/                   # 20+ reusable skill libraries
+│   ├── commands/                 # Slash commands
+│   └── skills/                   # 24+ reusable skill libraries
+│       └── u-shared-templates/   # 13 YAML schemas + examples
 ├── CLAUDE.md                     # Your project configuration
 ├── {SPECS_DIR}/
 │   ├── _global/                  # Shared: conventions, error codes, glossary
 │   ├── domains/{domain}/         # Backend: openapi.yaml + spec.md + back.md
-│   └── front/                    # Frontend: screens, flows, design system
+│   └── front/
+│       ├── feature.spec.md       # §1–§9 prescriptive feature spec
+│       ├── component.spec.md     # Props contract + states + events
+│       ├── decisions.md          # Session-scoped architectural trade-offs
+│       └── design-system/        # Tailwind v4 tokens, R1–R25 rules
 └── {SESSIONS_DIR}/
     └── {SESSION}/                # Current session working directory
-        ├── backlog.md            # Planned Stories
-        ├── us-XX-delivery.md     # Delivery artifacts
-        ├── us-XX-qa.md           # QA reports
+        ├── backlog.md            # Planned Task Contracts
+        ├── TC-XX-delivery.md     # Delivery artifacts
+        ├── TC-XX-qa.md           # QA reports (fe-validate-{run_id}.yaml)
         └── log-orchestrator-dev.md
 ```
 
@@ -222,13 +243,16 @@ your-project/
 
 | I want to... | Commands |
 |---|---|
-| Build a complete feature | `/u-spec` → `/u-dev` |
+| Build a complete feature | `/u-spec` → `/u-dev` → `/u-fe-validate` |
 | Implement from existing specs | `/u-dev` |
 | Fix a bug | `/u-bug-report` → `/u-dev` |
 | Apply a quick improvement | `/u-improve` → `/u-dev` |
 | Document existing code | `/u-reverse-spec` → `/u-spec` |
 | Fix spec validation errors | `/u-spec-triage` |
 | Report a spec problem from dev | `/u-spec` (reverse feedback mode) |
+| Audit frontend code quality | `/u-fe-validate` |
+| Review and fix frontend issues | `/u-fe-review --fix` |
+| Validate visual design decisions | `/u-ui-design` |
 
 ---
 
@@ -238,11 +262,11 @@ your-project/
 |---|---|
 | [Overview](docs-en/01-overview/README.md) | Architecture, concepts, glossary |
 | [Installation](docs-en/02-installation/README.md) | Setup and project configuration |
-| [Commands](docs-en/03-commands/README.md) | All 6 commands in detail |
+| [Commands](docs-en/03-commands/README.md) | All commands in detail |
 | [Agent Teams](docs-en/04-teams/README.md) | Spec, Dev, and Reverse Spec teams |
 | [Execution Flows](docs-en/05-flows/README.md) | Step-by-step workflows |
-| [Protocols](docs-en/06-protocols/README.md) | 15 on-demand behavioral protocols |
-| [Skills](docs-en/07-skills/README.md) | 20+ reusable skill libraries |
+| [Protocols](docs-en/06-protocols/README.md) | On-demand behavioral protocols |
+| [Skills](docs-en/07-skills/README.md) | 24+ reusable skill libraries |
 | [Artifacts](docs-en/08-artifacts/README.md) | Generated files and lifecycle |
 | [Estimates](docs-en/09-estimates/README.md) | Token and time budgets |
 | [Resilience](docs-en/10-resilience/README.md) | Failure scenarios and recovery |
@@ -256,9 +280,20 @@ your-project/
 |---|---|---|---|
 | New spec (full pipeline) | ~19K | 7–12 min | Per domain |
 | Fast-track spec change | ~11K | 4–7 min | Per change |
-| Development (spec-first) | ~14K | 10–18 min | Per Story |
-| Development (improve) | ~10K | 8–13 min | Per Story |
+| Development (spec-first) | ~14K | 10–18 min | Per Task Contract |
+| Development (improve) | ~10K | 8–13 min | Per Task Contract |
+| Frontend validation (`/u-fe-validate`) | ~4K | 2–4 min | Per file glob |
 | Triage | ~3K | 1–2 min | Per item |
+
+## What's in v1.1
+
+| Category | v1.0 | v1.1 | Delta |
+|---|---|---|---|
+| Skills | 18 | 24 | +6 |
+| SDD Templates | 8 | 13 | +5 |
+| YAML Schemas | 0 | 13 | +13 |
+| Design system rules | ~40 informal | 150+ (R1–R25 hard) | +110 |
+| Content lines | ~80k | ~118k | +47% |
 
 ---
 

@@ -2,30 +2,13 @@
 
 > Path: `{SPECS_DIR}/front/design-system/`
 > Implementation: `{path to the project's global CSS file}`
-> Version: 1.0.0
+> Version: 1.0.0 | Layer: permanent
 
-<!-- SINGLE SOURCE OF TRUTH for visual tokens, typography, spacing, composition and components.
-     All other files (front.md, *.screen.md, ui-epic-XX.md, CLAUDE.md) REFERENCE this directory — never duplicate its content.
-     Actual hex and px values live in the project's global CSS file. This directory documents semantic intent and implementation rules.
-
-     DIRECTORY STRUCTURE:
-     design-system/
-       _index.md           — this file: principles, visual context and summary
-       tokens.md           — colors, spacing, typography, shadows and borders
-       composition.md      — visual effects, hierarchy, layout, density
-       components.md       — component catalog (slots x states, do/dont)
-       implementation.md   — accessibility, animations, QA checklist, guidelines
-
-     SELECTIVE READING RULE:
-     Agents MUST NOT read all files by default. The context-mounting protocol
-     defines which files to load per task type. When in doubt, reading _index.md
-     + tokens.md is sufficient for most implementations. -->
 
 ---
 
 ## 1. System principles
 
-<!-- INSTRUCTION: Document the principles that guide this project's visual decisions before any tokens. Answer: what is the primary focus of the interface? which information hierarchy matters most? what are the highlight constraints? Write as named principles with a 1-2 line description. -->
 
 | Principle | Description |
 |---|---|
@@ -35,11 +18,30 @@
 
 ## 2. Visual context
 
-<!-- INSTRUCTION: Define the project's visual scope. Color mode: dark-only | light-only | both with toggle. Personality: describe the visual tone in 1 sentence. Constraints: what this project definitively does not do visually. This section is used by the UI Agent to make visual decisions without needing to ask for each spec. -->
-
 - **Color mode:** {dark-only | light-only | both}
-- **Visual personality:** {description}
-- **Aesthetic constraints:** {list of constraints}
+- **Aesthetic constraints:** {list of constraints — e.g., must follow brand guidelines, no animations, WCAG AAA}
+
+**Visual personality** — consumed by `u-ui-design` to calibrate directional rules (scale, weight, spacing, grid, effects):
+
+```yaml
+visual_personality:
+  direction: bold | minimal | balanced
+  intensity: 1 | 2 | 3 | 4 | 5
+```
+
+| direction | When to use |
+|---|---|
+| `bold` | Marketing, landing pages, brand-forward products — maximize impact and distinctiveness |
+| `minimal` | Dashboards, data-dense tools, B2B apps — maximize clarity and information density |
+| `balanced` | General-purpose apps — standard hierarchy, no strong directional push |
+
+| intensity | Effect |
+|---|---|
+| 1 | Slight lean toward the direction — barely noticeable |
+| 2 | Moderate lean — clear but restrained |
+| 3 | Strong lean — direction is evident |
+| 4 | Very strong — direction dominates most decisions |
+| 5 | Maximum — full directional rules applied (e.g., bold 5 = bolder mode full directives) |
 
 ---
 
@@ -56,7 +58,6 @@
 
 ## Changelog
 
-<!-- INSTRUCTION: Mandatory. Never remove previous entries. Unified changelog for the entire design-system/ directory. -->
 | Version | Date | Author | Type | Description | CR |
 |---|---|---|---|---|---|
 | 1.0.0 | {date} | Front Spec Agent | initial | Initial version | -- |

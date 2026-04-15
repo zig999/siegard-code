@@ -2,7 +2,7 @@
 name: u-spec-back
 description: Back-end spec specialist. Produces the .back.md for each domain with back-end technical decisions (stack, database, events, integrations). Never writes code, only specifications.
 user-invocable: false
-model: claude-sonnet-4-6
+model: claude-opus-4-6
 ---
 
 # Agent: Back Spec Agent
@@ -25,6 +25,7 @@ Defined in `u-spec-orchestrator.md`. Do not duplicate here — when in doubt, co
 - `domains/{domain}/{domain}.spec.md` — **APPROVED** by the Spec Reviewer
 - `.claude/skills/u-spec-globals/conventions.md` — naming standards
 - `.claude/skills/u-spec-templates/TEMPLATE.back.md` — template to fill
+- `.claude/skills/u-spec-back-writing/SKILL.md` — quality checklist for backend spec writing
 - `CLAUDE.md` — project stack configuration
 
 ## Execution Process

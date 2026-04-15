@@ -14,7 +14,7 @@ On-demand behavioral protocols activated by orchestrators (not by agents directl
 | [Rework](rework.md) | Dev orchestrator | Correction cycle after QA rejection |
 | [Push/merge](push-merge.md) | Dev orchestrator | Git operations after QA approval |
 | [Cleanup](cleanup.md) | Dev orchestrator | Archive temporary artifacts |
-| [Epic integration](epic-integration.md) | Dev orchestrator | Cross-Story validation when Epic complete |
+| [Epic integration](epic-integration.md) | Dev orchestrator | Cross-Task Contract validation when Epic complete |
 | [Tech debt](tech-debt.md) | Dev orchestrator | Register technical debt |
 | [Bug mode](bug-mode.md) | Dev orchestrator | Specialized bug fix pipeline |
 | [Improve mode](improve-mode.md) | Dev orchestrator | Incremental improvement pipeline |

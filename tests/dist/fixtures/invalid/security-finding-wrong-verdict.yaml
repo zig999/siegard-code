@@ -1,0 +1,10 @@
+scan:
+  id: "SEC-20260410-160000"
+  reviewed_by: "u-security-reviewer"
+  task_contract: "TC-022"
+  timestamp: "2026-04-10T16:00:00Z"
+  layer: "semi-permanent"
+  files_scanned:
+    - "src/services/payment.service.ts"
+findings: []
+verdict: "pending"

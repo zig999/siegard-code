@@ -1,0 +1,11 @@
+improve_scope:
+  description: "Add success toast after user saves profile settings"
+  type: spec_change_required
+  spec_change_status: completed
+  affected_specs:
+    - path: "front/features/profile.feature.spec.md"
+      sections: ["§2", "§6"]
+      change_summary: "Add UI-08 success state with toast notification after save action"
+  estimated_task_contracts: 1
+  planner_required: false
+  planner_skip_reason: "Single TC, single affected spec, no cross-spec dependencies, no flow or new component change"

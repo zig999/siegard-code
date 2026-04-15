@@ -1,0 +1,12 @@
+# IMPV-012 violation: planner_required=true must not have planner_skip_reason
+improve_scope:
+  description: "Add cross-domain notification flow for payments + activity feed"
+  type: spec_change_required
+  spec_change_status: completed
+  affected_specs:
+    - path: "front/features/notifications.feature.spec.md"
+      sections: ["§2", "§3"]
+      change_summary: "New notification states from payments domain"
+  estimated_task_contracts: 3
+  planner_required: true
+  planner_skip_reason: "Should not be here when planner_required is true"

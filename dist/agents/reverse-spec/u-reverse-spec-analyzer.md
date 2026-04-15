@@ -87,7 +87,7 @@ Frontend identification process:
 
 4. **Derive frontend domains:**
    - If the frontend consumes an endpoint that does NOT belong to any existing domain, register it as a new domain
-   - State/fetching/error decisions per domain will be documented in each screen's `.screen.md`
+   - State/fetching/error decisions per domain will be documented in each feature's `.feature.spec.md`
 
 **Frontend identification result:**
 ```
@@ -441,12 +441,12 @@ Produce `{SPECS_DIR}/_temp/analysis-report.md` with the structure below.
 |------|------|----|-----------|
 | userId | /login | /dashboard | store (useAuthStore) |
 
-## 6. Unclassified Items
+## 7. Unclassified Items
 
 <!-- Artifacts found that do not fit the categories above -->
 - {item}: {description}
 
-## 7. Identified Gaps
+## 8. Identified Gaps
 
 <!-- Things the code should have but does not, or that are incomplete -->
 - {gap}: {impact}

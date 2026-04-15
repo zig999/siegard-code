@@ -10,7 +10,7 @@ The Spec Team is responsible for creating, reviewing, and validating technical s
 | **[Writer](writer.md)** | Creates initial specs | Requirement + globals | `openapi.yaml` + `.spec.md` |
 | **[Reviewer](reviewer.md)** | Quality gate for specs | `.spec.md` + `openapi.yaml` | Approval/rejection report |
 | **[Back Spec](back-spec.md)** | Backend technical spec | Approved `.spec.md` | `.back.md` per domain |
-| **[Front Spec](front-spec.md)** | Frontend technical spec | All approved `.back.md` | `front.md`, screens, flows |
+| **[Front Spec](front-spec.md)** | Frontend technical spec | All approved `.back.md` | `front.md`, feature specs, component specs, flows |
 | **[Validator](validator.md)** | Cross-reference validation | All artifacts | Validation report |
 
 ## Pipeline
@@ -21,7 +21,7 @@ Writer -> Reviewer -> Back Spec Agent(s) -> Validator -> Front Spec Agent -> Val
 
 ### Critical ordering rule
 
-The **Front Spec Agent runs after ALL Back Spec Agents complete**. This is because frontend screens often compose data from multiple backend domains. The Front Spec Agent needs all domain contracts available to produce accurate screen and flow specifications.
+The **Front Spec Agent runs after ALL Back Spec Agents complete**. This is because frontend features often compose data from multiple backend domains. The Front Spec Agent needs all domain contracts available to produce accurate feature and flow specifications.
 
 ## Operating modes
 

@@ -51,16 +51,19 @@ project/
     front/                      # Frontend specs
       front.md                  # Global frontend spec
       design-system/            # Design system reference
-      screens/                  # Screen specifications
-        {screen}.screen.md
+      features/                 # Feature specs (1 per URL/route)
+        {feature}.feature.spec.md
+      components/               # Shared component specs (conditional)
+        {name}.component.spec.md
       _flows/                   # Navigation flows
         {flow}.flow.md
+    decisions.md                # Architecture decision log (DEC-NN)
     openapi.root.yaml           # Root OpenAPI aggregator
     log-orchestrator-spec.md    # Spec orchestrator log
   {SESSIONS_DIR}/               # Session directory
     {SESSION}/                  # Current session working directory
-      backlog.md                # Story backlog (permanent)
-      us-XX-delivery.md         # Story delivery file (-> _temp/)
+      backlog.md                # Task Contract backlog (permanent)
+      us-XX-delivery.md         # Task Contract delivery file (-> _temp/)
       us-XX-qa.md               # QA report (-> _temp/)
       us-XX-pending-items.md    # Blockers/dependencies (permanent)
       ui-epic-XX.md             # UI specifications (-> _temp/)
@@ -77,6 +80,6 @@ project/
 ## Organization principles
 
 - **Backend**: Specs organized by **domain** (`domains/{domain}/`)
-- **Frontend**: Specs organized by **screen/flow** (`front/screens/`, `front/_flows/`), not by domain -- because screens often compose multiple domains
+- **Frontend**: Specs organized by **feature/flow** (`front/features/`, `front/_flows/`), not by domain — because features often compose multiple domains. 1 feature = 1 URL/route
 - **Temporary artifacts**: Moved to `_temp/` after consumption, never deleted
 - **Permanent artifacts**: `backlog.md`, `tech-debt.md`, `pending-items.md`, and orchestrator logs remain in place

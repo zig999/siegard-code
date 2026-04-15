@@ -10,12 +10,12 @@ Before starting, the orchestrator evaluates the improvement's impact:
 
 ## Pipeline
 
-1. Planner generates Stories from `improve##.md`
-2. Developer implements each Story
+1. Planner generates Task Contracts from `improve##.md`
+2. Developer implements each Task Contract
 3. QA validates
-4. **Post-Story spec evaluation** -- Orchestrator checks if the improvement requires updating existing specs
+4. **Post-Task Contract spec evaluation** -- Orchestrator checks if the improvement requires updating existing specs
 
-## Post-Story spec evaluation
+## Post-Task Contract spec evaluation
 
 After QA approves, the orchestrator evaluates whether the implemented improvement:
 - Changed any API behavior

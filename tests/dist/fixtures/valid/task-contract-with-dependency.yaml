@@ -1,0 +1,46 @@
+# VALID: TC-02 depends on TC-01 — cannot start until TC-01 is Done
+task_contract:
+  id: TC-02
+  epic: EPIC-01
+  origin: UC-02
+  type: feature
+  priority: P1
+  scope: frontend
+  estimate: S
+  dependencies:
+    - TC-01
+  persona_coverage:
+    - end-user
+  bdd_ref: "FEAT-01 §9"
+
+execution_contract:
+  exec_type: code_generation
+  objective: Implement the dashboard page using the authenticated session from TC-01.
+  input:
+    references:
+      - path: specs/dashboard/front.md
+        section: "§3"
+        version: 1.0.0
+    known_context:
+      - TC-01 provides the authenticated session context.
+    assumptions_allowed: []
+  constraints:
+    - TC-01 must be Done before this TC starts.
+    - Use design system tokens only.
+  output:
+    format: yaml
+    schema:
+      - files_created
+      - files_modified
+      - acceptance_criteria_coverage
+      - edge_cases
+      - spec_divergences
+      - tech_debt
+      - tests
+      - inference_log
+  validation:
+    criteria:
+      - Dashboard renders only when session is authenticated.
+  fallback:
+    on_missing_input: blocked
+    template: .claude/skills/u-shared-templates/blocked-report.yaml

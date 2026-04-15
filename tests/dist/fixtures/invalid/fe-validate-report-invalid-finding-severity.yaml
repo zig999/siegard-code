@@ -1,0 +1,30 @@
+# Invalid: finding severity not in enum [critical, high, medium, low]
+meta:
+  run_id: FV-20260414-120000
+  target: src/pages/home.tsx
+  files_scanned: 1
+  validated_by: u-fe-validate
+  timestamp: "2026-04-14T12:00:00Z"
+  rules_applied:
+    - code_quality
+  specs_dir_used: null
+
+status: failed
+verdict: rejected
+
+summary:
+  total: 1
+  critical: 0
+  high: 1
+  medium: 0
+  low: 0
+
+findings:
+  - id: FINDING-001
+    rule_set: code_quality
+    rule: inline-css
+    file: src/pages/home.tsx
+    line: 10
+    severity: blocker  # invalid — not in [critical, high, medium, low]
+    description: "Inline CSS detected."
+    suggested_fix: "Use CSS classes instead."

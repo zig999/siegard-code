@@ -1,0 +1,30 @@
+epic: "EPIC-01"
+layer: "semi-permanent"
+produced_by: "u-fe-ui"
+timestamp: "2026-04-10T14:00:00Z"
+tasks_covered:
+  - id: "TC-010"
+    screens: ["UserList", "UserDetail"]
+    status: "complete"
+  - id: "TC-011"
+    screens: ["UserForm"]
+    status: "complete"
+ui_nn_covered:
+  - feature: "user-management"
+    source: "specs/front/features/user-management.feature.spec.md"
+    states: ["UI-01", "UI-02", "UI-03", "UI-04"]
+    all_states_covered: true
+bdd_scenarios_covered:
+  - scenario_id: "S-01"
+    screen: "UserList"
+    states: ["UI-01", "UI-02"]
+    coverage: "full"
+  - scenario_id: "S-02"
+    screen: "UserDetail"
+    states: ["UI-03", "UI-04"]
+    coverage: "full"
+design_system:
+  source: "specs/front/design-system/"
+  rules_applied: true
+open_questions_count: 0
+ready_for_development: true

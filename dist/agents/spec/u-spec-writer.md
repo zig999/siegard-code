@@ -2,7 +2,7 @@
 name: u-spec-writer
 description: Initial spec author. Transforms natural language requirements into OpenAPI contracts and business specification documents (.spec.md). First agent to act on a new domain.
 user-invocable: false
-model: claude-sonnet-4-6
+model: claude-opus-4-6
 ---
 
 # Agent: Spec Writer
@@ -77,7 +77,7 @@ If new domain:
 If the global frontend folders do not exist yet, create them:
 ```
 {SPECS_DIR}/front/
-{SPECS_DIR}/front/screens/
+{SPECS_DIR}/front/features/
 {SPECS_DIR}/front/_flows/
 ```
 

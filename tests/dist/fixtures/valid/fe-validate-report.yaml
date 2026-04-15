@@ -1,0 +1,40 @@
+meta:
+  run_id: FV-20260414-120000
+  target: src/pages/dashboard.tsx
+  files_scanned: 1
+  validated_by: u-fe-validate
+  timestamp: "2026-04-14T12:00:00Z"
+  rules_applied:
+    - code_quality
+    - visual_design
+  specs_dir_used: docs/specs
+
+status: failed
+
+verdict: rejected
+
+summary:
+  total: 2
+  critical: 1
+  high: 0
+  medium: 1
+  low: 0
+
+findings:
+  - id: FINDING-001
+    rule_set: code_quality
+    rule: xss-dangerous-html
+    file: src/pages/dashboard.tsx
+    line: 42
+    severity: critical
+    description: "dangerouslySetInnerHTML used without DOMPurify sanitization."
+    suggested_fix: "Wrap content with DOMPurify.sanitize() before setting innerHTML."
+
+  - id: FINDING-002
+    rule_set: visual_design
+    rule: gradient-text
+    file: src/pages/dashboard.tsx
+    line: 17
+    severity: medium
+    description: "background-clip: text combined with a gradient function detected."
+    suggested_fix: "Use a solid color value instead of a gradient for text color."

@@ -1,0 +1,22 @@
+# INVALID CHAIN: handoff-manifest has auth at v2.0.0
+# but validation-result (valid/validation-result.yaml) has artifact_version: 1.0.0
+# Pair this fixture with valid/validation-result.yaml to test chain version consistency (FLOW-063).
+handoff:
+  id: HANDOFF-20260409-240000
+  delivered_by: u-spec-orchestrator
+  delivered_at: "2026-04-09T23:30:00Z"
+  layer: semi-permanent
+  type: new_domain
+
+domains:
+  - name: auth
+    spec_version: 2.0.0
+    back_version: 2.0.0
+    openapi_version: 2.0.0
+    compliance_report: "Validation passed."
+
+backend_package:
+  - path: specs/auth/openapi.yaml
+    artifact: openapi
+  - path: specs/auth/back.md
+    artifact: back-spec

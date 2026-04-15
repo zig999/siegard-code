@@ -19,13 +19,13 @@ Writer -> Reviewer (delta-focused) -> Validator (incremental)
 ## What is skipped
 
 - **Back Spec Agent** -- Skipped if the change does not impact `.back.md` artifacts
-- **Front Spec Agent** -- Skipped if the change does not impact screen/flow artifacts
+- **Front Spec Agent** -- Skipped if the change does not impact feature/flow artifacts
 - **Full review** -- Reviewer focuses only on changed areas, not the entire spec
 
 ## When NOT to use fast-track
 
 - Breaking changes (removing endpoints, changing required field types)
 - Changes that affect multiple domains
-- Changes that require new screens or flows
+- Changes that require new features or flows
 
 These require the full spec pipeline.

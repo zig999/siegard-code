@@ -1,0 +1,9 @@
+# IMPV-013 violation: estimated_task_contracts=3 but planner_required=false
+improve_scope:
+  description: "Add three new dashboard widgets"
+  type: implementation_only
+  spec_change_status: not_required
+  affected_specs: []
+  estimated_task_contracts: 3
+  planner_required: false
+  planner_skip_reason: "No spec change"

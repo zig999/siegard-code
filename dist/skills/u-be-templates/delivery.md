@@ -1,47 +1,87 @@
-# Template: us-XX-delivery.md (Backend)
+# Template: tc-XX-delivery.md (Backend)
 
-Save to `{SESSIONS_DIR}/{SESSION}/us-XX-delivery.md`:
+Save to `{SESSIONS_DIR}/{SESSION}/tc-XX-delivery.md`.
 
-```markdown
-# Delivery: US-XX — [Title]
+Two YAML blocks, sequential. QA reads gate first — if `qa_ready: false`, stops immediately. Then reads body for implementation details and inference audit.
 
-**Date:** YYYY-MM-DD
-**Status:** Implemented | Implemented with caveats
+````markdown
+```yaml
+# delivery-gate
+task: TC-XX
+layer: semi-permanent
+delivered_by: u-be-developer
+timestamp: <YYYY-MM-DDTHH:MM:SSZ>
 
-## What was done
-[Description in natural language — what the system does now that it did not do before]
+status: implemented | implemented_with_caveats
 
-## Files created
-- `path/file.ts` — [file responsibility]
+spec_consumed:
+  domain_spec: "<domain>.spec.md@<version>"
+  back_spec: "<domain>.back.md@<version>"
+  openapi: "<domain>/openapi.yaml@<version>"
 
-## Files modified
-- `path/other.ts` — [what changed and why]
+tests:
+  command: <exact test command from CLAUDE.md>
+  last_local_run: passed | failed
+  total: <int>
+  passed: <int>
+  failed: <int>
 
-## Migrations created
-- `migrations/YYYYMMDDHHMMSS-description.ts` — [what the migration does]
+acceptance_criteria:
+  total: <int>
+  covered: <int>
+  uncovered: []
 
-## Acceptance criteria — traceability
-- [x] Given X, When Y, Then Z -> implemented in `file.ts`, function `funcName()`
-- [ ] Given A, When B, Then C -> **not implemented** — reason: [explanation]
+spec_divergences:
+  count: <int>
+  items: []
 
-## Edge cases handled
-- Null input in `createUser()` -> returns 400 with validation
-- Duplicate resource -> returns 409 Conflict
+tech_debt:
+  count: <int>
 
-## Points of attention for QA
-- [behaviors that deserve special attention during testing]
-
-## Infrastructure dependencies
-- **Report:** `us-XX-infra-pending-items.md` | No pending items
-- **Mocks created:** [list of mock files] | None
-
-## Technical debt generated
-- [list] | None
-
-## Tests written
-
-| File | Covers |
-|---|---|
-| `__tests__/unit/user.service.spec.ts` | Acceptance criteria 1 and 2; edge case: null input |
-| `__tests__/integration/user.integration.spec.ts` | Criterion 3; edge case: duplicate |
+qa_ready: true | false
+qa_notes: ""
 ```
+
+```yaml
+# delivery-body
+files_created:
+  - path: ""
+    responsibility: ""
+
+files_modified:
+  - path: ""
+    change: ""
+
+migrations_created:
+  - path: ""
+    description: ""
+
+acceptance_criteria_coverage:
+  - criterion: "Given X, When Y, Then Z"
+    status: covered | not_covered
+    location: "path/file.ts:functionName()"
+    not_covered_reason: ""
+
+edge_cases:
+  - case: ""
+    handling: ""
+
+infra_dependencies:
+  report: "tc-XX-infra-pending-items.md" | none
+  mocks_created: []
+
+tech_debt:
+  - item: ""
+    issue_ref: ""
+
+tests:
+  - file: ""
+    covers: []
+
+inference_log:
+  - decision: ""
+    rationale: ""
+    evidence: []
+    impact: ""
+```
+````

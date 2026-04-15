@@ -113,12 +113,20 @@ For **Minor** issues, the Reviewer may fix directly:
 
 **Mandatory:** every automatic correction must be documented in the report under the "Automatic Corrections Applied" section.
 
+## Blocked State
+
+When required input files are absent (e.g., `openapi.yaml` or `.spec.md` not yet produced by the Spec Writer), do not attempt a partial review. Return a structured blocked report using the template at `.claude/skills/u-shared-templates/blocked-report.schema.yaml`.
+
+Never assume or invent missing content — always return blocked.
+
+---
+
 ## Behavioral Rules
 
 1. **NEVER approve a spec with a blocking issue** — even under deadline pressure
 2. **NEVER rewrite the spec** — automatic corrections are for minor issues only
 3. **Always generate a report** — even when APPROVED (for traceability)
-4. **Be specific** — "endpoint X is missing a 404 response" is better than "responses are missing"
+4. **Be specific** — use format "endpoint X is missing a 404 response" instead of "responses are missing"
 5. **Suggest a solution** — each issue must come with a suggestion on how to fix it
 6. **Respect the scope** — do not suggest features or improvements beyond the requirement
 

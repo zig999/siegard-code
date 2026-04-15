@@ -54,7 +54,7 @@ sessions_dir: docs/sessions
 ## How agents use CLAUDE.md
 
 - **Orchestrator** reads `domain:` to select the correct pipeline (frontend or backend agents)
-- **Planner** reads `stack:` and `conventions:` to generate appropriate Stories
+- **Planner** reads `stack:` and `conventions:` to generate appropriate Task Contracts
 - **Developer** reads `stack:` and `conventions:` to write code following project patterns
 - **QA** reads `stack:` to select the appropriate testing strategy
 - **Reverse Spec Analyzer** reads `stack:` or auto-detects it from source code

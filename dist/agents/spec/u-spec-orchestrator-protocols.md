@@ -16,6 +16,7 @@ user-invocable: false
 | Versioning | `protocols/u-spec-versioning.md` | When a version increment or Change Request needs to be opened |
 | Cleanup | `protocols/u-spec-cleanup.md` | After handoff to the implementation group |
 | Validation Triage | `protocols/u-spec-validation-triage.md` | When the human wants to resolve validation errors incrementally via `/u-spec-triage` |
+| Compliance Scan | `.claude/agents/spec/u-spec-compliance.md` | After Final Validator passes, when CLAUDE.md declares compliance: regulations |
 | Handoff to Dev | `protocols/u-spec-to-dev-handoff.md` | When assembling and delivering the spec package to the implementation group |
 
 ## Usage rules
@@ -23,3 +24,17 @@ user-invocable: false
 1. **Load on demand** — do not load all protocols at the start of the session
 2. **One protocol at a time** — load only the one relevant to the current decision
 3. **Do not duplicate content** — the protocol is the source of truth; the orchestrator references, does not copy
+
+## Blocked response schema
+
+When any sub-agent cannot proceed, it **must** return this structure — never invent missing data:
+
+```yaml
+status: blocked
+reason: <objective, single-sentence reason>
+missing_inputs:
+  - <name of missing artifact, field, or prerequisite>
+blocked_task: <agent name or task description>
+```
+
+The orchestrator must treat `status: blocked` as a hard stop: do not advance to the next stage, do not infer missing inputs, escalate to human if unresolvable.

@@ -1,15 +1,15 @@
 # Epic Integration Protocol
 
-Cross-Story validation executed when all Stories in an Epic are complete.
+Cross-Task Contract validation executed when all Task Contracts in an Epic are complete.
 
 ## When triggered
 
-All Stories in an Epic reach `Done` status.
+All Task Contracts in an Epic reach `Done` status.
 
 ## What it validates
 
 ### Backend
-- API contract consistency across Stories
+- API contract consistency across Task Contracts
 - Database migration compatibility
 - Data consistency and integrity
 - Cross-domain integration points
@@ -18,13 +18,13 @@ All Stories in an Epic reach `Done` status.
 - Navigation flow consistency across screens
 - Shared state management correctness
 - Layout consistency
-- Cross-Story UI integration
+- Cross-Task Contract UI integration
 
 ## Process
 
-1. QA executes regression tests across all Stories in the Epic
-2. Cross-Story validation checks are performed
-3. If issues found: specific Stories are flagged for rework
+1. QA executes regression tests across all Task Contracts in the Epic
+2. Cross-Task Contract validation checks are performed
+3. If issues found: specific Task Contracts are flagged for rework
 4. If passed: Epic is marked as integration-complete
 
 ## Separate protocols

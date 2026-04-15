@@ -23,4 +23,4 @@ Captures structured bug reports through a guided questionnaire.
 
 ## Multiple bugs
 
-Run `/u-bug-report` multiple times to capture several bugs. Each generates a separate `bug##.md` file. When `/u-dev` runs in Bug mode, the Planner reads all `bug##.md` files and generates fix Stories with priority classification (P0/P1).
+Run `/u-bug-report` multiple times to capture several bugs. Each generates a separate `bug##.md` file. When `/u-dev` runs in Bug mode, the Planner reads all `bug##.md` files and generates fix Task Contracts with priority classification (P0/P1).

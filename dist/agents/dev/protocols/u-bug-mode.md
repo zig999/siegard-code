@@ -26,8 +26,8 @@ Where: [screen or component]
 
 The Orchestrator detects `bug##.md` during the same mode scan:
 
-| bug##.md | improve##.md | {SPECS_DIR} | Mode |
-|----------|-------------|--------|------|
+| bug##.md | improve_scope block in log | {SPECS_DIR} | Mode |
+|----------|--------------------------|--------|------|
 | Yes | No | * | **Bug** |
 | Yes | Yes | * | **Bug + Improve** (bugs first) |
 | No | Yes | * | Improve (existing flow) |
@@ -72,7 +72,7 @@ Does the bug affect an existing contract/API (endpoint returns unexpected error,
   |
   |      --> If human chooses option 2 (fix without updating spec):
   |          - Record in log: "SPEC-DIVERGENCE-ACCEPTED: Bug #NN — {domain} — {description}"
-  |          - The generated Story must include: "Note: accepted spec divergence — CR pending"
+  |          - The generated Task Contract must include: "Note: accepted spec divergence — CR pending"
   |          - After QA approves, Orchestrator must create `{SPECS_DIR}/spec-divergences.md`
   |            (or update if it already exists) with the divergence for future review
   |
@@ -104,16 +104,16 @@ For bugs classified as `visual/UI adjustment`, the Planner and TDD are skipped:
 
 ### Full Pipeline (type: incorrect behavior | integration error | unknown)
 
-1. **Planner** generates Stories from bugs:
-   - One Story per bug (unless related bugs can be grouped)
-   - Story type: `Bugfix`
+1. **Planner** generates Task Contracts from bugs:
+   - One Task Contract per bug (unless related bugs can be grouped)
+   - Task Contract type: `Bugfix`
    - Priority based on impact: blocking bugs = P0, visible bugs = P1, cosmetic bugs = P2
-   - Each Story must reference the source bug: `Origin: bug##.md`
-   - If specs exist and the bug references a specified domain, the Story must reference the affected UC-NN
+   - Each Task Contract must reference the source bug: `Origin: bug##.md`
+   - If specs exist and the bug references a specified domain, the Task Contract must reference the affected UC-NN
 
 2. **Developer** fixes:
-   - Branch: `fix/US-XX`
-   - Commit: `fix(US-XX): description`
+   - Branch: `fix/TC-XX`
+   - Commit: `fix(TC-XX): description`
    - Must include a test that reproduces the bug before fixing it (TDD for bugs)
 
 3. **QA** validates:
@@ -126,13 +126,13 @@ For bugs classified as `visual/UI adjustment`, the Planner and TDD are skipped:
 When both exist in the same `{SESSIONS_DIR}/{SESSION}`:
 
 1. `visual/UI adjustment` bugs go **directly to the Developer** (Lean Pipeline) — without going through the Planner
-2. **Planner** processes only `incorrect behavior`/`integration error` bugs + all `improve##.md`:
-   - Generates Bugfix Stories with priority P0/P1 (logic/contract bugs)
-   - Generates Improve Stories with priority P1/P2
+2. **Planner** processes only `incorrect behavior`/`integration error` bugs + all improve_scope blocks:
+   - Generates Bugfix Task Contracts with priority P0/P1 (logic/contract bugs)
+   - Generates Improve Task Contracts with priority P1/P2
 3. Orchestrator may group into:
    - Epic "Fixes" (bugs) + Epic "Improvements" (improve) — if independent
    - Single Epic if bugs and improvements are in the same functional area
-4. **Rule:** Bugfix Stories never depend on Improve Stories. The reverse is allowed.
+4. **Rule:** Bugfix Task Contracts never depend on Improve Task Contracts. The reverse is allowed.
 
 ### Cleanup of bug##.md
 
@@ -143,7 +143,7 @@ The cleanup trigger depends on the pipeline used:
 
 In both cases:
 - If a bug **was not addressed** (e.g., not reproducible), keep the file in `{SESSIONS_DIR}/{SESSION}` and notify the human: "Bug bug##.md not incorporated — keep for next session?"
-- Traceability: the Story (Full Pipeline) or the commit (Lean Pipeline) must reference `Origin: bug##.md` — the original file stays in `_temp/` for reference
+- Traceability: the Task Contract (Full Pipeline) or the commit (Lean Pipeline) must reference `Origin: bug##.md` — the original file stays in `_temp/` for reference
 
 ### Feedback to Spec (when specs exist)
 
@@ -159,4 +159,4 @@ After QA approves the fix for a bug that revealed a gap in the spec:
    1. Yes — run /u-spec [SPECS_DIR] with bug feedback
    2. No — keep spec as is (accept divergence)
    ```
-3. If human chooses to update, record as CR in the Spec Orchestrator
+3. If human chooses to update: open a CR using `.claude/skills/u-shared-templates/cr-template.yaml` (`type: spec_gap`) → save as `{SESSIONS_DIR}/{SESSION}/cr-{id}.yaml` → pass CR path to the Spec Orchestrator for fast-track update

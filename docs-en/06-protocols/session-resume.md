@@ -20,7 +20,7 @@ The orchestrator detects an existing session log with incomplete stages:
 ## What is preserved
 
 - All files generated to disk (specs, code, delivery files)
-- Story status in backlog.md
+- Task Contract status in backlog.md
 - Intermediate artifacts (QA reports, delivery files)
 - Orchestrator log with all recorded events
 

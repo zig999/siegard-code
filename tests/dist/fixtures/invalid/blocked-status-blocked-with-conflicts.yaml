@@ -1,0 +1,25 @@
+# INVALID FLOW: status=blocked but conflicts is populated — violates FLOW-011
+# Use missing_inputs when blocked, conflicts when failed.
+blocked:
+  id: BLK-20260409-150000
+  reported_by: u-spec-validator
+  artifact: domains/auth/openapi.yaml
+  timestamp: "2026-04-09T15:00:00Z"
+  layer: permanent
+
+status: blocked
+reason: Required input is absent.
+
+missing_inputs:
+  - field: openapi.yaml
+    expected: OpenAPI 3.0 contract for auth domain.
+    source: domains/auth/openapi.yaml
+
+conflicts:
+  - id: CONFLICT-001
+    description: Endpoint POST /auth/login contradicts error-codes.md.
+    location: specs/auth/back.md §4
+
+resolution:
+  required_action: Provide the missing openapi.yaml.
+  escalate_to: orchestrator

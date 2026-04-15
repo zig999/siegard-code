@@ -1,0 +1,23 @@
+meta:
+  run_id: FV-20260414-130000
+  target: "src/components/**/*.tsx"
+  files_scanned: 4
+  validated_by: u-fe-validate
+  timestamp: "2026-04-14T13:00:00Z"
+  rules_applied:
+    - code_quality
+    - visual_design
+  specs_dir_used: null
+
+status: passed
+
+verdict: approved
+
+summary:
+  total: 0
+  critical: 0
+  high: 0
+  medium: 0
+  low: 0
+
+findings: []

@@ -1,0 +1,116 @@
+# task_contract — canonical planning template
+# Format: Task Contract (structured execution unit)
+# Produced by: u-planning (Planner agent)
+# Consumed by: Orchestrator, u-fe-development, u-be-development
+# Schema: dist/skills/u-shared-templates/task_contract.schema.yaml
+# Layer: semi-permanent — committed to repo, versioned per planning cycle
+#
+# RULES:
+#   - id must follow pattern TC-XX (project-scoped sequential)
+#   - scope MUST be either frontend or backend — never "both" (split into two tasks)
+#   - estimate MUST be S or M — never L (split into two tasks)
+#   - dependencies must reference valid TC-XX ids or be an empty array
+#   - bdd_ref must point to FEAT-NN §9 BDD Scenarios or be null
+#   - No narrative fields (As a / I want / So that) — prohibited
+#   - No status field — managed exclusively by Orchestrator
+#   - No free-text acceptance criteria in Given/When/Then format
+
+task_contract:
+  id: TC-<NN>
+  # Pattern: ^TC-[0-9]+$
+  # Example: TC-01
+
+  epic: EPIC-<NN>
+  # Pattern: ^EPIC-[0-9]+$
+  # Example: EPIC-03
+
+  origin: <UC-NN | improve-NN | bug-NN | component-spec-gate | direct>
+  # Enum: UC-NN | improve-NN | bug-NN | component-spec-gate | direct
+  # Example: UC-04
+
+  type: <feature | bugfix | refactoring | spec | tech_debt>
+  # Enum: feature | bugfix | refactoring | spec | tech_debt
+
+  priority: <P0 | P1 | P2>
+  # Enum: P0 | P1 | P2
+
+  scope: <frontend | backend>
+  # Enum: frontend | backend
+  # PROHIBITED: both
+
+  estimate: <S | M>
+  # Enum: S | M
+  # PROHIBITED: L
+
+  dependencies:
+    - TC-<NN>
+  # Array of TC-XX ids. Use [] if no dependencies.
+
+  persona_coverage:
+    - <persona-name>
+  # Array of actors from spec.md §2 served by this task.
+  # Example: [admin, end-user]
+
+  bdd_ref: <FEAT-NN §9 | null>
+  # Reference to BDD Scenarios section in the feature spec.
+  # Use null if no BDD reference applies.
+
+execution_contract:
+  exec_type: <code_generation | bug_fix | refactoring | analysis | design | review | test_generation | validation | documentation>
+  # Enum: code_generation | bug_fix | refactoring | analysis | design | review | test_generation | validation | documentation
+
+  objective: <single objective sentence — what this task must accomplish>
+  # One intention only. No narrative.
+
+  input:
+    references:
+      - path: <relative path to artifact>
+        section: <§N or section title>
+        version: <semver or commit ref>
+    # Array of structured references consumed by the executing agent.
+
+    known_context:
+      - <explicit known fact>
+    # Array of facts already established — no inference required.
+
+    assumptions_allowed:
+      - <explicit permitted assumption>
+    # Array of assumptions the agent is permitted to make.
+    # Empty array = no assumptions allowed.
+
+  constraints:
+    - <explicit rule>
+  # Array of hard constraints. One rule per item.
+
+  output:
+    format: yaml
+    schema:
+      - files_created
+      - files_modified
+      - acceptance_criteria_coverage
+      - edge_cases
+      - spec_divergences
+      - tech_debt
+      - tests
+      - inference_log
+
+  validation:
+    criteria:
+      - <objective verifiable criterion>
+    # Each criterion must be independently verifiable.
+    # No subjective criteria permitted.
+
+  fallback:
+    on_missing_input: blocked
+    template: .claude/skills/u-shared-templates/blocked-report.yaml
+
+# non_functional_requirements: (optional — omit when not applicable)
+#   - type: latency_p99_ms
+#     threshold: 200
+#     unit: ms
+#     endpoint: POST /api/resource
+#     measurement_command: "k6 run --vus 50 --duration 30s scripts/load-tc-XX.js"
+#   - type: bundle_size_kb
+#     threshold: 50
+#     unit: kb
+#     endpoint: /dashboard

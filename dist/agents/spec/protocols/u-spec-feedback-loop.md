@@ -126,7 +126,7 @@ The Orchestrator-Dev is responsible for generating this file when the Developer 
 > Status: PENDING | PROCESSED | REJECTED
 
 ## Context
-{What was being implemented — Story, Epic, referenced UC}
+{What was being implemented — Task Contract, Epic, referenced UC}
 
 ## Problem
 {Objective description of the problem found}
@@ -160,5 +160,5 @@ The Orchestrator-Dev is responsible for generating this file when the Developer 
 
 Every processed feedback generates:
 1. Entry in the Orchestrator log
-2. CR-NN if it resulted in a spec change
+2. CR-NN if it resulted in a spec change — create `{SESSIONS_DIR}/{SESSION}/cr-NN.yaml` immediately using `.claude/skills/u-shared-templates/cr.schema.yaml`
 3. Entry in the Changelog of affected files with reference to the CR

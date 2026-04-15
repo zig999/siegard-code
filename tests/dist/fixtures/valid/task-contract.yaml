@@ -1,0 +1,44 @@
+task_contract:
+  id: TC-01
+  epic: EPIC-01
+  origin: UC-01
+  type: feature
+  priority: P1
+  scope: frontend
+  estimate: S
+  dependencies: []
+  persona_coverage:
+    - end-user
+  bdd_ref: "FEAT-01 §9"
+
+execution_contract:
+  exec_type: code_generation
+  objective: Implement the login form component with input validation.
+  input:
+    references:
+      - path: specs/auth/front.md
+        section: "§3"
+        version: 1.0.0
+    known_context:
+      - Authentication uses JWT tokens.
+    assumptions_allowed: []
+  constraints:
+    - Use design system tokens only.
+    - No hardcoded color or spacing values.
+  output:
+    format: yaml
+    schema:
+      - files_created
+      - files_modified
+      - acceptance_criteria_coverage
+      - edge_cases
+      - spec_divergences
+      - tech_debt
+      - tests
+      - inference_log
+  validation:
+    criteria:
+      - All form fields render and validate correctly.
+  fallback:
+    on_missing_input: blocked
+    template: .claude/skills/u-shared-templates/blocked-report.yaml

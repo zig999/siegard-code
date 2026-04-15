@@ -23,4 +23,4 @@ Captures incremental improvement requests through a quick guided questionnaire.
 
 ## Multiple improvements
 
-Run `/u-improve` multiple times to capture several improvements. Each generates a separate `improve##.md` file. When `/u-dev` runs in Improve mode, the Planner reads all `improve##.md` files and generates Stories for each.
+Run `/u-improve` multiple times to capture several improvements. Each generates a separate `improve##.md` file. When `/u-dev` runs in Improve mode, the Planner reads all `improve##.md` files and generates Task Contracts for each.

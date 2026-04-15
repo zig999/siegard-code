@@ -1,0 +1,27 @@
+# VALID: CR with dev_blocked=false — task continues despite open CR
+id: CR-06
+reported_by: u-fe-developer
+timestamp: "2026-04-09T12:00:00Z"
+task: TC-06
+epic: EPIC-03
+artifact:
+  path: specs/auth/front.md
+  section: "§7 Non-Functional Requirements"
+  version: 1.0.0
+type: spec_gap
+description: Loading skeleton behavior for async data fetch is not specified.
+evidence:
+  - Section §7 has no mention of skeleton UI or loading states.
+proposed_change: "N/A"
+impact:
+  dev_blocked: false
+  task_contracts_affected:
+    - TC-06
+  scope: low
+resolution:
+  status: open
+  decided_by: ""
+  decision: ""
+  spec_updated: false
+  delivery_updated: false
+  timestamp: ""

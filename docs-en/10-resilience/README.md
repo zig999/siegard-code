@@ -19,18 +19,18 @@ Failure scenarios, recovery strategies, and system limits.
 
 ---
 
-### 2. QA rejects Story repeatedly
+### 2. QA rejects Task Contract repeatedly
 
 **What happens:**
 - Rounds 1-2: Developer auto-corrects in short mode
-- Round 3: Story blocked, escalated to human
+- Round 3: Task Contract blocked, escalated to human
 
 **Recovery:**
 - Review QA diagnostics and Developer's attempts
-- Reformulate acceptance criteria or reduce Story scope
+- Reformulate `validation.criteria` or reduce Task Contract scope
 - Resume with `/u-dev`
 
-**Prevention:** Write clear INVEST-standard acceptance criteria.
+**Prevention:** Write clear, objective `validation.criteria` in the `execution_contract`.
 
 ---
 
@@ -49,7 +49,7 @@ Failure scenarios, recovery strategies, and system limits.
 **Common causes:**
 - 10+ domains in one spec session
 - Huge analysis report from reverse spec
-- 20+ Stories in one dev session
+- 20+ Task Contracts in one dev session
 
 **Recovery:** Divide into smaller sessions (1 domain or 1 Epic at a time).
 
@@ -96,8 +96,8 @@ Failure scenarios, recovery strategies, and system limits.
 | Limit | Value | Consequence |
 |-------|-------|-------------|
 | Reviewer rejection cycles | Max 3 | Escalation to human |
-| QA rework rounds | Max 3 | Story blocked |
-| Parallel Stories | Max 3 | Queue for remaining |
+| QA rework rounds | Max 3 | Task Contract blocked |
+| Parallel Task Contracts | Max 3 | Queue for remaining |
 | Spec domains WIP | Max 3 | Queue for remaining |
 | Triage validation cycles | Max 2 per agent | Escalation to human |
 | Analysis report size | ~300 lines | Use Executive Summary for larger |

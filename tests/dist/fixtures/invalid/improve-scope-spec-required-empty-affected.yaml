@@ -1,0 +1,8 @@
+# IMPV-003 violation: spec_change_required with empty affected_specs
+improve_scope:
+  description: "Add new payment method UC-08"
+  type: spec_change_required
+  spec_change_status: completed
+  affected_specs: []
+  estimated_task_contracts: 1
+  planner_required: true

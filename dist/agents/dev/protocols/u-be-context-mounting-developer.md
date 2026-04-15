@@ -11,21 +11,21 @@ Execute before building the prompt. Ensures filesystem isolation between paralle
    REPO_ROOT=$(git rev-parse --show-toplevel)
    ```
 
-2. Determine the branch prefix based on Story type:
-   - New feature -> `feat/US-XX`
-   - Bugfix -> `fix/US-XX`
-   - Refactoring -> `refactor/US-XX`
-   - Enhancement -> `feat/US-XX`
+2. Determine the branch prefix based on Task Contract type:
+   - New feature -> `feat/TC-XX`
+   - Bugfix -> `fix/TC-XX`
+   - Refactoring -> `refactor/TC-XX`
+   - Enhancement -> `feat/TC-XX`
 
 3. Create worktree with absolute path and dedicated branch:
    ```bash
-   git -C "$REPO_ROOT" worktree add "$REPO_ROOT/.claude/worktrees/US-XX" -b feat/US-XX
+   git -C "$REPO_ROOT" worktree add "$REPO_ROOT/.claude/worktrees/TC-XX" -b feat/TC-XX
    ```
 
 4. Include in the Developer activation prompt (right after the task instruction):
    ```
-   Worktree: {REPO_ROOT}/.claude/worktrees/US-XX
-   Branch: feat/US-XX (already created — do not run git checkout -b)
+   Worktree: {REPO_ROOT}/.claude/worktrees/TC-XX
+   Branch: feat/TC-XX (already created — do not run git checkout -b)
    Work exclusively in this directory.
    ```
 
@@ -50,27 +50,29 @@ Read in parallel:
 
 Copy into the prompt (do not pass the file):
 ```
-## Target Story (extracted from backlog.md)
-[complete US-XX block: title, narrative (As/I want/So that), ALL acceptance criteria, type, estimate, dependencies, affected modules]
+## Target Task Contract (extracted from backlog.md)
+[complete TC-XX block: title, ALL acceptance criteria, type, estimate, dependencies, affected modules]
 ```
 
 ### Spec-first mode (when {SPECS_DIR} exists with approved status)
 
-Extract from the spec package the sections relevant to this Story:
+> **If the Task Contract's `execution_contract.input_references` is populated:** use it as the primary guide for extraction — map each listed reference to its section and inject it. Only fall back to the default inference rules below if `input_references` is empty or absent.
+
+Extract from the spec package the sections relevant to this Task Contract:
 
 ```
-## API Contract — endpoints for this Story (extracted from {SPECS_DIR}/domains/{domain}/openapi.yaml)
-[only the paths/operationIds whose functionality corresponds to this Story]
+## API Contract — endpoints for this Task Contract (extracted from {SPECS_DIR}/domains/{domain}/openapi.yaml)
+[only the paths/operationIds whose functionality corresponds to this Task Contract]
 [include schemas referenced by these endpoints]
 
 ## Back Spec — rules and model (extracted from {SPECS_DIR}/domains/{domain}/back/{domain}.back.md)
-[BRs referenced by this Story's UCs — e.g., BR-01, BR-02]
-[relevant STs — state machine if the Story changes state]
-[relevant EVs — events dispatched by this Story's actions]
-[Data model — tables touched by this Story]
+[BRs referenced by this Task Contract's UCs — e.g., BR-01, BR-02]
+[relevant STs — state machine if the Task Contract changes state]
+[relevant EVs — events dispatched by this Task Contract's actions]
+[Data model — tables touched by this Task Contract]
 
 ## Error Codes (extracted from {SPECS_DIR}/_global/error-codes.md)
-[only the error.code used by this Story's endpoints]
+[only the error.code used by this Task Contract's endpoints]
 ```
 
 > **Traceability rule:** when mounting context, include spec identifiers (UC-NN, BR-NN) so the Developer can reference them in tests and comments.
@@ -79,4 +81,4 @@ Extract from the spec package the sections relevant to this Story:
 
 Keep the previous flow — without API Contract or Back Spec sections.
 
-> **When to omit API Contract:** if the Story type is Refactoring (no contract change) or Bugfix (no API impact), do not include the spec sections.
+> **When to omit API Contract:** if the Task Contract type is Refactoring (no contract change) or Bugfix (no API impact), do not include the spec sections.

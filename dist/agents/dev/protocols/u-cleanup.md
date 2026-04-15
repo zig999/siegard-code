@@ -6,16 +6,31 @@ Intermediate files that have already been consumed must be moved to `{SESSIONS_D
 
 ### After Planner completes (`backlog.md` generated)
 Move to `_temp/`:
-- `{SESSIONS_DIR}/{SESSION}/improve*.md` (if they exist — already consumed by the Planner and incorporated into the backlog)
+- Any `{SESSIONS_DIR}/{SESSION}/bug##.md` files already consumed by the Planner
 
-### After Story completed (QA approved, status `Done`)
+### After Task Contract completed (QA approved, status `Done`)
 Move to `_temp/`:
-- Any `{SESSIONS_DIR}/{SESSION}/bug##.md` or `{SESSIONS_DIR}/{SESSION}/improve##.md` that were addressed by the completed Story
+- Any `{SESSIONS_DIR}/{SESSION}/bug##.md` that were addressed by the completed Task Contract
 
-> **Do not move `us-XX-delivery.md` and `us-XX-qa.md` at this point.** These files are needed for the Epic integration QA (see epic-integration protocol). They will be moved after Epic completion.
+> **Do not move `tc-XX-delivery.md` and `tc-XX-qa.md` at this point.** These files are needed for the Epic integration QA (see epic-integration protocol). They will be moved after Epic completion.
 
 ### After Epic completed (integration approved)
 Move to `_temp/`:
 - Epic design spec (`ui-epic-XX.md` for frontend, `epic-XX-integration-qa.md` for backend)
-- All `{SESSIONS_DIR}/{SESSION}/us-XX-delivery.md` from the Epic's Stories
-- All `{SESSIONS_DIR}/{SESSION}/us-XX-qa.md` from the Epic's Stories
+- All `{SESSIONS_DIR}/{SESSION}/tc-XX-delivery.md` from the Epic's Task Contracts
+- All `{SESSIONS_DIR}/{SESSION}/tc-XX-qa.md` from the Epic's Task Contracts
+
+## Ephemeral artifacts — never commit
+
+The following are ephemeral by nature and must **not** be committed to the repository:
+
+| Artifact | Rule |
+|----------|------|
+| Files under `{RUNTIME_DIR}/` | Gitignored — never stage |
+| Raw CI/test runner output | Discard after QA analysis — summarize in qa-report only |
+| Agent execution traces or debug logs | Do not persist to repo |
+
+Add to project `.gitignore` on session bootstrap if not already present:
+```
+docs/runtime/
+```

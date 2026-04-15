@@ -17,11 +17,23 @@ user-invocable: false
 | Context — Developer | `.claude/agents/dev/protocols/u-fe-context-mounting-developer.md` | When activating the Developer |
 | Context — QA & Docs | `.claude/agents/dev/protocols/u-fe-context-mounting-qa.md` | When activating QA & Docs |
 | Short mode | `.claude/agents/dev/protocols/u-context-mounting-short-mode.md` | When activating any sub-agent for the 2nd+ time in the session |
-| Epic Integration | `.claude/agents/dev/protocols/u-fe-epic-integration.md` | When all Stories in an Epic reach `Done` |
-| Rework (feedback loop) | `.claude/agents/dev/protocols/u-rework.md` | When QA rejects a Story |
-| Tech-debt | `.claude/agents/dev/protocols/u-tech-debt.md` | When `us-XX-delivery.md` contains "Generated tech debt" |
-| API Contracts | `.claude/agents/dev/protocols/u-fe-api-contracts.md` | When a Story consumes a new or changed endpoint |
-| Push and merge | `.claude/agents/dev/protocols/u-push-merge.md` | After QA approves a Story |
-| Cleanup `_temp/` | `.claude/agents/dev/protocols/u-cleanup.md` | After Planner, Story, or Epic completion |
-| Improve Mode | `.claude/agents/dev/protocols/u-improve-mode.md` | When Improve mode is detected (improve##.md present) |
+| Epic Integration | `.claude/agents/dev/protocols/u-fe-epic-integration.md` | When all Task Contracts in an Epic reach `Done` |
+| Security Review | `.claude/agents/dev/u-security-reviewer.md` | After QA full-mode approves a Task Contract (before push/merge) — scope: TCs with API calls or auth logic |
+| Architecture Review | `.claude/agents/dev/u-architecture-reviewer.md` | After Epic integration QA approves |
+| Rework (feedback loop) | `.claude/agents/dev/protocols/u-rework.md` | When QA rejects a Task Contract |
+| Tech-debt | `.claude/agents/dev/protocols/u-tech-debt.md` | When `tc-XX-delivery.md` contains "Generated tech debt" |
+| API Contracts | `.claude/agents/dev/protocols/u-fe-api-contracts.md` | When a Task Contract consumes a new or changed endpoint |
+| Push and merge | `.claude/agents/dev/protocols/u-push-merge.md` | After QA approves a Task Contract |
+| Cleanup `_temp/` | `.claude/agents/dev/protocols/u-cleanup.md` | After Planner, Task Contract, or Epic completion |
+| Improve Mode | `.claude/agents/dev/protocols/u-improve-mode.md` | When Improve mode is detected (improve_scope block in log) |
 | Bug Mode | `.claude/agents/dev/protocols/u-bug-mode.md` | When Bug mode is detected (bug##.md present) |
+
+## Blocked response schema
+
+When any sub-agent cannot proceed, it **must** use the canonical template — never invent missing data, never return partial results:
+
+```
+Template: .claude/skills/u-shared-templates/blocked-report.yaml
+```
+
+The orchestrator treats `status: blocked` as a hard stop: do not advance to the next stage, do not infer missing inputs, escalate to human if `resolution.escalate_to: human`.

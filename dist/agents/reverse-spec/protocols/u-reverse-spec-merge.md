@@ -62,7 +62,7 @@ For each domain found by the Analyzer:
 - Register as **NEW_FIELDS**, **NEW_BRS**, **NEW_EVENTS**
 
 **screens / flows:**
-- Compare screens: pages in the code without a screen.md
+- Compare screens: pages in the code without a feature.spec.md
 - Compare flows: navigations without a flow.md
 - Register as **NEW_SCREENS**, **NEW_FLOWS**
 
@@ -161,7 +161,7 @@ For each confirmed change:
 - Add a Changelog entry
 
 #### New screens/flows
-- Create new screen.md / flow.md files
+- Create new feature.spec.md / flow.md files
 - Do not modify existing screens/flows
 
 ### Step 6: Mark as review and create marker

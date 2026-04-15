@@ -1,0 +1,8 @@
+# IMPV-010 violation: planner_required=false without planner_skip_reason
+improve_scope:
+  description: "Fix label typo on login form"
+  type: implementation_only
+  spec_change_status: not_required
+  affected_specs: []
+  estimated_task_contracts: 1
+  planner_required: false

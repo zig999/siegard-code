@@ -7,7 +7,7 @@ user-invocable: false
 # SKILL: Development (Backend)
 
 ## Purpose
-This skill defines how the Developer Agent must structure, name, organize, and deliver code — ensuring consistency across Stories and predictability for the QA Agent.
+This skill defines how the Developer Agent must structure, name, organize, and deliver code — ensuring consistency across Task Contracts and predictability for the QA Agent.
 
 ---
 
@@ -26,7 +26,9 @@ Before creating any file, extract from `CLAUDE.md`:
 | Custom error pattern | Error classes to extend |
 | Already defined environment variables | Avoid hardcoding and duplicates |
 | Configured ORM/ODM | Model and migration patterns |
-| Validation pattern (Zod, Joi, class-validator...) | Input schemas |
+| `validation_library` | DTO schema strategy (Zod, Joi, class-validator) |
+| `di_strategy` | Dependency injection pattern (manual-factory, nestjs-ioc, inversify) |
+| `pagination.strategy` | Offset or cursor pagination — determines `PaginatedResponse<T>` meta shape |
 
 If `CLAUDE.md` does not cover a given point, use the defaults from this skill and document the decision in the delivery file.
 
@@ -48,9 +50,9 @@ If `CLAUDE.md` does not cover a given point, use the defaults from this skill an
 ## Mandatory flow before coding
 
 ```
-1. Read the full Story (narrative + all acceptance criteria)
+1. Read the full Task Contract (narrative + all acceptance criteria)
 2. Read the files listed as dependencies in the previous delivery (if any)
-3. Map the interface contracts the Story will touch or create
+3. Map the interface contracts the Task Contract will touch or create
 4. Write the plan as a comment at the top of the first file created
 5. Only then begin implementation
 ```
@@ -61,18 +63,18 @@ If any step reveals a blocking ambiguity -> **stop and record it in the delivery
 
 ## Branch and commits
 
-### Branch per Story
+### Branch per Task Contract
 
 Before any implementation, create a branch from `main`:
 
 ```
-feat/US-XX    <- for Stories of type New feature, Improvement
-fix/US-XX     <- for fixes coming from QA
-refactor/US-XX <- for Stories of type Refactoring
+feat/TC-XX    <- for Task Contracts of type New feature, Improvement
+fix/TC-XX     <- for fixes coming from QA
+refactor/TC-XX <- for Task Contracts of type Refactoring
 ```
 
 **Rules:**
-- Work exclusively on the Story branch — never commit directly to `main`
+- Work exclusively on the Task Contract branch — never commit directly to `main`
 - **Never push** — pushing is the sole responsibility of the Orchestrator-Dev, after QA approval
 - Commit locally as often as you like
 
@@ -81,15 +83,15 @@ refactor/US-XX <- for Stories of type Refactoring
 Mandatory semantic prefix:
 
 ```
-feat(US-XX): [description of what was added]
-fix(US-XX):  [description of what was fixed]
-refactor(US-XX): [description of improvement without behavior change]
-test(US-XX): [description of tests added]
-docs(US-XX): [documentation update]
-migration(US-XX): [description of migration created]
+feat(TC-XX): [description of what was added]
+fix(TC-XX):  [description of what was fixed]
+refactor(TC-XX): [description of improvement without behavior change]
+test(TC-XX): [description of tests added]
+docs(TC-XX): [documentation update]
+migration(TC-XX): [description of migration created]
 ```
 
-Prefer per-layer commits when the Story spans multiple modules (e.g., first `feat(US-05): add user model and migration`, then `feat(US-05): add user repository`, then `feat(US-05): add user service`, then `feat(US-05): add user controller and routes`).
+Prefer per-layer commits when the Task Contract spans multiple modules (e.g., first `feat(TC-05): add user model and migration`, then `feat(TC-05): add user repository`, then `feat(TC-05): add user service`, then `feat(TC-05): add user controller and routes`).
 
 ---
 
@@ -143,6 +145,82 @@ Prefer per-layer commits when the Story spans multiple modules (e.g., first `fea
 
 ---
 
+## Dependency Injection
+
+**Default strategy: manual factory function per module.**
+
+Read `di_strategy` from `CLAUDE.md`. If absent, use `manual-factory`.
+
+| `di_strategy` value | Pattern |
+|---|---|
+| `manual-factory` | Factory function in `src/factories/[resource].factory.ts` — explicit wiring |
+| `nestjs-ioc` | NestJS `@Injectable()` — follow framework conventions |
+| `inversify` | InversifyJS container — declare bindings in `src/config/container.ts` |
+
+**Manual factory pattern (default):**
+
+```typescript
+// src/factories/user.factory.ts
+import { DatabaseClient } from "@/config/database";
+import { UserRepository } from "@/repositories/user.repository";
+import { UserService }    from "@/services/user.service";
+import { UserController } from "@/controllers/user.controller";
+
+export function createUserModule(db: DatabaseClient) {
+  const repository = new UserRepository(db);
+  const service    = new UserService(repository);
+  const controller = new UserController(service);
+  return { repository, service, controller };
+}
+```
+
+**Rules (all strategies):**
+- Constructors receive **interfaces**, never concrete classes
+- Never instantiate a dependency inside a service — receive via constructor
+- Never use `new SomeService()` inline in a controller or route
+- Factory functions are the only place where `new` is used to wire dependencies
+
+---
+
+## DTO Pattern
+
+**Default library: Zod** — unless `CLAUDE.md` declares `validation_library`.
+
+| `validation_library` value | Pattern |
+|---|---|
+| `zod` | `z.object(...)` schema + `z.infer<typeof Schema>` type (default) |
+| `class-validator` | Class with decorators — follows NestJS conventions |
+| `joi` | `Joi.object(...)` schema + explicit TypeScript type |
+
+**Zod default — naming and file conventions:**
+
+```typescript
+// src/dto/create-user.dto.ts
+import { z } from "zod";
+
+export const CreateUserSchema = z.object({
+  name:  z.string().min(1).max(255),
+  email: z.string().email(),
+});
+
+export type CreateUserDto = z.infer<typeof CreateUserSchema>;
+```
+
+| Use case | Schema name | Inferred type | File |
+|---|---|---|---|
+| Create | `Create{Resource}Schema` | `Create{Resource}Dto` | `create-{resource}.dto.ts` |
+| Update | `Update{Resource}Schema` | `Update{Resource}Dto` | `update-{resource}.dto.ts` |
+| API response | `{Resource}ResponseSchema` | `{Resource}Response` | `{resource}-response.dto.ts` |
+| Query params | `List{Resource}QuerySchema` | `List{Resource}Query` | `list-{resource}-query.dto.ts` |
+
+**Rules:**
+- Schema name = `PascalCase + "Schema"`; type name = `PascalCase + "Dto"` or `"Response"`
+- Validate at the route/middleware boundary — service receives an already-typed DTO, never raw `req.body`
+- DTOs live in `src/dto/` (flat) or `src/modules/{domain}/dto/` (module structure) — never inline in controllers
+- Do not redefine the same schema in tests — import from `src/dto/`
+
+---
+
 ## Default folder structure
 
 ```
@@ -157,12 +235,14 @@ src/
 │   └── [resource].repository.ts
 ├── models/              <- entity/database schema definitions
 │   └── [resource].model.ts
+├── dto/                 <- input/output schemas and inferred types
+│   ├── create-[resource].dto.ts
+│   ├── update-[resource].dto.ts
+│   └── [resource]-response.dto.ts
 ├── middleware/           <- shared middleware (auth, logging, error handler)
 │   ├── auth.middleware.ts
 │   ├── error-handler.middleware.ts
 │   └── validation.middleware.ts
-├── validators/          <- input validation schemas (Zod, Joi, etc.)
-│   └── [resource].validator.ts
 ├── migrations/          <- database migration scripts
 │   └── YYYYMMDDHHMMSS-[description].ts
 ├── config/              <- application configuration
@@ -171,7 +251,10 @@ src/
 │   └── app.ts
 ├── types/               <- global types and interfaces
 │   ├── api.ts
+│   ├── pagination.ts    <- PaginatedResponse<T>, OffsetPaginationMeta, CursorPaginationMeta
 │   └── index.ts
+├── factories/           <- module factory functions (DI wiring)
+│   └── [resource].factory.ts
 ├── utils/               <- pure utility functions
 │   └── [utility].ts
 └── __tests__/           <- tests (mirrors src/ structure)
@@ -184,11 +267,18 @@ src/
 
 > Adapt according to the structure defined in `CLAUDE.md`.
 
+**Module-based alternative** (when `CLAUDE.md` declares `folder_structure: modules`):
+```
+src/modules/{domain}/
+    controller/   dto/   service/   repository/   entity/   factory/
+```
+In this case `src/types/pagination.ts` and `src/types/api.ts` remain at the root `src/types/` — never duplicated per module.
+
 ---
 
 ## Mandatory tests and quality criteria
 
-> Refer to `standards/SKILL.md` for the mandatory tests per Story type table and test quality criteria. Tests are part of the delivery — the QA Agent does not write tests; it validates the coverage of the tests you delivered.
+> Refer to `standards/SKILL.md` for the mandatory tests per Task Contract type table and test quality criteria. Tests are part of the delivery — the QA Agent does not write tests; it validates the coverage of the tests you delivered.
 
 ---
 
@@ -261,9 +351,48 @@ Error responses must follow a standardized format:
 - RESTful by default; document with OpenAPI/Swagger
 - Versioning via URL prefix: `/api/v1/`
 - Use HTTP status codes correctly (201 for creation, 204 for delete without body, 422 for validation)
-- Validate input at the boundary (controller/middleware) with schemas (Zod, Joi, class-validator)
-- Standardized pagination: `?page=1&limit=20` -> `{ data, meta: { page, limit, total } }`
+- Validate input at the boundary (controller/middleware) using DTOs from `src/dto/` — never raw `req.body` in services
+- Paginated responses use `PaginatedResponse<T>` from `src/types/pagination.ts` — never ad-hoc `{ data, meta }` shapes
 - Idempotency for sensitive operations (POST with idempotency key)
+
+---
+
+## Pagination
+
+Read `pagination.strategy` from `CLAUDE.md`. If absent, use `offset`.
+
+**Shared types — always in `src/types/pagination.ts`, never duplicated per module:**
+
+```typescript
+export interface OffsetPaginationMeta {
+  page:  number;
+  limit: number;
+  total: number;
+  pages: number;          // Math.ceil(total / limit)
+}
+
+export interface CursorPaginationMeta {
+  next_cursor: string | null;
+  has_more:    boolean;
+  limit:       number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: OffsetPaginationMeta | CursorPaginationMeta;
+}
+```
+
+| Strategy | When to use | Query params |
+|---|---|---|
+| `offset` | Admin lists, reports, exports — default | `?page=1&limit=20` |
+| `cursor` | Feeds, timelines, real-time streams | `?cursor=abc&limit=20` |
+
+**Rules:**
+- Never return `null` for an empty list — always `PaginatedResponse<T>` with `data: []`
+- `default_limit` and `max_limit` are read from `CLAUDE.md` — never hardcode these values
+- If `limit` exceeds `max_limit`, reject with 400 and `error.code: PAGINATION_LIMIT_EXCEEDED`
+- `pages` field (offset only) must always be computed — never omitted
 
 ---
 
@@ -281,8 +410,8 @@ Error responses must follow a standardized format:
 - `as` type assertions without a corresponding type guard or narrowing
 - Unused imports
 - Commented-out code (delete it, don't comment it)
-- `TODO` without a Story or issue reference (`// TODO(US-12): add cache`)
-- Changing code outside the Story scope without creating a separate technical Story
+- `TODO` without a Task Contract or issue reference (`// TODO(TC-12): add cache`)
+- Changing code outside the Task Contract scope without creating a separate technical Task Contract
 - Raw SQL queries without parameterization (SQL injection risk)
 - Secrets in logs or error messages returned to the client
 - Destructive migrations without rollback (always provide `up` and `down`)
@@ -291,17 +420,17 @@ Error responses must follow a standardized format:
 
 ## Delivery file template
 
-> When generating `us-XX-delivery.md`, read the full template at `.claude/skills/u-be-templates/delivery.md`.
+> When generating `tc-XX-delivery.md`, read the full template at `.claude/skills/u-be-templates/delivery.md`.
 
 ---
 
 ## Infrastructure dependency verification
 
-Before starting implementation, the Developer must map **all infrastructure services and resources** the Story requires.
+Before starting implementation, the Developer must map **all infrastructure services and resources** the Task Contract requires.
 
 ### How to verify
 
-1. Extract from the Story and API Spec all infrastructure dependencies (database, queues, cache, third-party services, storage, etc.)
+1. Extract from the Task Contract and API Spec all infrastructure dependencies (database, queues, cache, third-party services, storage, etc.)
 2. For each dependency, check whether the configuration **already exists** in the project:
    - Environment variables defined
    - Clients/connections configured
@@ -313,7 +442,7 @@ Before starting implementation, the Developer must map **all infrastructure serv
 
 ### When to generate the report
 
-Generate the file `{SESSIONS_DIR}/{SESSION}/us-XX-infra-pending-items.md` whenever there is **at least one dependency classified as Partial or Missing**.
+Generate the file `{SESSIONS_DIR}/{SESSION}/tc-XX-infra-pending-items.md` whenever there is **at least one dependency classified as Partial or Missing**.
 
 > For the full report template, read `.claude/skills/u-be-templates/infra-pending-items.md`.
 
@@ -328,11 +457,11 @@ Generate the file `{SESSIONS_DIR}/{SESSION}/us-XX-infra-pending-items.md` whenev
 - [ ] **Edge cases handled in code have a corresponding test**
 - [ ] "Tests written" section filled in the delivery file
 - [ ] Infrastructure dependency verification executed (Step 1B)
-- [ ] If there are infra issues: `us-XX-infra-pending-items.md` report generated and Orchestrator notified
-- [ ] Delivery file generated at `{SESSIONS_DIR}/{SESSION}/us-XX-delivery.md`
-- [ ] Story status in `backlog.md` updated to `In testing`
-- [ ] Working on the correct branch (`feat/US-XX`, `fix/US-XX`, or `refactor/US-XX`)
-- [ ] Commits follow the semantic pattern (including `test(US-XX):` for test commits)
+- [ ] If there are infra issues: `tc-XX-infra-pending-items.md` report generated and Orchestrator notified
+- [ ] Delivery file generated at `{SESSIONS_DIR}/{SESSION}/tc-XX-delivery.md`
+- [ ] Task Contract status in `backlog.md` updated to `In testing`
+- [ ] Working on the correct branch (`feat/TC-XX`, `fix/TC-XX`, or `refactor/TC-XX`)
+- [ ] Commits follow the semantic pattern (including `test(TC-XX):` for test commits)
 - [ ] **Branch contains only local commits** — push will be executed by Orchestrator-Dev after QA approval
 - [ ] Migrations include `up` and `down`
 - [ ] Queries are parameterized (no string concatenation in SQL)

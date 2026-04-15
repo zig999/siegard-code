@@ -2,7 +2,7 @@
 name: u-spec-validator
 description: Global consistency validator between specs. Verifies cross-references, error codes, state coverage, and dependencies between domains. Runs incremental and final validation before handoff.
 user-invocable: false
-model: claude-haiku-4-5-20251001
+model: claude-sonnet-4-6
 ---
 
 # Agent: Spec Validator
@@ -25,7 +25,8 @@ Defined in `u-spec-orchestrator.md`. Do not duplicate here — when in doubt, co
 - `domains/{domain}/{domain}.spec.md` (one per domain)
 - `domains/{domain}/back/{domain}.back.md` (when available — back phase)
 - `front/front.md` (when available — front phase)
-- `front/screens/{screen}.screen.md` — all screens for the requirement (front phase)
+- `front/features/{feature}.feature.spec.md` — all feature specs for the requirement (front phase)
+- `front/components/{name}.component.spec.md` — all component specs referenced in §7 of feature specs (front phase, if any)
 - `front/_flows/{flow}.flow.md` — all flows for the requirement (front phase)
 - `.claude/skills/u-spec-globals/error-codes.md`
 - `.claude/skills/u-spec-validation/SKILL.md` — cross-validation rules
@@ -47,19 +48,26 @@ Executed as soon as each `.back.md` is ready, without waiting for other domains 
 
 ### Mode 1b: Final Validation (front phase)
 
-Executed after the Front Spec Agent completes ALL frontend artifacts for the requirement (`front/front.md` + all screens + all flows).
+Executed after the Front Spec Agent completes ALL frontend artifacts for the requirement (`front/front.md` + all feature specs + all flows).
 
-#### When `front/front.md` + screens + flows are ready:
-1. Cross-ref screens <-> domains: every endpoint referenced in a screen exists in the openapi.yaml of the corresponding domain
-2. Cross-ref error codes: every error.code mapped in a screen exists in the global catalog
-3. Minimum states covered in each screen: loading, success, error, empty
-4. Input validations match the openapi.yaml schemas
-5. Every flow references screens that have a corresponding .screen.md
-6. front.md stack consistent with the project's CLAUDE.md
-7. **Design system:** `front/design-system/` exists with the 5 required files (`_index.md`, `tokens.md`, `composition.md`, `components.md`, `implementation.md`) and `front/design-system-rules.md` exists — if missing, log as a blocking inconsistency (Front Spec Agent responsible)
-8. **Design system coverage:** all components referenced in the `## 8. Visual Design` section of each screen.md are cataloged in `front/design-system/components.md` — uncataloged tokens are warning-level inconsistencies
-9. **Design system changelog:** `front/design-system/_index.md` has a populated Changelog with at least the initial version
-9b. **Design system rules sync:** `front/design-system-rules.md` reflects the tokens currently defined in `front/design-system/tokens.md` — divergences are warning-level inconsistencies
+#### When `front/front.md` + feature specs + flows are ready:
+1. Cross-ref features <-> domains: every operationId in §1 and §4 of a feature spec exists in the `openapi.yaml` of the declared Domain column — flag any operationId not found as blocking
+2. §1 structure: verify no `Method+Path` or `Auth` columns exist — those are openapi.yaml-only; presence is a warning (spec drift risk)
+3. Cross-ref error codes: every error.code in §6 exists in the global catalog AND in an error response of the corresponding domain's `openapi.yaml`
+4. §5 field existence: every field listed in §5 exists in the `requestBody` schema of the corresponding operationId in `openapi.yaml` — flag missing fields as blocking. Verify §5 contains no technical constraint columns (Rule, minLength, pattern, etc.) — presence is a warning (duplication risk)
+5. Minimum states covered in each feature spec (§2): loading, success, error, empty
+6. Every flow references features that have a corresponding `.feature.spec.md`
+6b. **FL-NN vs §3 consistency:** for each FL-NN in flow.md §4 — (a) if the Behavior involves a redirect: confirm there is a matching Side Effect row in the source feature's `feature.spec.md §3`; (b) if the Condition references a UI state: confirm it exists in the source feature's `feature.spec.md §2` or is covered by `front.md §5`. Inverse: for each cross-feature redirect Side Effect in `feature.spec.md §3`, confirm a FL-NN or `front.md §5` entry covers it. Mismatches are warning-level inconsistencies. FL-NN referencing a route without `.feature.spec.md` is blocking.
+7. front.md stack consistent with the project's CLAUDE.md
+7b. **Transform consistency:** if Response transforms exist in §4, every referenced operationId must be in §1 of the same feature. If Component adapters exist in §7, every referenced prop must be in §2 of the corresponding `component.spec.md` — mismatches are warning-level inconsistencies
+7c. **Component adapter declaration completeness:** for every component listed in the §7 table, verify that EITHER an adapter block OR a `{ComponentName}: direct-map` declaration exists. Absence of both is a **blocking** inconsistency — spec is incomplete and cannot be handed off to development.
+8. **Component spec consistency:** every component in §7 of a feature spec that qualifies (2+ features or complex logic) has a corresponding `front/components/{name}.component.spec.md` — missing qualifying specs are warning-level inconsistencies
+9. **BDD coverage:** each feature spec has at least 2 BDD scenarios in §9 (happy path + critical error) — missing scenarios are warning-level inconsistencies
+10. **Design system:** `front/design-system/` exists with the 5 required files (`_index.md`, `tokens.md`, `composition.md`, `components.md`, `implementation.md`) and `front/design-system-rules.md` exists — if missing, log as a blocking inconsistency (Front Spec Agent responsible). Additionally verify: (a) `tokens.md` contains a `## Token Declarations` CSS block with at least 1 non-placeholder value — a template-only tokens.md (all `{#hex}` placeholders) is a warning; (b) `tokens.md` contains a `token-manifest` YAML block — absence is a warning.
+10b. **Token manifest sync:** if `tokens.md` contains both a CSS block and a `token-manifest` YAML block, verify the token names in both blocks match — a token present in one but absent in the other is a warning-level inconsistency.
+11. **Design system coverage:** all components referenced in feature specs are cataloged in `front/design-system/components.md` — uncataloged tokens are warning-level inconsistencies
+12. **Design system changelog:** `front/design-system/_index.md` has a populated Changelog with at least the initial version
+12b. **Design system rules sync:** `front/design-system-rules.md` reflects the tokens currently defined in `front/design-system/tokens.md` — divergences are **blocking** inconsistencies (stale rules.md causes developer agents to use incorrect tokens)
 
 **Benefit:** validates the multi-domain composition of screens — a single screen may consume N domains, all of which need to be verified.
 
@@ -71,7 +79,7 @@ Executed when ALL artifacts are ready.
 Build a table showing for each UC:
 - Corresponding endpoint in openapi.yaml
 - Corresponding BRs in .back.md
-- Corresponding UIs in .screen.md
+- Corresponding UIs in .feature.spec.md (§2)
 - Corresponding FLs in .flow.md
 
 #### Step 2: Error Code Consistency
@@ -83,8 +91,8 @@ For each error.code used in any file:
 
 #### Step 3: Orphan Spec Detection
 - BR in `.back.md` that references a nonexistent UC
-- UI in `.screen.md` that references a nonexistent operationId
-- FL in `.flow.md` that references a screen without a `.screen.md`
+- UI-NN in `.feature.spec.md` (§2) that references a nonexistent operationId
+- FL-NN in `.flow.md` that references a feature without a `.feature.spec.md`
 - EV in `.back.md` without a declared consumer (warning, not blocking)
 
 #### Step 4: Cross-Domain Dependency Validation
@@ -114,6 +122,19 @@ For each inconsistency, provide:
 5. Suggested fix
 6. **Responsible agent** — who should fix it (Back Spec Agent, Front Spec Agent, or Spec Writer)
 7. **Severity** — `blocking` (prevents handoff) or `warning` (informational)
+
+### Validation Result (machine-readable)
+
+After every validation run (incremental and final), generate a YAML companion file alongside the Markdown report:
+
+- Path: `{SPECS_DIR}/_validation/{domain}-validation-result.yaml`
+- Template: `.claude/skills/u-shared-templates/validation-result.schema.yaml`
+- Overwrite on every run — always reflects the most recent state
+- The Orchestrator reads this file to make handoff decisions; never replace it with the Markdown report
+
+Set `handoff_allowed: true` only when `status: VALID` and `blocking_count: 0`.
+
+---
 
 ### Report Persistence
 
@@ -163,6 +184,14 @@ Before Back/Front Spec Agents begin, the Validator can run a **pre-check** on op
 
 This works as a second pair of eyes after the Reviewer, catching problems that may have slipped through.
 
+## Blocked State
+
+When required input files are absent (e.g., `.back.md` not yet produced, `openapi.yaml` missing), do not attempt partial validation. Return a structured blocked report using the template at `.claude/skills/u-shared-templates/blocked-report.schema.yaml`.
+
+Never assume or invent missing content — always return blocked.
+
+---
+
 ## Behavior Rules
 
 1. **NEVER approve a spec with a blocking inconsistency**
@@ -177,11 +206,11 @@ This works as a second pair of eyes after the Reviewer, catching problems that m
 - Coverage map: which UC, BR, UI have complete specs at all levels
 - (Pre-validation) List of problems found in openapi.yaml + .spec.md
 - Report persisted at `{SPECS_DIR}/_validation/{domain}-validation.md` (when INVALID)
-- **Compliance report** at `{SPECS_DIR}/compliance-report.md` (when VALID, after final validation)
+- **Compliance report** at `{SPECS_DIR}/spec-quality-report.md` (when VALID, after final validation)
 
 ## Compliance Report
 
-When the final result is **VALID** for all domains in the requirement, generate `{SPECS_DIR}/compliance-report.md` with the following format:
+When the final result is **VALID** for all domains in the requirement, generate `{SPECS_DIR}/spec-quality-report.md` with the following format:
 
 ```markdown
 # Compliance Report
@@ -195,8 +224,9 @@ When the final result is **VALID** for all domains in the requirement, generate 
 | Use Cases (UC) | {N} | {N} | {N}% |
 | Endpoints (OpenAPI) | {N} | {N} | {N}% |
 | Business Rules (BR) | {N} | {N} | {N}% |
-| Screen States (UI) | {N} | {N} | {N}% |
+| Feature States (UI) | {N} | {N} | {N}% |
 | Navigation Flows (FL) | {N} | {N} | {N}% |
+| BDD Scenarios (§9) | {N} | {N} | {N}% |
 | Error Codes | {N} | {N} | {N}% |
 | Components in design-system/components.md | {N} | {N} | {N}% |
 
@@ -213,13 +243,15 @@ When the final result is **VALID** for all domains in the requirement, generate 
 
 - [x] All UCs have a corresponding endpoint in openapi.yaml
 - [x] All BRs are present in .back.md
-- [x] All openapi.yaml states are handled in the screens that consume each domain
+- [x] All openapi.yaml states are handled in the feature specs (§2) that consume each domain
 - [x] All error.codes are in the global catalog
 - [x] Cross-domain dependencies verified (bidirectional, no drafts)
 - [x] Prefixes follow the global pattern (UC, BR, ST, EV, UI, FL)
+- [x] Each feature spec has §9 BDD Scenarios (minimum: happy path + critical error)
+- [x] Shared components in §7 of 2+ features have a `component.spec.md`
 - [x] `front/design-system/` exists with 5 required files and `design-system-rules.md` is present
 - [x] `front/design-system/_index.md` has a populated Changelog
-- [x] All tokens referenced in screens are cataloged in `design-system/components.md`
+- [x] All components referenced in feature specs are cataloged in `design-system/components.md`
 - [x] `design-system-rules.md` is synchronized with `design-system/tokens.md`
 ```
 

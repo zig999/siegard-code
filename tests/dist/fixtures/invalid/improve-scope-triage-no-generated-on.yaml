@@ -1,0 +1,15 @@
+# IMPV-021 violation: source=spec-triage without generated_on
+improve_scope:
+  source: spec-triage
+  session: "fix-errors"
+  affected_specs:
+    - "docs/specs/domains/auth/back/auth.back.md"
+  estimated_task_contracts: 1
+  task_contracts:
+    - description: "Fix BR-03 reference"
+      type: bugfix
+      priority: P1
+      affected_files:
+        - "docs/specs/domains/auth/back/auth.back.md"
+  planner_required: false
+  spec_change_status: completed

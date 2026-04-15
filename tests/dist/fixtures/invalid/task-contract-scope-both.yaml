@@ -1,0 +1,43 @@
+# INVALID: scope=both is prohibited — must split into two task_contracts
+task_contract:
+  id: TC-02
+  epic: EPIC-01
+  origin: UC-02
+  type: feature
+  priority: P1
+  scope: both
+  estimate: S
+  dependencies: []
+  persona_coverage:
+    - end-user
+  bdd_ref: null
+
+execution_contract:
+  exec_type: code_generation
+  objective: Implement authentication across frontend and backend.
+  input:
+    references:
+      - path: specs/auth/spec.md
+        section: "§3"
+        version: 1.0.0
+    known_context: []
+    assumptions_allowed: []
+  constraints:
+    - No hardcoded values.
+  output:
+    format: yaml
+    schema:
+      - files_created
+      - files_modified
+      - acceptance_criteria_coverage
+      - edge_cases
+      - spec_divergences
+      - tech_debt
+      - tests
+      - inference_log
+  validation:
+    criteria:
+      - Component renders correctly.
+  fallback:
+    on_missing_input: blocked
+    template: .claude/skills/u-shared-templates/blocked-report.yaml

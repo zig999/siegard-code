@@ -1,0 +1,7 @@
+improve_scope:
+  description: "Refactor dashboard grid to support 3-column layout across all widget components"
+  type: implementation_only
+  spec_change_status: not_required
+  affected_specs: []
+  estimated_task_contracts: 3
+  planner_required: true

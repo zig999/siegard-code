@@ -1,0 +1,38 @@
+# validation-result — canonical template
+# Produced by: u-spec-validator
+# Consumed by: u-spec-orchestrator (handoff gate)
+# Schema: .claude/skills/u-shared-templates/validation-result.schema.yaml
+# Layer: permanent — stored at {SPECS_DIR}/_validation/{domain}-validation-result.yaml
+# Rules:
+#   - handoff_allowed: true only when status: VALID and blocking_count: 0
+#   - responsible must be an exact agent name — Orchestrator uses this to route corrections
+#   - Generate after every validation run (incremental and final); overwrite previous result
+
+validation:
+  domain: <domain-name>
+  artifact_version: <spec-version>
+  mode: incremental_back | final_front | final_complete
+  validated_by: u-spec-validator
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: permanent
+
+status: VALID | INVALID
+
+blocking_count: <int>
+warning_count: <int>
+
+handoff_allowed: true | false
+
+blocking_issues:
+  - id: ISSUE-001
+    type: cross-ref | error-code | orphan-spec | dependency | schema | missing-file
+    source: <file § section>
+    description: <single objective sentence>
+    responsible: u-spec-back | u-spec-front | u-spec-writer
+    suggested_fix: <concrete action — what the responsible agent must do>
+
+warnings:
+  - id: WARN-001
+    type: cross-ref | coverage | design-system | bdd | transform
+    source: <file § section>
+    description: <single objective sentence>

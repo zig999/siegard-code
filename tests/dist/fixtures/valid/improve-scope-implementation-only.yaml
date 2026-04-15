@@ -1,0 +1,8 @@
+improve_scope:
+  description: "Adjust loading skeleton height on KPI card to match updated design token"
+  type: implementation_only
+  spec_change_status: not_required
+  affected_specs: []
+  estimated_task_contracts: 1
+  planner_required: false
+  planner_skip_reason: "Single TC, no affected spec, no flow or new component change"

@@ -1,0 +1,15 @@
+# INVALID FLOW: status=blocked but missing_inputs is absent — violates FLOW-010
+# Passes JSON Schema (missing_inputs is optional) but fails Layer 5 flow invariant.
+blocked:
+  id: BLK-20260409-130000
+  reported_by: u-spec-validator
+  artifact: domains/auth/openapi.yaml
+  timestamp: "2026-04-09T13:00:00Z"
+  layer: permanent
+
+status: blocked
+reason: Required input is absent.
+
+resolution:
+  required_action: Provide the missing input.
+  escalate_to: orchestrator
