@@ -12,12 +12,10 @@ function readFile(path) {
 }
 
 function hasSection(content, heading) {
-  // Matches ## Heading or ## N. Heading (with or without number prefix)
   return content.includes(`## ${heading}`)
 }
 
 function hasSectionNumber(content, n, name) {
-  // Matches "## N. Name" exactly
   return new RegExp(`## ${n}\\.\\s+${name}`).test(content)
 }
 
@@ -35,11 +33,16 @@ const TOKENS_TEMPLATE    = resolve(DIST_DIR, 'skills/u-spec-templates/TEMPLATE.d
 const FEATURE_EXAMPLE    = resolve(EXTRAS_DIR, 'feature.spec.md')
 const COMPONENT_EXAMPLE  = resolve(EXTRAS_DIR, 'component.spec.md')
 
-// ─── Template existence ───────────────────────────────────────────────────────
+// ─── Tests ────────────────────────────────────────────────────────────────────
+//
+// Every per-template suite below collapses N section-presence + content-rule
+// tests into a single test per template that asserts everything in one pass.
+// On failure, the first assertion message names the missing section/content,
+// so diagnostic granularity is preserved.
 
 describe('Layer 6 — Spec Templates', () => {
 
-  describe('template files exist', () => {
+  describe('all template files exist', () => {
     const files = [
       ['TEMPLATE.feature.spec.md', FEATURE_TEMPLATE],
       ['TEMPLATE.component.spec.md', COMPONENT_TEMPLATE],
@@ -54,254 +57,140 @@ describe('Layer 6 — Spec Templates', () => {
     })
   })
 
-  // ─── TEMPLATE.feature.spec.md ─────────────────────────────────────────────
+  // ── TEMPLATE.feature.spec.md ─────────────────────────────────────────────
 
-  describe('TEMPLATE.feature.spec.md — required sections', () => {
+  it('TEMPLATE.feature.spec.md — required sections + content rules', () => {
     const content = readFile(FEATURE_TEMPLATE)
-
     const requiredSections = [
-      ['§1', 1, 'Consumed Endpoints'],
-      ['§2', 2, 'Feature States'],
-      ['§3', 3, 'State Transition Table'],
-      ['§4', 4, 'Requests, Order and Cache'],
-      ['§5', 5, 'Input Validations'],
-      ['§6', 6, 'API Error'],
-      ['§7', 7, 'Shared Components Used'],
-      ['§8', 8, 'Feature Accessibility'],
-      ['§9', 9, 'BDD Scenarios'],
-      ['§10', 10, 'Components to Create'],
-      ['§11', 11, 'Out of Scope'],
+      [1, 'Consumed Endpoints'],
+      [2, 'Feature States'],
+      [3, 'State Transition Table'],
+      [4, 'Requests, Order and Cache'],
+      [5, 'Input Validations'],
+      [6, 'API Error'],
+      [7, 'Shared Components Used'],
+      [8, 'Feature Accessibility'],
+      [9, 'BDD Scenarios'],
+      [10, 'Components to Create'],
+      [11, 'Out of Scope'],
     ]
-
-    it.each(requiredSections)('%s present', (label, n, name) => {
-      const found = hasSectionNumber(content, n, name)
-      expect(found, `Section "## ${n}. ${name}" not found in TEMPLATE.feature.spec.md`).toBe(true)
-    })
-
-    it('has Changelog section', () => {
-      expect(hasSection(content, 'Changelog')).toBe(true)
-    })
-
-    it('has component adapter declaration syntax', () => {
-      expect(content).toContain('Component adapters')
-    })
-
-    it('has BDD Given/When/Then pattern', () => {
-      expect(content).toMatch(/Given .+\nWhen .+\nThen/)
-    })
+    for (const [n, name] of requiredSections) {
+      expect(
+        hasSectionNumber(content, n, name),
+        `Section "## ${n}. ${name}" not found in TEMPLATE.feature.spec.md`
+      ).toBe(true)
+    }
+    expect(hasSection(content, 'Changelog'), 'Changelog section missing').toBe(true)
+    expect(content, 'Component adapters declaration missing').toContain('Component adapters')
+    expect(content, 'BDD Given/When/Then pattern missing').toMatch(/Given .+\nWhen .+\nThen/)
   })
 
-  // ─── TEMPLATE.component.spec.md ───────────────────────────────────────────
+  // ── TEMPLATE.component.spec.md ───────────────────────────────────────────
 
-  describe('TEMPLATE.component.spec.md — required sections', () => {
+  it('TEMPLATE.component.spec.md — required sections + content rules', () => {
     const content = readFile(COMPONENT_TEMPLATE)
-
     const requiredSections = [
-      ['§1', 1, 'Purpose and Responsibilities'],
-      ['§2', 2, 'When to Use'],
-      ['§3', 3, 'Props Contract'],
-      ['§4', 4, 'Component States'],
-      ['§5', 5, 'Events Emitted'],
-      ['§6', 6, 'Variants and Compositions'],
-      ['§7', 7, 'Do / Don'],
-      ['§8', 8, 'BDD Scenarios'],
-      ['§9', 9, 'Accessibility Contract'],
-      ['§10', 10, 'Internal Dependencies'],
+      [1, 'Purpose and Responsibilities'],
+      [2, 'When to Use'],
+      [3, 'Props Contract'],
+      [4, 'Component States'],
+      [5, 'Events Emitted'],
+      [6, 'Variants and Compositions'],
+      [7, 'Do / Don'],
+      [8, 'BDD Scenarios'],
+      [9, 'Accessibility Contract'],
+      [10, 'Internal Dependencies'],
     ]
+    for (const [n, name] of requiredSections) {
+      expect(
+        hasSectionNumber(content, n, name),
+        `Section "## ${n}. ${name}" not found in TEMPLATE.component.spec.md`
+      ).toBe(true)
+    }
+    expect(hasSection(content, 'Changelog'), 'Changelog section missing').toBe(true)
+    expect(content, 'Props Contract binding-contract note missing').toContain('Binding contract')
 
-    it.each(requiredSections)('%s present', (label, n, name) => {
-      const found = hasSectionNumber(content, n, name)
-      expect(found, `Section "## ${n}. ${name}" not found in TEMPLATE.component.spec.md`).toBe(true)
-    })
-
-    it('has Changelog section', () => {
-      expect(hasSection(content, 'Changelog')).toBe(true)
-    })
-
-    it('Props Contract section notes it is a binding contract', () => {
-      expect(content).toContain('Binding contract')
-    })
-
-    it('has minimum 3 BDD scenarios (default render + error + keyboard)', () => {
-      const scenarioMatches = content.match(/###\s+\w/g) || []
-      // At least 3 scenario headings inside BDD section
-      expect(scenarioMatches.length).toBeGreaterThanOrEqual(3)
-    })
+    const scenarioMatches = content.match(/###\s+\w/g) || []
+    expect(scenarioMatches.length, 'Need at least 3 BDD scenarios').toBeGreaterThanOrEqual(3)
   })
 
-  // ─── TEMPLATE.flow.md ─────────────────────────────────────────────────────
+  // ── TEMPLATE.flow.md ─────────────────────────────────────────────────────
 
-  describe('TEMPLATE.flow.md — required structure', () => {
+  it('TEMPLATE.flow.md — required structure', () => {
     const content = readFile(FLOW_TEMPLATE)
-
-    it('has FLOW-NN identifier in header', () => {
-      expect(hasFlowId(content), 'FLOW-NN identifier missing from header').toBe(true)
-    })
-
-    it('has Involved Features section', () => {
-      expect(content).toContain('Involved Features')
-    })
-
-    it('has Happy Path section', () => {
-      expect(content).toContain('Happy Path')
-    })
-
-    it('has Alternative Flows section', () => {
-      expect(content).toContain('Alternative Flows')
-    })
-
-    it('has Navigation Rules (FL) section', () => {
-      expect(content).toContain('Navigation Rules')
-    })
-
-    it('has Deep Links section', () => {
-      expect(content).toContain('Deep Links')
-    })
-
-    it('navigation rules require explicit fallback field', () => {
-      expect(content).toContain('**Fallback:**')
-    })
-
-    it('has Changelog section', () => {
-      expect(hasSection(content, 'Changelog')).toBe(true)
-    })
+    expect(hasFlowId(content), 'FLOW-NN identifier missing from header').toBe(true)
+    expect(content, 'Involved Features section missing').toContain('Involved Features')
+    expect(content, 'Happy Path section missing').toContain('Happy Path')
+    expect(content, 'Alternative Flows section missing').toContain('Alternative Flows')
+    expect(content, 'Navigation Rules section missing').toContain('Navigation Rules')
+    expect(content, 'Deep Links section missing').toContain('Deep Links')
+    expect(content, 'Navigation rules require explicit Fallback field').toContain('**Fallback:**')
+    expect(hasSection(content, 'Changelog'), 'Changelog section missing').toBe(true)
   })
 
-  // ─── TEMPLATE.design-system/tokens.md ────────────────────────────────────
+  // ── TEMPLATE.design-system/tokens.md ────────────────────────────────────
 
-  describe('TEMPLATE.design-system/tokens.md — required sections', () => {
+  it('TEMPLATE.design-system/tokens.md — required sections + content rules', () => {
     const content = readFile(TOKENS_TEMPLATE)
-
     const sections = [
-      ['Token Declarations', 'Token Declarations'],
-      ['§3 Color Tokens', '3. Color Tokens'],
-      ['§4 Spacing Tokens', '4. Spacing Tokens'],
-      ['§5 Typographic Scale', '5. Typographic Scale'],
-      ['§6 Shadows and Borders', '6. Shadows and Borders'],
-      ['§7 Animation and Motion Tokens', '7. Animation and Motion Tokens'],
-      ['§8 Semantic Usage Rules', '8. Semantic Usage Rules'],
+      'Token Declarations',
+      '3. Color Tokens',
+      '4. Spacing Tokens',
+      '5. Typographic Scale',
+      '6. Shadows and Borders',
+      '7. Animation and Motion Tokens',
+      '8. Semantic Usage Rules',
     ]
-
-    it.each(sections)('%s present', (label, heading) => {
+    for (const heading of sections) {
       expect(content, `"## ${heading}" not found in tokens.md`).toContain(`## ${heading}`)
-    })
+    }
+    expect(content, 'CSS block missing').toContain('```css')
+    expect(content, 'YAML manifest block missing').toContain('```yaml')
+    expect(content, 'motion duration tokens missing in §7').toContain('--duration-')
+    expect(content, '§7 must include prefers-reduced-motion rule').toContain('prefers-reduced-motion')
 
-    it('has CSS block with token declarations', () => {
-      expect(content).toContain('```css')
-    })
-
-    it('has YAML manifest block', () => {
-      expect(content).toContain('```yaml')
-    })
-
-    it('has motion duration tokens in §7', () => {
-      expect(content).toContain('--duration-')
-    })
-
-    it('§7 includes prefers-reduced-motion rule', () => {
-      expect(content).toContain('prefers-reduced-motion')
-    })
-
-    it('section numbering is sequential — no gap between 6 and 8', () => {
-      const section7idx = content.indexOf('## 7.')
-      const section8idx = content.indexOf('## 8.')
-      expect(section7idx, 'Section 7 not found').toBeGreaterThan(0)
-      expect(section8idx, 'Section 8 not found').toBeGreaterThan(0)
-      expect(section7idx, 'Section 7 must appear before section 8').toBeLessThan(section8idx)
-    })
+    const section7idx = content.indexOf('## 7.')
+    const section8idx = content.indexOf('## 8.')
+    expect(section7idx, 'Section 7 not found').toBeGreaterThan(0)
+    expect(section8idx, 'Section 8 not found').toBeGreaterThan(0)
+    expect(section7idx, 'Section 7 must appear before section 8').toBeLessThan(section8idx)
   })
 
-  // ─── extras/feature.spec.md (example) ────────────────────────────────────
+  // ── extras/feature.spec.md (example) ────────────────────────────────────
 
-  describe('extras/feature.spec.md — conforms to current template structure', () => {
+  it('extras/feature.spec.md — conforms to current template structure', () => {
     const content = readFile(FEATURE_EXAMPLE)
-
-    it('written in English (not Portuguese)', () => {
-      // Quick heuristic: template headers should be in English
-      expect(content).toContain('Consumed Endpoints')
-      expect(content).not.toContain('## 1. Objetivo')
-    })
-
-    it('has Feature ID (FEAT-NN) in header', () => {
-      expect(content).toMatch(/Feature ID:\s*FEAT-\d+/)
-    })
-
-    it('has §1 Consumed Endpoints with operationId column', () => {
-      expect(content).toContain('operationId')
-    })
-
-    it('has §2 Feature States with UI-NN identifiers', () => {
-      expect(content).toMatch(/UI-\d{2}/)
-    })
-
-    it('has §3 State Transition Table', () => {
-      expect(hasSectionNumber(content, 3, 'State Transition Table')).toBe(true)
-    })
-
-    it('has §6 API Error → UI Mapping', () => {
-      expect(hasSectionNumber(content, 6, 'API Error')).toBe(true)
-    })
-
-    it('has §7 with component adapter declarations', () => {
-      expect(content).toContain('Component adapters')
-    })
-
-    it('has §9 BDD Scenarios with Given/When/Then', () => {
-      expect(content).toMatch(/Given .+\nWhen .+\nThen/)
-    })
-
-    it('has §11 Out of Scope', () => {
-      expect(hasSectionNumber(content, 11, 'Out of Scope')).toBe(true)
-    })
-
-    it('has Changelog', () => {
-      expect(hasSection(content, 'Changelog')).toBe(true)
-    })
+    expect(content, 'must use English headers').toContain('Consumed Endpoints')
+    expect(content, 'must not contain Portuguese headers').not.toContain('## 1. Objetivo')
+    expect(content, 'Feature ID (FEAT-NN) missing from header').toMatch(/Feature ID:\s*FEAT-\d+/)
+    expect(content, '§1 must reference operationId column').toContain('operationId')
+    expect(content, '§2 must use UI-NN identifiers').toMatch(/UI-\d{2}/)
+    expect(hasSectionNumber(content, 3, 'State Transition Table'), '§3 missing').toBe(true)
+    expect(hasSectionNumber(content, 6, 'API Error'), '§6 missing').toBe(true)
+    expect(content, '§7 must declare component adapters').toContain('Component adapters')
+    expect(content, '§9 must use Given/When/Then').toMatch(/Given .+\nWhen .+\nThen/)
+    expect(hasSectionNumber(content, 11, 'Out of Scope'), '§11 missing').toBe(true)
+    expect(hasSection(content, 'Changelog'), 'Changelog section missing').toBe(true)
   })
 
-  // ─── extras/component.spec.md (example) ──────────────────────────────────
+  // ── extras/component.spec.md (example) ──────────────────────────────────
 
-  describe('extras/component.spec.md — conforms to current template structure', () => {
+  it('extras/component.spec.md — conforms to current template structure', () => {
     const content = readFile(COMPONENT_EXAMPLE)
+    expect(content, 'must use English headers').toContain('Props Contract')
+    expect(content, 'must not contain Portuguese headers').not.toContain('## 1. Objetivo')
+    expect(content, 'Component ID (COMP-NN) missing from header').toMatch(/Component ID:\s*COMP-\d+/)
+    expect(hasSectionNumber(content, 2, 'When to Use'), '§2 missing').toBe(true)
+    expect(content, '§3 binding-contract note missing').toContain('Binding contract')
+    expect(hasSectionNumber(content, 5, 'Events Emitted'), '§5 missing').toBe(true)
 
-    it('written in English (not Portuguese)', () => {
-      expect(content).toContain('Props Contract')
-      expect(content).not.toContain('## 1. Objetivo')
-    })
+    const bddStart = content.indexOf('## 8. BDD Scenarios')
+    const bddSection = content.slice(bddStart)
+    const scenarioCount = (bddSection.match(/^### /gm) || []).length
+    expect(scenarioCount, 'Need at least 3 BDD scenarios in §8').toBeGreaterThanOrEqual(3)
 
-    it('has Component ID (COMP-NN) in header', () => {
-      expect(content).toMatch(/Component ID:\s*COMP-\d+/)
-    })
-
-    it('has §2 When to Use / When Not to Use', () => {
-      expect(hasSectionNumber(content, 2, 'When to Use')).toBe(true)
-    })
-
-    it('has §3 Props Contract with binding contract note', () => {
-      expect(content).toContain('Binding contract')
-    })
-
-    it('has §5 Events Emitted with TypeScript payload types', () => {
-      expect(hasSectionNumber(content, 5, 'Events Emitted')).toBe(true)
-    })
-
-    it('has §8 BDD Scenarios with at least 3 scenarios', () => {
-      const bddStart = content.indexOf('## 8. BDD Scenarios')
-      const bddSection = content.slice(bddStart)
-      const scenarioCount = (bddSection.match(/^### /gm) || []).length
-      expect(scenarioCount, 'Need at least 3 BDD scenarios').toBeGreaterThanOrEqual(3)
-    })
-
-    it('has §9 Accessibility Contract', () => {
-      expect(hasSectionNumber(content, 9, 'Accessibility Contract')).toBe(true)
-    })
-
-    it('has §10 Internal Dependencies', () => {
-      expect(hasSectionNumber(content, 10, 'Internal Dependencies')).toBe(true)
-    })
-
-    it('has Changelog', () => {
-      expect(hasSection(content, 'Changelog')).toBe(true)
-    })
+    expect(hasSectionNumber(content, 9, 'Accessibility Contract'), '§9 missing').toBe(true)
+    expect(hasSectionNumber(content, 10, 'Internal Dependencies'), '§10 missing').toBe(true)
+    expect(hasSection(content, 'Changelog'), 'Changelog section missing').toBe(true)
   })
 })

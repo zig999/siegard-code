@@ -349,9 +349,13 @@ describe('Layer 7 — Content Integrity Guardrails', () => {
   // ── SPEC-I-14: u-improve fast-track handoff context ──────────────────────
 
   describe('SPEC-I-14: /u-improve fast-track handoff to /u-spec', () => {
-    it('GUARD-37: u-improve SKILL.md must emit fast-track handoff block when spec update confirmed', () => {
+    it('GUARD-37: u-improve SKILL.md must emit handoff envelope to /u-spec when spec update confirmed', () => {
+      // The "fast-track handoff block" was renamed to "handoff envelope" when the
+      // write-before-confirm + return-contract design landed. The guarantee remains:
+      // u-improve emits a structured handoff package to /u-spec without requiring
+      // the human to copy-paste a shell command.
       const content = read('skills/u-improve/SKILL.md')
-      assertContains(content, 'fast-track handoff block', 'GUARD-37a')
+      assertContains(content, 'handoff envelope', 'GUARD-37a')
     })
 
     it('GUARD-37b: fast-track handoff must include improvement task as inline requirement', () => {
@@ -368,39 +372,19 @@ describe('Layer 7 — Content Integrity Guardrails', () => {
   // ── SPEC-I-15: improve_scope no improve##.md ─────────────────────────────
 
   describe('SPEC-I-15: improve##.md eliminated from all pipelines', () => {
-    it('GUARD-38: u-improve SKILL.md must not reference improve##.md', () => {
-      const content = read('skills/u-improve/SKILL.md')
-      assertNotContains(content, 'improve##.md', 'GUARD-38a')
-    })
-
-    it('GUARD-38b: u-improve-mode.md must not reference improve##.md', () => {
-      const content = read('agents/dev/protocols/u-improve-mode.md')
-      assertNotContains(content, 'improve##.md', 'GUARD-38b')
-    })
-
-    it('GUARD-38c: u-fe-orchestrator-core.md must not reference improve##.md', () => {
-      const content = read('agents/dev/u-fe-orchestrator-core.md')
-      assertNotContains(content, 'improve##.md', 'GUARD-38c')
-    })
-
-    it('GUARD-38d: u-be-orchestrator-core.md must not reference improve##.md', () => {
-      const content = read('agents/dev/u-be-orchestrator-core.md')
-      assertNotContains(content, 'improve##.md', 'GUARD-38d')
-    })
-
-    it('GUARD-38e: u-spec-validation-triage.md must not reference improve##.md', () => {
-      const content = read('agents/spec/protocols/u-spec-validation-triage.md')
-      assertNotContains(content, 'improve##.md', 'GUARD-38e')
-    })
-
-    it('GUARD-38f: u-dev.md must not reference improve##.md', () => {
-      const content = read('commands/u-dev.md')
-      assertNotContains(content, 'improve##.md', 'GUARD-38f')
-    })
-
-    it('GUARD-38g: u-spec-triage.md must not reference improve##.md', () => {
-      const content = read('commands/u-spec-triage.md')
-      assertNotContains(content, 'improve##.md', 'GUARD-38g')
+    // GUARD-38a..38g — same anti-pattern across 7 files. Diagnostic still names
+    // the failing file path via the it.each parameter.
+    const IMPROVE_HASH_FILES = [
+      'skills/u-improve/SKILL.md',
+      'agents/dev/protocols/u-improve-mode.md',
+      'agents/dev/u-fe-orchestrator-core.md',
+      'agents/dev/u-be-orchestrator-core.md',
+      'agents/spec/protocols/u-spec-validation-triage.md',
+      'commands/u-dev.md',
+      'commands/u-spec-triage.md',
+    ]
+    it.each(IMPROVE_HASH_FILES)('GUARD-38: %s must not reference improve##.md', (rel) => {
+      assertNotContains(read(rel), 'improve##.md', `GUARD-38: ${rel}`)
     })
   })
 
@@ -426,66 +410,46 @@ describe('Layer 7 — Content Integrity Guardrails', () => {
 
   // ── BE-I-02: Pagination canonical type location ───────────────────────────
   describe('BE-I-02: PaginatedResponse<T> must reference src/types/pagination.ts', () => {
-    it('GUARD-40a: u-be-development/SKILL.md must reference src/types/pagination.ts', () => {
-      const content = read('skills/u-be-development/SKILL.md')
-      assertContains(content, 'src/types/pagination.ts', 'GUARD-40a')
-    })
-
-    it('GUARD-40b: u-be-developer.md must reference src/types/pagination.ts', () => {
-      const content = read('agents/dev/u-be-developer.md')
-      assertContains(content, 'src/types/pagination.ts', 'GUARD-40b')
-    })
-
-    it('GUARD-40c: u-be-standards/SKILL.md must reference src/types/pagination.ts', () => {
-      const content = read('skills/u-be-standards/SKILL.md')
-      assertContains(content, 'src/types/pagination.ts', 'GUARD-40c')
-    })
-
-    it('GUARD-40d: u-be-qa-docs.md must reference src/types/pagination.ts', () => {
-      const content = read('agents/dev/u-be-qa-docs.md')
-      assertContains(content, 'src/types/pagination.ts', 'GUARD-40d')
+    const PAGINATION_FILES = [
+      'skills/u-be-development/SKILL.md',
+      'agents/dev/u-be-developer.md',
+      'skills/u-be-standards/SKILL.md',
+      'agents/dev/u-be-qa-docs.md',
+    ]
+    it.each(PAGINATION_FILES)('GUARD-40: %s must reference src/types/pagination.ts', (rel) => {
+      assertContains(read(rel), 'src/types/pagination.ts', `GUARD-40: ${rel}`)
     })
   })
 
   // ── BE-I-03: null-list rule consistency ──────────────────────────────────
   describe('BE-I-03: empty list must return PaginatedResponse<T>, never null', () => {
-    it('GUARD-41a: u-be-standards/SKILL.md must not use ad-hoc pagination shape for empty list', () => {
-      const content = read('skills/u-be-standards/SKILL.md')
-      assertNotContains(content, '{ data: [], pagination:', 'GUARD-41a')
-      assertNotContains(content, '{ data: [], meta: { page, limit', 'GUARD-41a: ad-hoc meta shape')
-    })
-
-    it('GUARD-41b: u-be-developer.md must not use ad-hoc pagination shape for empty list', () => {
-      const content = read('agents/dev/u-be-developer.md')
-      assertNotContains(content, '{ data: [], pagination:', 'GUARD-41b')
-    })
-
-    it('GUARD-41c: u-be-qa-docs.md must not use ad-hoc pagination shape for empty list', () => {
-      const content = read('agents/dev/u-be-qa-docs.md')
-      assertNotContains(content, '{ data: [], pagination:', 'GUARD-41c')
+    // GUARD-41a has 2 anti-patterns; the others have 1. Encode as table of
+    // [file, list-of-banned-shapes] so all files share the same iteration.
+    const AD_HOC_PAGINATION_SHAPES = [
+      ['skills/u-be-standards/SKILL.md',  ['{ data: [], pagination:', '{ data: [], meta: { page, limit']],
+      ['agents/dev/u-be-developer.md',    ['{ data: [], pagination:']],
+      ['agents/dev/u-be-qa-docs.md',      ['{ data: [], pagination:']],
+    ]
+    it.each(AD_HOC_PAGINATION_SHAPES)('GUARD-41: %s must not use ad-hoc pagination shapes', (rel, shapes) => {
+      const content = read(rel)
+      for (const shape of shapes) {
+        assertNotContains(content, shape, `GUARD-41: ${rel} contains banned shape "${shape}"`)
+      }
     })
   })
 
   // ── BE-I-04: DI pattern cross-consistency ────────────────────────────────
   describe('BE-I-04: DI manual-factory default must be consistent across BE files', () => {
-    it('GUARD-42a: u-be-development/SKILL.md must declare manual-factory as default di_strategy', () => {
-      const content = read('skills/u-be-development/SKILL.md')
-      assertContains(content, 'manual-factory', 'GUARD-42a')
-    })
-
-    it('GUARD-42b: u-be-standards/SKILL.md must declare manual-factory as default di_strategy', () => {
-      const content = read('skills/u-be-standards/SKILL.md')
-      assertContains(content, 'manual-factory', 'GUARD-42b')
-    })
-
-    it('GUARD-42c: u-be-developer.md embedded must contain Dependency Injection section', () => {
-      const content = read('agents/dev/u-be-developer.md')
-      assertContains(content, '## Dependency Injection', 'GUARD-42c')
-    })
-
-    it('GUARD-42d: u-be-qa-docs.md embedded must contain Dependency Injection section', () => {
-      const content = read('agents/dev/u-be-qa-docs.md')
-      assertContains(content, '## Dependency Injection', 'GUARD-42d')
+    // GUARD-42a/b: manual-factory must appear; GUARD-42c/d: ## Dependency Injection
+    // section must appear. Encode as [file, required-substring].
+    const DI_REQUIREMENTS = [
+      ['skills/u-be-development/SKILL.md', 'manual-factory'],
+      ['skills/u-be-standards/SKILL.md',   'manual-factory'],
+      ['agents/dev/u-be-developer.md',     '## Dependency Injection'],
+      ['agents/dev/u-be-qa-docs.md',       '## Dependency Injection'],
+    ]
+    it.each(DI_REQUIREMENTS)('GUARD-42: %s must contain "%s"', (rel, needle) => {
+      assertContains(read(rel), needle, `GUARD-42: ${rel}`)
     })
   })
 
@@ -517,14 +481,12 @@ describe('Layer 7 — Content Integrity Guardrails', () => {
 
   // ── BE-I-06: factories/ folder in default structure ──────────────────────
   describe('BE-I-06: factories/ must be present in BE default folder structure', () => {
-    it('GUARD-44a: u-be-development/SKILL.md folder structure must include factories/', () => {
-      const content = read('skills/u-be-development/SKILL.md')
-      assertContains(content, 'factories/', 'GUARD-44a')
-    })
-
-    it('GUARD-44b: u-be-developer.md folder structure must include factories/', () => {
-      const content = read('agents/dev/u-be-developer.md')
-      assertContains(content, 'factories/', 'GUARD-44b')
+    const FACTORY_FILES = [
+      'skills/u-be-development/SKILL.md',
+      'agents/dev/u-be-developer.md',
+    ]
+    it.each(FACTORY_FILES)('GUARD-44: %s folder structure must include factories/', (rel) => {
+      assertContains(read(rel), 'factories/', `GUARD-44: ${rel}`)
     })
   })
 

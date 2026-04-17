@@ -55,6 +55,21 @@ const SCHEMA_FIXTURE_MAP = {
     invalid: ['invalid/architecture-finding-empty-deliveries.yaml'],
     extraValid: ['valid/architecture-finding-with-findings.yaml'],
   },
+  'improve-handoff-envelope.schema.yaml': {
+    valid: 'valid/improve-handoff-envelope.yaml',
+    invalid: [
+      'invalid/improve-handoff-envelope-bad-id.yaml',
+      'invalid/improve-handoff-envelope-missing-return-contract.yaml',
+      'invalid/improve-handoff-envelope-bad-mode-hint.yaml',
+      'invalid/improve-handoff-envelope-bad-source.yaml',
+      'invalid/improve-handoff-envelope-empty-improve-session.yaml',
+      'invalid/improve-handoff-envelope-update-field-wrong.yaml',
+    ],
+    extraValid: [
+      'valid/improve-handoff-envelope-fast-track-patch.yaml',
+      'valid/improve-handoff-envelope-full.yaml',
+    ],
+  },
 }
 
 describe('Layer 2 — Schema Conformance', () => {
