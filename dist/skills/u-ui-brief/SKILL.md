@@ -1,6 +1,6 @@
 ---
 name: u-ui-brief
-description: Refine a raw UI request into a detailed, standardized, unambiguous brief ready to be consumed by the /dist spec pipeline (u-spec-writing, u-fe-ui, u-ui-design). This skill produces the structured input to the pipeline — it does not produce the specification itself. Trigger when an author needs to prepare a UI request (component, screen, or flow) for spec agents.
+description: Refine a raw UI request into a detailed, standardized, unambiguous brief ready to be handed to /u-spec (new demand) or /u-improve (change to an existing spec). This skill produces the structured input to the pipeline — it does not produce the specification itself and does not invoke leaf agents. Trigger when an author needs to prepare a UI request (component, screen, or flow) before running the spec pipeline.
 user-invocable: true
 argument-hint: "[target]"
 ---
@@ -17,16 +17,17 @@ This skill does not produce specifications. It produces the input a spec agent n
 
 ## Scope boundary — intent vs. resolution
 
-This skill describes **intent**. Literal values (hex, px, ms), tokens, fonts, HTTP verbs, payloads, TypeScript types, and component library bindings are resolved by downstream layers.
+This skill describes **intent**. Literal values (hex, px, ms), tokens, fonts, HTTP verbs, payloads, TypeScript types, and component library bindings are resolved by downstream layers, orchestrated by `/u-spec` or `/u-improve`.
 
-| Layer | Responsibility | Produces |
-|---|---|---|
-| `u-ui-brief` (this skill) | Intent: what the screen does, which states exist, how the user is served | Structured brief |
-| `u-spec-writing` | Domain contract: UC, BR, `openapi.yaml` operationIds, error catalog | `{domain}.spec.md`, `{domain}.back.md` |
-| `u-fe-ui` | Screen mapping: UI-NN states, FL-NN flows, token references, library bindings | `ui-epic-XX.md` |
-| `u-ui-design` | Visual amplification: directional rules, anti-pattern scan, quality gate | Modified code |
+| Layer | Entry point | Responsibility | Produces |
+|---|---|---|---|
+| `u-ui-brief` (this skill) | — | Intent: what the screen does, which states exist, how the user is served | Structured brief |
+| Spec pipeline | `/u-spec` (new demand) | Domain contract, UC, BR, `openapi.yaml` operationIds, error catalog, front spec, design-system | `{domain}.spec.md`, `{domain}.back.md`, `feature.spec.md`, `component.spec.md` |
+| Improve flow | `/u-improve` (modify existing spec) | Classifies impact, writes `improve_scope` block, delegates to `/u-spec` fast-track and/or `/u-dev` | Updated specs and/or implementation |
 
-**Authoring rule:** if a value can be resolved by a downstream layer, describe it by intent — never by literal. Say `primary-action` — never `#2563EB`. Say `short-feedback` — never `150ms`. The receiving agent resolves per R1–R25 and the project design system.
+The brief is **never handed directly** to leaf agents (e.g., `u-spec-writer`, `u-spec-front`, `u-spec-back`, `u-fe-ui`, `u-ui-design`). Those are invoked internally by the orchestrators behind `/u-spec` (`u-spec-orchestrator`) and `/u-improve`, which manage session logs, mode detection, approval gates, validation, and handoff to `/u-dev`.
+
+**Authoring rule:** if a value can be resolved by a downstream layer, describe it by intent — never by literal. Say `primary-action` — never `#2563EB`. Say `short-feedback` — never `150ms`. The downstream pipeline resolves per R1–R25 and the project design system.
 
 ---
 
@@ -258,7 +259,7 @@ These violate the intent/resolution boundary and must not appear in a brief prod
 | Explicit `font-size` in px | Resolved by R4 |
 | HTTP method + path inline | Owned by `openapi.yaml` per `feature.spec.md §1` |
 | Payload JSON or response body | Contract lives in the schema |
-| Component-library binding (e.g., `<Button variant="primary">`) | `u-fe-ui` binds to the project library |
+| Component-library binding (e.g., `<Button variant="primary">`) | Resolved by the implementation pipeline (`/u-dev`), not by the brief |
 | Subjective adjectives (`nice`, `clean`, `modern`, `appropriate`, `fast`, `smooth`) | No deterministic resolution |
 | Invented UI-NN / FL-NN / TC-XX identifiers | Spec pipeline mints these — brief uses semantic labels only |
 
@@ -277,10 +278,11 @@ ui-brief:
 
   request_summary: <one sentence>
 
-  target_agents:
-    - u-spec-writing        # domain contract, BR, openapi binding
-    - u-fe-ui               # screen mapping, UI-NN, FL-NN, tokens
-    - u-ui-design           # visual amplification (optional)
+  handoff:
+    target_command: /u-spec | /u-improve   # /u-spec for new demand; /u-improve when modifying an existing spec
+    reason: <short justification — e.g., "new feature, no prior spec" | "adjusts existing ui-epic-04 states">
+    # Downstream routing is owned by the target command's orchestrator.
+    # Do NOT invoke leaf agents directly (u-spec-writer, u-spec-front, u-spec-back, u-fe-ui, u-ui-design).
 
   screens_intended:
     - name: <SemanticScreenName>
