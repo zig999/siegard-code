@@ -57,6 +57,16 @@ Before any decision, read:
 
 ### Step 0: Assess state and confirm with human
 
+#### If invoked via handoff envelope from /u-improve:
+
+The activation prompt contains both `invocation_source: u-improve` and a `handoff_envelope` block conforming to `.claude/skills/u-shared-templates/improve-handoff-envelope.schema.yaml`.
+
+1. Validate the envelope against the schema. If invalid, halt and emit structured error `envelope_invalid` to the human — do NOT attempt recovery.
+2. Record `handoff_envelope.improvement_task` as the active demand.
+3. Use `handoff_envelope.mode_hint` as the authoritative mode classification — do NOT re-classify in Step 1; only validate that the hint is compatible with `affected_specs` (a removal/contract-break with `fast-track:*` halts with `envelope_mode_mismatch`).
+4. Emit the progress panel and state table for transparency, but **skip the `Confirm? [Y/N]` prompt** — confirmation already happened at the /u-improve gate.
+5. Persist `invocation_source`, `handoff_envelope.id`, `improve_session`, and `return_contract` to the SESSION HEADER. The return contract is consumed by Step 5 to close the loop without human intervention.
+
 #### If new mode (no log) with requirement provided:
 
 The activation prompt contains a `requirement:` field (passed by `/u-spec` command).
@@ -135,9 +145,11 @@ Followed by the detailed table:
 Confirm? [Y / N]
 ```
 
-**Never activate an agent without human confirmation.**
+**Never activate an agent without human confirmation** — except when `invocation_source = u-improve`, in which case confirmation already happened at the /u-improve gate and this step is suppressed (see Step 0 envelope branch).
 
 ### Step 1: Classify the type of demand
+
+> When `invocation_source = u-improve`, the orchestrator does NOT classify — it uses `handoff_envelope.mode_hint` as the authoritative classification. The orchestrator only **validates** the hint against the rules in the table below; if the hint contradicts the rules (e.g. hint=fast-track:patch but the change removes a field), halt with structured error `envelope_mode_mismatch`.
 
 | Type | Criteria | Flow |
 |------|----------|------|
@@ -346,6 +358,24 @@ Assemble separate packages for back and front:
 After handoff, execute cleanup protocol: `.claude/agents/spec/protocols/u-spec-cleanup.md`
 
 **Post-handoff notification:** if the updated spec had already been delivered to Dev previously, the Orchestrator MUST update `{SPECS_DIR}/spec-changelog-notify.md` with the change (per protocol `u-spec-to-dev-handoff.md`). This ensures the Dev Orchestrator detects the change in the next session.
+
+**Return contract (envelope-driven handoffs):** when this run was invoked with `invocation_source = u-improve` and a `handoff_envelope` was provided, the orchestrator MUST close the loop by appending a return block to the file at `handoff_envelope.return_contract.write_to`. The block updates the field named in `return_contract.update_field` (always `spec_change_status`) to a value in `return_contract.expected_terminal_states`:
+
+```markdown
+## [YYYY-MM-DD HH:MM] — Spec pipeline return (envelope {handoff_envelope.id})
+
+```yaml
+spec_pipeline_return:
+  envelope_id: "{handoff_envelope.id}"
+  improve_session: "{handoff_envelope.improve_session}"
+  handoff_manifest_id: "{HANDOFF-... from this delivery}"
+  spec_change_status: completed   # or: failed
+  delivered_at: "{ISO-8601 timestamp}"
+  failure_reason: "{populated only when spec_change_status: failed}"
+```
+```
+
+This block is the only mechanism by which `/u-dev` learns that the spec pipeline has reached a terminal state. Without it, the dev orchestrator remains in the `Halt-await-spec` mode (see `u-improve-mode.md`).
 
 ---
 

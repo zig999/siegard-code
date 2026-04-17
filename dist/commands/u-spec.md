@@ -1,5 +1,5 @@
 ---
-description: Starts the Spec-Driven Development agent group. Receives requirements and produces complete specifications (OpenAPI, business, back, front, features, flows). Usage: /u-spec [SPECS_DIR] [SESSION] ["requirement"] (e.g., /u-spec docs/specs "Add payment flow to checkout domain")
+description: Starts the Spec-Driven Development agent group. Receives requirements and produces complete specifications (OpenAPI, business, back, front, features, flows). Supports invocation via handoff envelope from /u-improve. Usage: /u-spec [SPECS_DIR] [SESSION] ["requirement"] (e.g., /u-spec docs/specs "Add payment flow to checkout domain")
 ---
 
 ## Variable Resolution
@@ -8,6 +8,7 @@ Extract from `$ARGUMENTS`:
 - **First argument** = `SPECS_DIR` (optional if `specs_dir:` is set in `CLAUDE.md`)
 - **Last argument before quoted text** = `SESSION` (optional — string without `/` or `\`)
 - **Remaining quoted text** = `REQUIREMENT` (optional — the requirement to specify)
+- **`INVOCATION_SOURCE`** (optional — set by parent agent, never by human): one of `human | u-improve | u-bug-report | spec-triage`. Defaults to `human` when absent. When the value is `u-improve`, the orchestrator MUST also receive a `handoff_envelope` block conforming to `.claude/skills/u-shared-templates/improve-handoff-envelope.schema.yaml`.
 
 **Resolving `SPECS_DIR` (priority):**
 1. `specs_dir:` field in `CLAUDE.md` (project root) -> use *(canonical source — preferred)*
@@ -26,6 +27,8 @@ If `SESSION` is provided, the session directory is `{SESSIONS_DIR}/{SESSION}/`.
 
 > `REQUIREMENT` is the natural-language description of what will be specified. It is mandatory for new mode and fast-track. In resume, reverse-eng review, and triage modes it is ignored — the Orchestrator reads state from the log or validation reports.
 
+> When `INVOCATION_SOURCE = u-improve`, the orchestrator reads `handoff_envelope.improvement_task` as the canonical requirement and uses `handoff_envelope.mode_hint` as the authoritative mode classification (see "Mode Detection — envelope short-circuit" below). The pre-execution `Proceed? [Y/N]` prompt is skipped — confirmation already happened at the /u-improve gate.
+
 ## Initial Validation
 
 1. Read `CLAUDE.md` (project root). If it does not exist, stop and advise: "Create the `CLAUDE.md` file at the project root with the configuration (domain, stack, conventions) before continuing."
@@ -35,6 +38,16 @@ If `SESSION` is provided, the session directory is `{SESSIONS_DIR}/{SESSION}/`.
 3. Confirm that the `{SPECS_DIR}` directory exists on the filesystem. If it does not exist, stop and request the correct path.
 
 ## Mode Detection
+
+### Envelope short-circuit (highest priority)
+
+If `INVOCATION_SOURCE = u-improve` and a valid `handoff_envelope` is provided:
+- Use `handoff_envelope.mode_hint` directly as the spec mode (`fast-track:minor`, `fast-track:patch`, or `full`).
+- Validate (do NOT re-classify): the hint must be compatible with the changes listed in `affected_specs`. If a removal/contract-break is detected but the hint is `fast-track:*`, halt and emit a structured error `envelope_mode_mismatch` to the human.
+- Skip the table-driven detection below.
+- Skip the `Proceed? [Y/N]` confirmation in "Pre-execution Estimate" — the human already confirmed via `confirm` at the /u-improve gate. The estimate is still emitted as informational output.
+
+### Table-driven detection (default)
 
 Check for the existence of `{SPECS_DIR}/log-orchestrator-spec.md`, `{SPECS_DIR}/`, `{SPECS_DIR}/_meta/origin-reverse-spec.md`, and `{SPECS_DIR}/_meta/merge-pending-review.md`:
 
@@ -71,8 +84,9 @@ Domains: {N} (list domains found in specs/ or provided in the requirement)
 
 Note: Fast-track skips Back+Front (~40% reduction).
 Note: Reverse-eng review skips Writer (~20% reduction).
+Note: When INVOCATION_SOURCE=u-improve, the [Y/N] prompt is suppressed — confirmation already happened at the /u-improve gate. Emit the estimate as informational only and proceed.
 
-Proceed? [Y / N]
+Proceed? [Y / N]   # suppressed when INVOCATION_SOURCE=u-improve
 ```
 
 **Simplified calculation:**

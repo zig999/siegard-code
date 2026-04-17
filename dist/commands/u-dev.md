@@ -74,6 +74,8 @@ Read the `domain:` field in `CLAUDE.md` (project root). This field determines wh
 
 ### Based on mode:
 - **Improve / Bug + Improve:** read `improve_scope` block from `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`
+  - **Halt-await-spec gate:** if `spec_change_status: pending_spec` is observed, do NOT initialize the orchestrator. Emit a structured halt block to the human (see `u-improve-mode.md` § "Halt-await-spec mode"). Do NOT ask A/B/C-style questions — the pending state is owned by the /u-spec pipeline. Stop immediately.
+  - **Failed-spec gate:** if `spec_change_status: failed` is observed, halt with structured `spec_pipeline_failed` and surface `failure_reason` from the latest `spec_pipeline_return` block. Stop immediately.
 - **Bug / Bug + Improve:** read all `{SESSIONS_DIR}/{SESSION}/bug*.md`
 
 ### Spec Detection
@@ -123,6 +125,7 @@ Before initializing, present an estimate to the human:
 
 Mode: {detected mode} | Domain: {frontend|backend}
 Input: {improve_scope: N TCs estimated | bug##.md: N files | {SPECS_DIR}: N domains}
+Source: {improve_scope (handoff_manifest_id: HANDOFF-...) | direct | bug | spec-first}
 
 | Stage | Agents | Estimated Tokens | Estimated Time |
 |-------|--------|-----------------|----------------|

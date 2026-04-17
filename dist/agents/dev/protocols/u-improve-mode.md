@@ -12,7 +12,7 @@ Written by `/u-improve` to the session log. Schema:
 improve_scope:
   description: "<single objective sentence>"
   type: spec_change_required | implementation_only
-  spec_change_status: completed | divergence_accepted | not_required
+  spec_change_status: pending_spec | completed | divergence_accepted | not_required | failed
   affected_specs:
     - path: "<relative path from SPECS_DIR>"
       sections: ["§N", "§N"]
@@ -20,12 +20,15 @@ improve_scope:
   estimated_task_contracts: <integer>
   planner_required: true | false
   planner_skip_reason: "<reason — present only when planner_required: false>"
+  handoff_manifest_id: "<HANDOFF-... — populated by spec-orchestrator return contract>"
 ```
 
 `spec_change_status` semantics:
-- `completed` — specs updated via /u-spec fast-track before /u-dev was called
-- `divergence_accepted` — human declined spec update; divergence is recorded; proceed
+- `pending_spec` — **non-terminal** transient state written by `/u-improve` Step 3a (write-before-confirm). Indicates the spec pipeline is in flight or awaiting confirmation. `/u-dev` MUST refuse to start.
+- `completed` — specs updated via /u-spec fast-track; `/u-dev` may proceed
+- `divergence_accepted` — human declined spec update; divergence is recorded; `/u-dev` may proceed
 - `not_required` — type was implementation_only; no spec change was needed
+- `failed` — spec pipeline reached a terminal failure state (envelope return contract); `/u-dev` MUST refuse to start until human resolves
 
 ---
 
@@ -38,8 +41,22 @@ improve_scope block present?
   → No  → mode detection error — halt and notify human
   → Yes → continue
 
+spec_change_status = pending_spec?
+  → NON-TERMINAL state — DO NOT activate any agent.
+  → Enter Halt-await-spec mode (see below). Emit structured status to human; do NOT
+    ask A/B/C-style questions about how to proceed. The /u-spec pipeline (or its
+    abort/failure path) is responsible for transitioning this status.
+
+spec_change_status = failed?
+  → Terminal failure state — DO NOT activate any agent.
+  → Halt and emit structured status `spec_pipeline_failed` to human, including
+    failure_reason from the latest spec_pipeline_return block. Human must resolve
+    (re-run /u-spec, accept divergence, or abort improve) before /u-dev can proceed.
+
 spec_change_status = completed?
   → Specs are authoritative — Planner reads affected_specs directly
+  → If handoff_manifest_id is present in the scope block, validate the version of
+    each affected_specs entry against the manifest; halt on mismatch.
 
 spec_change_status = divergence_accepted?
   → Record in {SPECS_DIR}/spec-divergences.md:
@@ -48,6 +65,26 @@ spec_change_status = divergence_accepted?
 
 spec_change_status = not_required?
   → Continue normally
+```
+
+### Halt-await-spec mode
+
+Activated when `spec_change_status = pending_spec`. In this mode:
+- Emit one structured status block to the human and STOP. Do not prompt A/B/C.
+- The status block names: the envelope id (if present), the expected next event
+  (spec pipeline return), and the suggested human actions (re-run /u-spec, mark
+  divergence_accepted manually, or abort).
+- Resume happens only when the spec_change_status field transitions to a terminal
+  state (`completed`, `divergence_accepted`, `failed`).
+
+```yaml
+halt_state: spec-pipeline-running
+envelope_id: "{IMPROVE-...}"   # if present in handoff_envelope block
+awaiting: spec_pipeline_return
+suggested_actions:
+  - wait_for_spec_pipeline
+  - mark_divergence_accepted_manually
+  - abort_improve
 ```
 
 ---

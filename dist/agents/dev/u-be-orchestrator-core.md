@@ -48,15 +48,19 @@ If any P0 condition is unmet, emit `.claude/skills/u-shared-templates/blocked-re
 
 On startup, detect mode in this order. Read `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md` (lines 1–20 + last 80 lines) before evaluating.
 
-| {SPECS_DIR} approved | improve_scope in log | improve_scope_status | bug##.md | backlog.md | Mode |
-|---|---|---|---|---|---|
-| Yes | * | * | * | * | **Spec-first** |
-| No | Yes | consumed | * | Yes | **Resume** |
-| No | Yes | not consumed | No | No | **Improve** |
-| No | Yes | not consumed | Yes | No | **Bug + Improve** |
-| No | No | — | Yes | No | **Bug** |
-| No | No | — | No | No | **Error** |
-| * | * | * | * | Yes | **Resume** |
+| {SPECS_DIR} approved | improve_scope in log | improve_scope_status | spec_change_status | bug##.md | backlog.md | Mode |
+|---|---|---|---|---|---|---|
+| * | Yes | not consumed | pending_spec | * | * | **Halt-await-spec** |
+| * | Yes | not consumed | failed | * | * | **Halt-spec-failed** |
+| Yes | * | * | terminal\* | * | * | **Spec-first** |
+| No | Yes | consumed | * | * | Yes | **Resume** |
+| No | Yes | not consumed | terminal\* | No | No | **Improve** |
+| No | Yes | not consumed | terminal\* | Yes | No | **Bug + Improve** |
+| No | No | — | — | Yes | No | **Bug** |
+| No | No | — | — | No | No | **Error** |
+| * | * | * | * | * | Yes | **Resume** |
+
+\* `terminal` = one of `completed | divergence_accepted | not_required`.
 
 `improve_scope in log` — true when the log contains a YAML block with key `improve_scope:` and no subsequent `improve_scope_status: consumed` entry.
 
@@ -68,7 +72,7 @@ Log the detected mode and inform the human before proceeding.
 
 ### Quality gates
 
-**Improve mode:** validate that `improve_scope` block is present and `spec_change_status` is resolved (not null). If `spec_change_status: completed`, validate that the affected spec files listed in `affected_specs` exist and are readable. If any file is missing, halt and notify human before proceeding.
+**Improve mode:** validate that `improve_scope` block is present and `spec_change_status` is in a terminal state (`completed | divergence_accepted | not_required`). If `spec_change_status: pending_spec` or `failed`, the orchestrator MUST NOT activate any agent — handle via `Halt-await-spec` / `Halt-spec-failed` modes (see `u-improve-mode.md`). If `spec_change_status: completed`, validate that the affected spec files listed in `affected_specs` exist and are readable. If any file is missing, halt and notify human before proceeding.
 
 **Bug mode** (bug##.md present): validate that each `bug##.md` has a "How to reproduce" section filled in. A bug without reproduction steps is ambiguous — notify the human before proceeding.
 

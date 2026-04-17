@@ -21,10 +21,18 @@ Define a simplified flow for low-impact changes to already-approved specs, avoid
 - State machine change (addition/removal of transition)
 - Any change that breaks existing consumers
 
+## Envelope-driven invocation
+
+When the orchestrator is activated via `INVOCATION_SOURCE=u-improve` with a `handoff_envelope`:
+- The orchestrator does NOT classify — it **validates** `handoff_envelope.mode_hint` against the eligibility table above.
+- Compatible mode hints (`fast-track:minor`, `fast-track:patch`) skip the orchestrator's classification step.
+- Incompatible hint (e.g. envelope says `fast-track:patch` but the change removes a field) → halt with structured error `envelope_mode_mismatch`. Do NOT silently upgrade to full flow.
+- The pre-execution `Proceed? [Y/N]` is suppressed (confirmation already happened at /u-improve).
+
 ## Fast-track flow
 
 ```
-1. Orchestrator classifies the demand as minor/patch
+1. Orchestrator validates (envelope-driven) or classifies the demand as minor/patch
    |
 2. Spec Writer updates ONLY the affected files
    - Increments version (minor or patch)
@@ -74,3 +82,6 @@ Every fast-track change must be recorded in the Orchestrator log with:
 - Type: `fast-track:minor` or `fast-track:patch`
 - Affected files
 - Justification for using fast-track
+- `invocation_source` (one of `human | u-improve | u-bug-report | spec-triage`)
+- `improve_session` and `handoff_envelope.id` when invoked via envelope (closes the audit trail with the dev session)
+- Final state of the return contract write (path written + terminal `spec_change_status` value)
