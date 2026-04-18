@@ -386,7 +386,7 @@ references:
 
 > **Improve mode — spec updated (`spec_change_status: completed`):** set `references` to the files listed in `improve_scope.affected_specs`, loading only the sections specified. Do not scan `{SPECS_DIR}` globally.
 
-> **Improve mode — divergence accepted (`spec_change_status: divergence_accepted`) or Bug mode without spec:** set `references: [{path: codebase, section: "Developer discovers via inspection — scope: {affected_specs paths}"}]`
+> **Improve mode — divergence accepted (`spec_change_status: divergence_accepted`) or no approved spec for the affected area:** set `references: [{path: codebase, section: "Developer discovers via inspection — scope: {affected_specs paths}"}]`
 
 ### input.known_context
 

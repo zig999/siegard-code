@@ -273,16 +273,16 @@ describe('Layer 7 — Content Integrity Guardrails', () => {
     })
   })
 
-  describe('DEV-I-12: bug mode post-merge specification', () => {
-    it('GUARD-31: u-be-orchestrator-core.md must specify post-merge behavior in bug mode', () => {
+  describe('DEV-I-12: improve-mode (bugfix) post-merge specification', () => {
+    it('GUARD-31: u-be-orchestrator-core.md must specify post-merge behavior for bugfix improve TCs', () => {
       const content = read('agents/dev/u-be-orchestrator-core.md')
-      assertContains(content, /[Bb]ug mode/i, 'GUARD-31a')
+      assertContains(content, /[Ii]mprove mode.*bug fix|bugfix/i, 'GUARD-31a')
       assertContains(content, /Epic Integration/i, 'GUARD-31b')
     })
 
-    it('GUARD-32: u-fe-orchestrator-core.md must specify post-merge behavior in bug mode', () => {
+    it('GUARD-32: u-fe-orchestrator-core.md must specify post-merge behavior for bugfix improve TCs', () => {
       const content = read('agents/dev/u-fe-orchestrator-core.md')
-      assertContains(content, /[Bb]ug mode/i, 'GUARD-32a')
+      assertContains(content, /[Ii]mprove mode.*bug fix|bugfix/i, 'GUARD-32a')
       assertContains(content, /Epic Integration/i, 'GUARD-32b')
     })
   })
@@ -487,6 +487,68 @@ describe('Layer 7 — Content Integrity Guardrails', () => {
     ]
     it.each(FACTORY_FILES)('GUARD-44: %s folder structure must include factories/', (rel) => {
       assertContains(read(rel), 'factories/', `GUARD-44: ${rel}`)
+    })
+  })
+
+  // ── DEV-I-14: u-bug-report and u-bug-mode eliminated ─────────────────────
+
+  describe('DEV-I-14: /u-bug-report merged into /u-improve — all orphan references removed', () => {
+    it('GUARD-45a: dist/commands/u-bug-report.md must be deleted', () => {
+      expect(existsSync(join(dist, 'commands/u-bug-report.md')),
+        'dist/commands/u-bug-report.md must not exist').toBe(false)
+    })
+
+    it('GUARD-45b: dist/skills/u-bug-report/ must be deleted', () => {
+      expect(existsSync(join(dist, 'skills/u-bug-report')),
+        'dist/skills/u-bug-report/ must not exist').toBe(false)
+    })
+
+    it('GUARD-45c: dist/agents/dev/protocols/u-bug-mode.md must be deleted (merged into u-improve-mode.md)', () => {
+      expect(existsSync(join(dist, 'agents/dev/protocols/u-bug-mode.md')),
+        'u-bug-mode.md must not exist').toBe(false)
+    })
+
+    // GUARD-46: no dist/ file should reference the deleted artifacts as active paths.
+    // Migration-history mentions (explaining "the former /u-bug-report ... was merged")
+    // are allowed on a small allowlist; everything else must be clean.
+    const MIGRATION_HISTORY_ALLOWLIST = [
+      'skills/u-improve/SKILL.md',
+      'agents/dev/protocols/u-improve-mode.md',
+      'skills/u-shared-templates/improve-handoff-envelope.schema.yaml',
+      'agents/dev/u-be-orchestrator-protocols.md',
+      'agents/dev/u-fe-orchestrator-protocols.md',
+    ]
+    const FORBIDDEN_PATTERNS = [
+      { pattern: /bug##\.md/, label: 'bug##.md' },
+      { pattern: /bug\*\.md/, label: 'bug*.md' },
+      { pattern: /\/u-bug-report\b/, label: '/u-bug-report' },
+      { pattern: /u-bug-mode\.md/, label: 'u-bug-mode.md' },
+    ]
+
+    function walkMarkdown(dir, results = []) {
+      const fs = require('fs')
+      if (!fs.existsSync(dir)) return results
+      for (const entry of fs.readdirSync(dir)) {
+        const full = join(dir, entry)
+        if (fs.statSync(full).isDirectory()) walkMarkdown(full, results)
+        else if (entry.endsWith('.md') || entry.endsWith('.yaml')) results.push(full)
+      }
+      return results
+    }
+
+    const allDistFiles = walkMarkdown(dist)
+
+    it.each(FORBIDDEN_PATTERNS)('GUARD-46: no non-allowlisted dist/ file mentions $label', ({ pattern, label }) => {
+      const violations = []
+      for (const file of allDistFiles) {
+        const rel = file.slice(dist.length + 1).replace(/\\/g, '/')
+        if (MIGRATION_HISTORY_ALLOWLIST.includes(rel)) continue
+        const content = readFileSync(file, 'utf8')
+        if (pattern.test(content)) violations.push(rel)
+      }
+      expect(violations,
+        `Files still mention "${label}" (bug-report/bug-mode were eliminated — merged into /u-improve): ${violations.join(', ')}`
+      ).toEqual([])
     })
   })
 

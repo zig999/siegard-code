@@ -56,34 +56,14 @@ Extract the `improve_scope` block from `{SESSIONS_DIR}/{SESSION}/log-orchestrato
 
 > **Additional instruction:** "Generate the backlog from the improvement scope below. Each task_contract entry maps to one Task Contract. Group into Epics when Task Contracts share the same domain or feature boundary. Keep the scope lean — these are incremental improvements, not full features. Use affected_specs listed in the scope block as the only spec references."
 
-#### Bug mode (bug##.md present)
+#### Bug fix (improve_scope describes broken behavior)
 
-All `bug##.md` concatenated in the prompt, in numeric order.
-
-```
-## Reported bugs
-
-### Bug #01 (extracted from bug01.md)
-[full content]
----
-### Bug #02 (extracted from bug02.md)
-[full content]
-```
-
-> **Instruction to the Planner (Bug):** "Generate one Bugfix Task Contract per bug. Type: `Bugfix`. Priority: blocking bugs = P0, visible = P1, cosmetic = P2. Each Task Contract must reference `Origin: bug##.md`. If specs exist and the bug affects a specified domain, reference the affected UC-NN. Branch: `fix/TC-XX`."
-
-#### Bug + Improve mode
-
-Bugs first, then improvements:
-```
-## Reported bugs (priority: process first)
-[content of each bug##.md]
----
-## Incremental improvements (priority: process after)
-[improve_scope block content extracted from {SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md]
-```
-
-> **Instruction to the Planner (Bug + Improve):** "Process bugs first as P0/P1 Task Contracts, then improvements as P1/P2. Bugfix Task Contracts never depend on Improve Task Contracts. The reverse is allowed."
+Every change now flows through `/u-improve`, including bug fixes. The Planner reads the `improve_scope.description` — when it describes broken behavior (e.g., text contains `not working`, `broken`, `fails`, `wrong`), generate a Task Contract with:
+- Type: `Bugfix`
+- Priority default: P0 for blocking, P1 for visible, P2 for cosmetic (derived from `improve_scope.description` severity and whether `execution_policy.pipeline: lean`)
+- `Origin: improve`
+- Branch: `fix/TC-XX`
+- Enforce TDD when `improve_scope.execution_policy.regression_test_required: true`
 
 #### Resumption (any mode)
 

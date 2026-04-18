@@ -8,7 +8,7 @@ Extract from `$ARGUMENTS`:
 - **First argument** = `SPECS_DIR` (optional if `specs_dir:` is set in `CLAUDE.md`)
 - **Last argument before quoted text** = `SESSION` (optional — string without `/` or `\`)
 - **Remaining quoted text** = `REQUIREMENT` (optional — the requirement to specify)
-- **`INVOCATION_SOURCE`** (optional — set by parent agent, never by human): one of `human | u-improve | u-bug-report | spec-triage`. Defaults to `human` when absent. When the value is `u-improve`, the orchestrator MUST also receive a `handoff_envelope` block conforming to `.claude/skills/u-shared-templates/improve-handoff-envelope.schema.yaml`.
+- **`INVOCATION_SOURCE`** (optional — set by parent agent, never by human): one of `human | u-improve | spec-triage`. Defaults to `human` when absent. When the value is `u-improve`, the orchestrator MUST also receive a `handoff_envelope` block conforming to `.claude/skills/u-shared-templates/improve-handoff-envelope.schema.yaml`.
 
 **Resolving `SPECS_DIR` (priority):**
 1. `specs_dir:` field in `CLAUDE.md` (project root) -> use *(canonical source — preferred)*

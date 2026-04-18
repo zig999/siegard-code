@@ -147,17 +147,15 @@ Update at each phase transition:
 
 Mode detection follows the same rules as the domain orchestrators:
 
-| {SPECS_DIR} approved | improve_scope in log | improve_scope_status | bug##.md | backlog.md | Mode |
-|---|---|---|---|---|---|
-| Yes | * | * | * | * | **Spec-first** |
-| No | Yes | consumed | * | Yes | **Resume** |
-| No | Yes | not consumed | No | No | **Improve** |
-| No | Yes | not consumed | Yes | No | **Bug + Improve** |
-| No | No | — | Yes | No | **Bug** |
-| No | No | — | No | No | **Error** |
-| * | * | * | * | Yes | **Resume** |
+| {SPECS_DIR} approved | improve_scope in log | improve_scope_status | backlog.md | Mode |
+|---|---|---|---|---|
+| Yes | * | * | * | **Spec-first** |
+| No | Yes | consumed | Yes | **Resume** |
+| No | Yes | not consumed | No | **Improve** |
+| No | No | — | No | **Error** |
+| * | * | * | Yes | **Resume** |
 
-`improve_scope in log` — true when the session log contains a YAML block with key `improve_scope:` and no subsequent `improve_scope_status: consumed` entry.
+`improve_scope in log` — true when the session log contains a YAML block with key `improve_scope:` and no subsequent `improve_scope_status: consumed` entry. Improve mode covers every intentional change (bug fixes, tweaks, enhancements) routed via `/u-improve`.
 
 The detected mode is passed to both domain orchestrators — they do not re-detect.
 
@@ -171,7 +169,7 @@ Before starting, present to the human:
 ## Estimate — /u-dev [SPECS_DIR] {SESSION} (fullstack)
 
 Mode: {detected mode} | Domain: fullstack
-Input: {improve_scope: N TCs estimated | bug##.md: N files | {SPECS_DIR}: N domains}
+Input: {improve_scope: N TCs estimated | {SPECS_DIR}: N domains}
 
 | Phase | Scope | Estimated Task Contracts | Estimated Time |
 |-------|-------|-------------------|----------------|

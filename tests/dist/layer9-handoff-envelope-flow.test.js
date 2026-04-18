@@ -94,8 +94,8 @@ describe('Layer 9 — Handoff Envelope Flow Invariants', () => {
     runRules('commands/u-spec.md', [
       ['ENV-030', contains('INVOCATION_SOURCE'),
         'must document INVOCATION_SOURCE variable'],
-      ['ENV-031', matches(/human\s*\|\s*u-improve\s*\|\s*u-bug-report\s*\|\s*spec-triage/i),
-        'must list allowed invocation_source values'],
+      ['ENV-031', matches(/human\s*\|\s*u-improve\s*\|\s*spec-triage/i),
+        'must list allowed invocation_source values (u-bug-report removed after merge)'],
       ['ENV-032', contains('improve-handoff-envelope.schema.yaml'),
         'must reference the envelope schema'],
       ['ENV-033', matches(/suppressed when INVOCATION_SOURCE\s*=\s*u-improve/i),

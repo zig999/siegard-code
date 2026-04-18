@@ -25,8 +25,7 @@ user-invocable: false
 | API Contracts | `.claude/agents/dev/protocols/u-fe-api-contracts.md` | When a Task Contract consumes a new or changed endpoint |
 | Push and merge | `.claude/agents/dev/protocols/u-push-merge.md` | After QA approves a Task Contract |
 | Cleanup `_temp/` | `.claude/agents/dev/protocols/u-cleanup.md` | After Planner, Task Contract, or Epic completion |
-| Improve Mode | `.claude/agents/dev/protocols/u-improve-mode.md` | When Improve mode is detected (improve_scope block in log) |
-| Bug Mode | `.claude/agents/dev/protocols/u-bug-mode.md` | When Bug mode is detected (bug##.md present) |
+| Improve Mode | `.claude/agents/dev/protocols/u-improve-mode.md` | When Improve mode is detected (improve_scope block in log) — covers bug fixes, tweaks, and enhancements |
 
 ## Blocked response schema
 

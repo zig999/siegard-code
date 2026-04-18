@@ -82,6 +82,6 @@ Every fast-track change must be recorded in the Orchestrator log with:
 - Type: `fast-track:minor` or `fast-track:patch`
 - Affected files
 - Justification for using fast-track
-- `invocation_source` (one of `human | u-improve | u-bug-report | spec-triage`)
+- `invocation_source` (one of `human | u-improve | spec-triage`)
 - `improve_session` and `handoff_envelope.id` when invoked via envelope (closes the audit trail with the dev session)
 - Final state of the return contract write (path written + terminal `spec_change_status` value)

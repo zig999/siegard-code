@@ -203,7 +203,7 @@ references:
 
 > **Version source:** read from the `version:` field in each spec file's frontmatter or YAML header. If absent, use git short hash at planning time, or `"unknown"` as fallback — never omit the field.
 
-> No `{SPECS_DIR}` (Improve/Bug mode): set `references: [{path: codebase, section: "Developer discovers via inspection"}]`
+> No `{SPECS_DIR}` (Improve mode without approved specs): set `references: [{path: codebase, section: "Developer discovers via inspection"}]`
 
 ### input.known_context
 

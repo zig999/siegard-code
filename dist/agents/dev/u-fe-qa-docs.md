@@ -238,7 +238,7 @@ Use the output captured in Phase 1 (test-gate) as the authoritative result. Do n
 
 ### Step 4 — Verify delivered documentation (only if applicable)
 
-> Skip for Bugfixes and Visual adjustments without new artifacts.
+> Skip for Bugfixes and visual fixes (Task Contracts derived from `improve_scope.execution_policy.pipeline: lean`) without new artifacts.
 
 Check whether the Developer delivered the mandatory inline documentation as per the table in `.claude/skills/u-fe-qa-docs/SKILL.md`. Do not generate documentation — only validate presence and minimum quality.
 
