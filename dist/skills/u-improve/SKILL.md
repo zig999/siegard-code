@@ -255,6 +255,33 @@ Wait for human response. Accept ONLY tokens from the controlled vocabulary.
 
 Do NOT print a shell command for the human to paste. Use the Agent tool directly.
 
+**Agent tool invocation — exact payload when `confirm` is received:**
+
+```yaml
+description: "Invoke u-spec-orchestrator with improve handoff"
+prompt: |
+  INVOCATION_SOURCE: u-improve
+  handoff_envelope:
+    id: {envelope.id}
+    source: u-improve
+    invocation_source: u-improve
+    improve_session: "{SESSION}"
+    improvement_task: "{improvement_task}"
+    mode_hint: {fast-track:minor | fast-track:patch | full}
+    affected_specs:
+      - path: "{path}"
+        sections: ["{§N}"]
+        change_summary: "{one sentence}"
+    estimated_task_contracts: {N}
+    return_contract:
+      write_to: "{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md"
+      update_field: spec_change_status
+      expected_terminal_states: [completed, failed]
+subagent_type: u-spec-orchestrator
+```
+
+On agent return: if the agent reports success → set `spec_change_status: completed`. If error → set `spec_change_status: failed`. Proceed to Step 5.
+
 **If `type: implementation_only`:**
 
 `spec_change_status` is already `not_required`. Proceed directly to Step 5.
