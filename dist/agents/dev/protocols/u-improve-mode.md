@@ -2,6 +2,8 @@
 
 Activated when the Orchestrator detects an `improve_scope` block in `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`.
 
+> **Scope:** this protocol governs every intentional change routed through `/u-improve` — bug fixes, tweaks, and enhancements. The former `u-bug-mode.md` protocol was merged into this file. Branching between lean and full pipelines is driven by `improve_scope.execution_policy.pipeline`, which `/u-improve` derives at Step 2.6.
+
 ---
 
 ### improve_scope block format
@@ -20,8 +22,18 @@ improve_scope:
   estimated_task_contracts: <integer>
   planner_required: true | false
   planner_skip_reason: "<reason — present only when planner_required: false>"
+  execution_policy:
+    pipeline: lean | full
+    regression_test_required: true | false
+    planner_required: true | false
   handoff_manifest_id: "<HANDOFF-... — populated by spec-orchestrator return contract>"
 ```
+
+`execution_policy` semantics (derived by `/u-improve` Step 2.6):
+- `pipeline: lean` — visual/cosmetic fix with no spec impact; Developer patches directly, no Planner, no regression test, QA smoke validates.
+- `pipeline: full` — every other case; Planner → Developer → QA runs the standard cycle.
+- `regression_test_required: true` — Developer MUST write a failing test that reproduces the defect or asserts the new behavior BEFORE changing production code (TDD).
+- `regression_test_required: false` — change is declarative (typo, wording, pure spec rewrite) or strictly visual; skip the regression test step.
 
 `spec_change_status` semantics:
 - `pending_spec` — **non-terminal** transient state written by `/u-improve` Step 3a (write-before-confirm). Indicates the spec pipeline is in flight or awaiting confirmation. `/u-dev` MUST refuse to start.
@@ -123,7 +135,28 @@ references:
 
 ---
 
-### Lean vs. full pipeline
+### Pipeline branching — lean vs full
+
+The Orchestrator reads `execution_policy.pipeline` from the scope block:
+
+```
+execution_policy.pipeline = lean?
+  → Route directly to Developer — no Planner, no UI Agent, no TDD
+  → Pass affected_specs (if any) and description as execution context
+  → Developer creates branch `fix/visual-<short-description>` (e.g., fix/visual-misaligned-button)
+  → Commit: `fix(visual): <description>`
+  → Developer makes the smallest possible change (CSS, token, text) — no logic
+  → QA validates smoke: matches expected behavior, no regression in adjacent states
+     (hover, disabled, mobile); writing an automated test is NOT required
+
+execution_policy.pipeline = full?
+  → Standard pipeline: Planner → [UI Agent if needed] → Developer → QA
+  → Planner activation and UI Agent evaluation follow the rules below
+```
+
+**Lean pipeline boundary.** If during a lean fix the Developer identifies that the change involves logic, state management, or a shared component, the Developer MUST stop the fix immediately, record `PIPELINE-PROMOTION: TC-XX — <reason>` in the session log, and wait for human confirmation before proceeding under the full pipeline.
+
+#### Planner activation (full pipeline only)
 
 The Orchestrator reads `planner_required` from the scope block:
 
@@ -135,10 +168,13 @@ planner_required: false AND human confirmed skip (recorded in log)?
 
 planner_required: true OR human declined skip?
   → Activate Planner with scope restricted to affected_specs
-  → Standard pipeline: Planner → [UI Agent if needed] → Developer → QA
+  → Task Contract priority default derives from the change nature encoded in the
+    scope block: descriptions matching broken-behavior patterns receive P0 or P1;
+    enhancements receive P1 or P2 (the Planner consults the description and
+    affected_specs change_summary fields).
 ```
 
-UI Agent evaluation (improve mode, regardless of lean/full):
+UI Agent evaluation (improve mode, full pipeline):
 
 ```
 All Task Contracts are internal (no structural spec section change)?
@@ -147,6 +183,38 @@ All Task Contracts are internal (no structural spec section change)?
 Any Task Contract changes §2 States, §3 Transitions, §7 Components, or §10?
   → Activate UI Agent with scope restricted to affected feature/component specs
 ```
+
+#### Regression-test discipline (full pipeline only)
+
+The Developer reads `execution_policy.regression_test_required`:
+
+```
+regression_test_required: true?
+  → Write a failing test that reproduces the defect (bug) or asserts the new
+    contract (enhancement) BEFORE touching production code.
+  → The test MUST fail on the pre-change codebase and pass after the fix.
+  → QA verifies the regression test exists, its pre-change failure, and its
+    post-change passing status.
+
+regression_test_required: false?
+  → No regression test is required. QA verifies the change matches the stated
+    outcome and does not introduce regressions in adjacent code paths.
+```
+
+#### Spec-impact gate — breaking-change affordance
+
+During the full pipeline, if the Planner identifies that a change affects an existing contract/API while approved specs exist for the domain, the Orchestrator MUST:
+
+1. Notify the human with options:
+   - Update specs first (re-run `/u-spec` via fast-track) — recommended
+   - Fix in code now — requires a spec-divergence record
+
+2. If the human chooses to fix without updating:
+   - Record in the session log: `SPEC-DIVERGENCE-ACCEPTED: TC-XX — <domain> — <description>`
+   - The Task Contract notes: "accepted spec divergence — CR pending"
+   - After QA approves, the Orchestrator creates or updates `{SPECS_DIR}/spec-divergences.md` with the divergence for future review
+
+If no approved specs exist for the affected area, treat as a normal change and skip the gate.
 
 ---
 

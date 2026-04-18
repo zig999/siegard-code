@@ -3,9 +3,13 @@ $id: "u-shared-templates/improve-handoff-envelope.schema.yaml"
 title: improve-handoff-envelope
 description: >
   Machine-readable envelope produced by u-improve and consumed by u-spec-orchestrator.
-  Carries the improvement scope, mode hint, and a return contract that closes the
-  loop without requiring human re-confirmation. Mirrored into
+  Carries the change scope, mode hint, execution policy (lean vs full pipeline and
+  regression-test discipline), and a return contract that closes the loop without
+  requiring human re-confirmation. Mirrored into
   {SESSIONS_DIR}/{improve_session}/log-orchestrator-dev.md as YAML block.
+  Note: "improve" here means any intentional change (bug fix, tweak, or enhancement);
+  the former /u-bug-report pathway was merged into /u-improve — no dedicated bug
+  envelope exists.
 type: object
 required:
   - handoff_envelope
@@ -22,6 +26,7 @@ properties:
       - mode_hint
       - affected_specs
       - estimated_task_contracts
+      - execution_policy
       - return_contract
     additionalProperties: false
     properties:
@@ -34,7 +39,7 @@ properties:
         const: "u-improve"
       invocation_source:
         type: string
-        enum: [u-improve, u-bug-report, spec-triage, human]
+        enum: [u-improve, spec-triage, human]
       improve_session:
         type: string
         minLength: 1
@@ -66,6 +71,23 @@ properties:
       estimated_task_contracts:
         type: integer
         minimum: 1
+      execution_policy:
+        type: object
+        description: >
+          Derived by u-improve Step 2.6 from the description text and affected_specs.
+          Drives the Dev pipeline: lean skips Planner and TDD; full runs the standard
+          Planner → Developer → QA cycle with regression_test_required enforcing a
+          failing test before the fix.
+        required: [pipeline, regression_test_required, planner_required]
+        additionalProperties: false
+        properties:
+          pipeline:
+            type: string
+            enum: [lean, full]
+          regression_test_required:
+            type: boolean
+          planner_required:
+            type: boolean
       return_contract:
         type: object
         required: [write_to, update_field, expected_terminal_states]

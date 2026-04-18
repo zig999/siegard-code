@@ -64,10 +64,14 @@ const SCHEMA_FIXTURE_MAP = {
       'invalid/improve-handoff-envelope-bad-source.yaml',
       'invalid/improve-handoff-envelope-empty-improve-session.yaml',
       'invalid/improve-handoff-envelope-update-field-wrong.yaml',
+      'invalid/improve-handoff-envelope-missing-execution-policy.yaml',
+      'invalid/improve-handoff-envelope-bad-pipeline.yaml',
     ],
     extraValid: [
       'valid/improve-handoff-envelope-fast-track-patch.yaml',
       'valid/improve-handoff-envelope-full.yaml',
+      'valid/improve-handoff-envelope-lean.yaml',
+      'valid/improve-handoff-envelope-no-tdd.yaml',
     ],
   },
   'spec-changelog-notify.schema.yaml': {

@@ -1,0 +1,20 @@
+handoff_envelope:
+  id: IMPROVE-20260417-103045
+  source: u-improve
+  invocation_source: u-improve
+  improve_session: subjects-fe-review
+  improvement_task: "Standardize Events tab — vertical timeline, uniform row height, icon per type, body visible."
+  mode_hint: "fast-track:minor"
+  affected_specs:
+    - path: "front/features/subject-detail.feature.spec.md"
+      sections: ["§2", "§10"]
+      change_summary: "Update Events tab UI-state to vertical timeline + standardized item contract"
+  estimated_task_contracts: 1
+  execution_policy:
+    pipeline: full
+    regression_test_required: true
+    planner_required: false
+  return_contract:
+    write_to: "{SESSIONS_DIR}/subjects-fe-review/log-orchestrator-dev.md"
+    update_field: spec_change_status
+    expected_terminal_states: [completed, failed]

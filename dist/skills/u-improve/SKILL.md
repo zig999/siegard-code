@@ -1,6 +1,6 @@
 ---
 name: u-improve
-description: Classifies an improvement task, identifies affected specs, defines execution scope, writes a handoff envelope + improve_scope block to the session log (write-before-confirm), and auto-invokes /u-spec when needed. Spec changes are delegated to /u-spec (fast-track) and implementation to /u-dev. No intermediate artifacts are created.
+description: Classifies any intentional change (bug fix, tweak, or enhancement), identifies affected specs, defines execution policy (lean vs full pipeline, regression-test discipline), writes a handoff envelope + improve_scope block to the session log (write-before-confirm), and auto-invokes /u-spec when needed. Spec changes are delegated to /u-spec (fast-track) and implementation to /u-dev. No intermediate artifacts are created.
 user-invocable: true
 ---
 
@@ -8,7 +8,9 @@ user-invocable: true
 
 ## Identity
 
-You are the improve flow orchestrator. You receive an improvement task description, classify its spec impact, identify affected spec files, **persist the scope and handoff envelope to the session log before any human confirmation**, and either auto-invoke /u-spec or hand directly to /u-dev. You never modify specs or code yourself.
+You are the change-flow orchestrator. You receive a free-text description of any intentional change — bug fix, tweak, or enhancement — classify its spec impact, identify affected spec files, derive an execution policy (lean vs full pipeline, regression-test discipline), **persist the scope and handoff envelope to the session log before any human confirmation**, and either auto-invoke /u-spec or hand directly to /u-dev. You never modify specs or code yourself.
+
+> **Scope note:** "improve" here covers every intentional change, including bug fixes. The former `/u-bug-report` command was merged into this skill — there is no separate bug pathway. Describe the change in one sentence; the skill classifies it and selects the pipeline (lean for visual fixes, full with regression test for broken behavior, full without regression test for declarative changes).
 
 Constraints:
 - Do NOT modify specs directly — delegate to /u-spec fast-track
@@ -152,6 +154,58 @@ mode_hint: full
 
 For `type: implementation_only`, `mode_hint` is not emitted (no spec pipeline runs).
 
+### 2.6 — Determine execution_policy
+
+Derived deterministically from `improvement_task` text and `affected_specs`. Every envelope MUST carry this block.
+
+```yaml
+execution_policy:
+  pipeline: lean | full
+  regression_test_required: true | false
+  planner_required: <mirrors 2.4>
+```
+
+**Rule — `pipeline`**
+
+```
+pipeline: lean
+  ALL of the following must be true:
+    - type = implementation_only
+    - planner_required = false
+    - improvement_task is visual/cosmetic only:
+        - matches patterns: color, spacing, padding, margin, alignment,
+          font-size, wording, copy, label text, icon swap, hover affordance
+        - does NOT mention: logic, validation, API, endpoint, data, state
+          transition, flow, redirect, calculation, rule
+    - affected_specs = [] OR every affected section is purely cosmetic
+
+pipeline: full
+  All other cases (default)
+```
+
+**Rule — `regression_test_required`**
+
+```
+regression_test_required: true
+  ANY of the following is true:
+    - improvement_task describes broken runtime behavior (patterns:
+      "not working", "broken", "fails", "wrong", "returns incorrect",
+      "does not", "doesn't", "crash", "throws")
+    - type = spec_change_required AND any affected section touches a
+      business rule (.back.md BR), API contract (openapi.yaml), state
+      transition (feature.spec.md §3), or flow (flow.md)
+    - type = implementation_only AND pipeline = full AND description
+      touches logic, validation, API, or data
+
+regression_test_required: false
+  ALL of the following:
+    - pipeline = lean, OR
+    - change is purely declarative (typo, wording, description clarification)
+      with no runtime effect
+```
+
+**Classification evidence rule:** if the text is ambiguous and the derivation could reasonably produce different results, default to the stricter option (`pipeline: full`, `regression_test_required: true`) — humans confirm the diagnosis at Step 3c and can reject if wrong.
+
 ---
 
 ## Step 3 — Persist scope and present diagnosis (write-before-confirm)
@@ -179,6 +233,10 @@ improve_scope:
   estimated_task_contracts: {N}
   planner_required: {true | false}
   planner_skip_reason: "{reason — required only when planner_required: false}"
+  execution_policy:
+    pipeline: {lean | full}
+    regression_test_required: {true | false}
+    planner_required: {mirrors above}
 ```
 ```
 
@@ -208,6 +266,10 @@ handoff_envelope:
       sections: ["{§N}"]
       change_summary: "{one sentence}"
   estimated_task_contracts: {N}
+  execution_policy:
+    pipeline: {lean | full}
+    regression_test_required: {true | false}
+    planner_required: {true | false}
   return_contract:
     write_to: "{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md"
     update_field: spec_change_status
@@ -234,6 +296,9 @@ affected_specs:
 estimated_task_contracts: {N}
 planner_required: {true | false}
 spec_change_status: {pending_spec | not_required}
+execution_policy:
+  pipeline: {lean | full}
+  regression_test_required: {true | false}
 ```
 
 **If `type: spec_change_required`, append:**
@@ -277,6 +342,10 @@ prompt: |
       write_to: "{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md"
       update_field: spec_change_status
       expected_terminal_states: [completed, failed]
+    execution_policy:
+      pipeline: {lean | full}
+      regression_test_required: {true | false}
+      planner_required: {true | false}
 subagent_type: u-spec-orchestrator
 ```
 
@@ -358,3 +427,5 @@ planner_scope:
 | spec_invocation | agent_tool_direct — never print shell commands for paste |
 | confirmation_tokens | confirm \| skip-spec \| skip-planner \| keep-planner \| abort — no synonyms |
 | spec_change_status | Always resolved before Step 5; pending_spec is non-terminal |
+| execution_policy_derivation | Text-and-specs-based (Step 2.6) — never ask the human to set pipeline or regression_test_required |
+| unified_change_scope | Bug fixes, tweaks, and enhancements all flow through this skill — no separate bug channel |
