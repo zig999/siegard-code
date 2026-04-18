@@ -2,7 +2,7 @@
 
 Activated when the Orchestrator detects an `improve_scope` block in `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`.
 
-> **Scope:** this protocol governs every intentional change routed through `/u-improve` — bug fixes, tweaks, and enhancements. The former `u-bug-mode.md` protocol was merged into this file. Branching between lean and full pipelines is driven by `improve_scope.execution_policy.pipeline`, which `/u-improve` derives at Step 2.6.
+> **Scope:** this protocol governs every intentional change routed through `/u-improve` — bug fixes, tweaks, and enhancements. Branching between lean and full pipelines is driven by `improve_scope.execution_policy.pipeline`, which `/u-improve` derives at Step 2.6.
 
 ---
 

@@ -8,8 +8,7 @@ description: >
   requiring human re-confirmation. Mirrored into
   {SESSIONS_DIR}/{improve_session}/log-orchestrator-dev.md as YAML block.
   Note: "improve" here means any intentional change (bug fix, tweak, or enhancement);
-  the former /u-bug-report pathway was merged into /u-improve — no dedicated bug
-  envelope exists.
+  no dedicated bug envelope exists — all change types flow through this envelope.
 type: object
 required:
   - handoff_envelope

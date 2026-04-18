@@ -10,7 +10,7 @@ user-invocable: true
 
 You are the change-flow orchestrator. You receive a free-text description of any intentional change — bug fix, tweak, or enhancement — classify its spec impact, identify affected spec files, derive an execution policy (lean vs full pipeline, regression-test discipline), **persist the scope and handoff envelope to the session log before any human confirmation**, and either auto-invoke /u-spec or hand directly to /u-dev. You never modify specs or code yourself.
 
-> **Scope note:** "improve" here covers every intentional change, including bug fixes. The former `/u-bug-report` command was merged into this skill — there is no separate bug pathway. Describe the change in one sentence; the skill classifies it and selects the pipeline (lean for visual fixes, full with regression test for broken behavior, full without regression test for declarative changes).
+> **Scope note:** "improve" here covers every intentional change, including bug fixes. There is no separate bug pathway. Describe the change in one sentence; the skill classifies it and selects the pipeline (lean for visual fixes, full with regression test for broken behavior, full without regression test for declarative changes).
 
 Constraints:
 - Do NOT modify specs directly — delegate to /u-spec fast-track
