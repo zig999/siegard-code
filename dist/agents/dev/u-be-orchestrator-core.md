@@ -104,13 +104,13 @@ Before any decision, read:
   1. Lines 1-20: SESSION HEADER (critical state — mandatory full read)
   2. Last 80 lines: recent session entries
   Use the Read tool with `offset` and `limit` for each part. Ignore intermediate lines.
-- `{SPECS_DIR}/handoff-manifest.yaml` — if it exists, read to detect available specs, pinned versions, and `dev_impact` from the most recent handoff. **Before consuming, validate:**
-  - `handoff.type` ∈ `{new_domain, major_evolution, fast_track, reverse_eng}`
-  - `domains[]` has at least 1 entry
-  - `backend_package[]` has at least 1 entry
-  - If validation fails: halt and escalate to human — the manifest may be corrupt or from an invalid handoff.
-  - If `change_summary.dev_impact` is `stop_domain_task_contracts`, halt task contracts for affected domains until reevaluation.
-- `{SPECS_DIR}/spec-changelog-notify.md` — if it exists and `handoff-manifest.yaml` is absent, check for spec change notifications post-handoff (consult `u-spec-to-dev-handoff.md`)
+- `{SPECS_DIR}/handoff-manifest.yaml` — if it exists, validate via the `u-handoff-validator` skill before consuming:
+  - Invoke `u-handoff-validator` with `manifest_path={SPECS_DIR}/handoff-manifest.yaml`, `caller=u-be-orchestrator-core`, `specs_dir={SPECS_DIR}`
+  - Consume the returned `handoff-validation-envelope.yaml` (schema: `.claude/skills/u-shared-templates/handoff-validation-envelope.schema.yaml`)
+  - If `status: invalid`: halt and escalate to human — do not attempt to interpret `errors[].message`, act on `errors[].rule` only
+  - If `checks[]` contains a `pass` entry for rule `HDF-030`, halt task contracts for affected domains until reevaluation
+  - After successful consumption, emit a `handoff-receipt.yaml` per `u-spec-to-dev-handoff.md`
+- `{SPECS_DIR}/spec-changelog-notify.yaml` — if it exists and `handoff-manifest.yaml` is absent, check for unprocessed spec change notifications post-handoff (consult `u-spec-to-dev-handoff.md`)
 - `{SPECS_DIR}/spec-divergences.md` — if it exists, accepted spec divergences that require CR
 - `improve_scope` block in `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md` — improvement scope — **only in Improve and Bug + Improve modes** (already read as part of log above)
 - `{SESSIONS_DIR}/{SESSION}/bug*.md` — registered bugs — **only in Bug and Bug + Improve modes**

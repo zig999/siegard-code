@@ -16,8 +16,10 @@ domains:
 backend_package:
   - path: specs/auth/openapi.yaml
     artifact: openapi
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   - path: specs/auth/back.md
     artifact: back-spec
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 
 frontend_artifacts:
   front_md_version: 1.0.0
@@ -33,5 +35,7 @@ frontend_artifacts:
 frontend_package:
   - path: specs/auth/front.md
     artifact: front
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   - path: specs/auth/front/features/login.feature.spec.md
     artifact: feature-spec
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

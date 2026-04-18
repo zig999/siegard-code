@@ -321,19 +321,27 @@ Follow the normal handoff protocol (`u-spec-to-dev-handoff.md`).
 
 #### When the domain has already been delivered to Dev
 
-Update `{SPECS_DIR}/spec-changelog-notify.md` per the handoff protocol, including:
+Append a new entry to `{SPECS_DIR}/spec-changelog-notify.yaml` per the handoff protocol (schema `.claude/skills/u-shared-templates/spec-changelog-notify.schema.yaml`), including:
 
-```markdown
-## [{date}] — {domain} v{previous-version} -> v{new-version}
-**Type:** patch | minor | major
-**Origin:** triage (items #{list})
-**Changed files:** {list}
-**Summary:** {1 sentence}
-**Impact on Dev:**
-- patch: no action needed
-- minor: re-evaluate domain Task Contracts
-- major: STOP domain Task Contracts until re-evaluation
+```yaml
+- id: NOTIFY-<YYYYMMDD-HHMMSS>
+  notified_at: <ISO-8601>
+  domain: <domain-name>
+  version_from: <previous-version>
+  version_to: <new-version>
+  change_type: patch | minor | major
+  origin: triage
+  cr: null
+  changed_files: [<paths>]
+  summary: "<single structured sentence>"
+  dev_impact: no_action | reevaluate_task_contracts | stop_domain_task_contracts
+  processed_by: []
 ```
+
+Impact mapping (drives `dev_impact`):
+- `patch` → `no_action`
+- `minor` → `reevaluate_task_contracts`
+- `major` → `stop_domain_task_contracts`
 
 #### When pending items remain
 

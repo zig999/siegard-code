@@ -357,7 +357,7 @@ Assemble separate packages for back and front:
 
 After handoff, execute cleanup protocol: `.claude/agents/spec/protocols/u-spec-cleanup.md`
 
-**Post-handoff notification:** if the updated spec had already been delivered to Dev previously, the Orchestrator MUST update `{SPECS_DIR}/spec-changelog-notify.md` with the change (per protocol `u-spec-to-dev-handoff.md`). This ensures the Dev Orchestrator detects the change in the next session.
+**Post-handoff notification:** if the updated spec had already been delivered to Dev previously, the Orchestrator MUST append an entry to `{SPECS_DIR}/spec-changelog-notify.yaml` with the change (per protocol `u-spec-to-dev-handoff.md`, schema `.claude/skills/u-shared-templates/spec-changelog-notify.schema.yaml`). This ensures the Dev Orchestrator detects the change in the next session.
 
 **Return contract (envelope-driven handoffs):** when this run was invoked with `invocation_source = u-improve` and a `handoff_envelope` was provided, the orchestrator MUST close the loop by appending a return block to the file at `handoff_envelope.return_contract.write_to`. The block updates the field named in `return_contract.update_field` (always `spec_change_status`) to a value in `return_contract.expected_terminal_states`:
 

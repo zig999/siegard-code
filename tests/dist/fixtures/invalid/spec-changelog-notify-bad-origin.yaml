@@ -1,0 +1,17 @@
+# INVALID: origin "fasttrack" is not in enum [cr, fast_track, triage]
+layer: semi-permanent
+
+notifications:
+  - id: NOTIFY-20260418-120000
+    notified_at: "2026-04-18T12:00:00Z"
+    domain: auth
+    version_from: 1.0.0
+    version_to: 1.1.0
+    change_type: minor
+    origin: fasttrack
+    cr: null
+    changed_files:
+      - specs/auth/openapi.yaml
+    summary: "Added refreshToken endpoint"
+    dev_impact: reevaluate_task_contracts
+    processed_by: []

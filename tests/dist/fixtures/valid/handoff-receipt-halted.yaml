@@ -1,0 +1,18 @@
+receipt:
+  manifest_id: HANDOFF-20260418-180000
+  manifest_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  consumed_by: u-fe-orchestrator-core
+  consumed_at: "2026-04-18T19:00:00Z"
+  session_id: session-20260418-auth-frontend
+  layer: semi-permanent
+
+decisions:
+  domains_halted:
+    - auth
+  task_contracts_reevaluated: []
+  task_contracts_proceeded: []
+
+validation:
+  manifest_schema_valid: true
+  sha256_integrity_valid: true
+  validator_envelope_timestamp: "2026-04-18T18:58:00Z"

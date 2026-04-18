@@ -1,0 +1,16 @@
+# INVALID: changed_files must have minItems: 1
+layer: semi-permanent
+
+notifications:
+  - id: NOTIFY-20260418-120000
+    notified_at: "2026-04-18T12:00:00Z"
+    domain: auth
+    version_from: 1.0.0
+    version_to: 1.1.0
+    change_type: minor
+    origin: fast_track
+    cr: null
+    changed_files: []
+    summary: "Empty change list"
+    dev_impact: no_action
+    processed_by: []

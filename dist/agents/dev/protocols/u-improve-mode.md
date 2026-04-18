@@ -164,8 +164,11 @@ spec_change_status = divergence_accepted?
   → Open CR: save {SESSIONS_DIR}/{SESSION}/cr-{id}.yaml
       type: spec_gap
       affected_files: {affected_specs paths}
-  → Record in {SPECS_DIR}/spec-changelog-notify.md:
-      DIVERGENCE: TC-XX improve — spec outdated in {paths} — CR-{id} pending
+  → Append entry to {SPECS_DIR}/spec-changelog-notify.yaml (schema: .claude/skills/u-shared-templates/spec-changelog-notify.schema.yaml):
+      origin: triage
+      summary: "DIVERGENCE: TC-XX improve — spec outdated — CR-{id} pending"
+      changed_files: {affected_specs paths}
+      dev_impact: reevaluate_task_contracts
 
 spec_change_status = not_required?
   → Record in log: "TC-XX: cosmetic change — spec does not require update"

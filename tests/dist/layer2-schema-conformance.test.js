@@ -70,6 +70,26 @@ const SCHEMA_FIXTURE_MAP = {
       'valid/improve-handoff-envelope-full.yaml',
     ],
   },
+  'spec-changelog-notify.schema.yaml': {
+    valid: 'valid/spec-changelog-notify.yaml',
+    invalid: [
+      'invalid/spec-changelog-notify-bad-origin.yaml',
+      'invalid/spec-changelog-notify-empty-changed-files.yaml',
+    ],
+  },
+  'handoff-receipt.schema.yaml': {
+    valid: 'valid/handoff-receipt.yaml',
+    invalid: [
+      'invalid/handoff-receipt-bad-consumer.yaml',
+      'invalid/handoff-receipt-bad-hash.yaml',
+    ],
+    extraValid: ['valid/handoff-receipt-halted.yaml'],
+  },
+  'handoff-validation-envelope.schema.yaml': {
+    valid: 'valid/handoff-validation-envelope-valid.yaml',
+    invalid: ['invalid/handoff-validation-envelope-valid-with-errors.yaml'],
+    extraValid: ['valid/handoff-validation-envelope-invalid.yaml'],
+  },
 }
 
 describe('Layer 2 — Schema Conformance', () => {

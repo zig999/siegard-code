@@ -1,0 +1,92 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/spec-changelog-notify.schema.yaml"
+title: spec-changelog-notify
+description: >
+  Append-only structured record of post-handoff spec changes. Produced by
+  u-spec-orchestrator whenever a delivered spec is updated (CR, fast-track,
+  triage). Consumed by u-be-orchestrator-core and u-fe-orchestrator-core at
+  session start to detect unprocessed notifications. Replaces the former
+  free-form markdown file at the same path.
+type: object
+required:
+  - layer
+  - notifications
+additionalProperties: false
+properties:
+  layer:
+    type: string
+    const: "semi-permanent"
+  notifications:
+    type: array
+    description: "Append-only. Never remove or reorder existing entries."
+    items:
+      type: object
+      required:
+        - id
+        - notified_at
+        - domain
+        - version_from
+        - version_to
+        - change_type
+        - origin
+        - changed_files
+        - summary
+        - dev_impact
+        - processed_by
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^NOTIFY-[0-9]{8}-[0-9]{6}$"
+          description: "Format: NOTIFY-YYYYMMDD-HHMMSS"
+        notified_at:
+          type: string
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        domain:
+          type: string
+        version_from:
+          type: string
+          pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        version_to:
+          type: string
+          pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        change_type:
+          type: string
+          enum: [patch, minor, major]
+        origin:
+          type: string
+          enum: [cr, fast_track, triage]
+        cr:
+          type: [string, "null"]
+          pattern: "^CR-[0-9]+$"
+          description: "CR identifier when origin=cr; null otherwise"
+        changed_files:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        summary:
+          type: string
+          description: "One-sentence structured description — not narrative"
+        dev_impact:
+          type: string
+          enum: [no_action, reevaluate_task_contracts, stop_domain_task_contracts]
+        processed_by:
+          type: array
+          description: "Dev orchestrators append their identity when they consume this notification"
+          items:
+            type: object
+            required: [orchestrator, processed_at]
+            additionalProperties: false
+            properties:
+              orchestrator:
+                type: string
+                enum:
+                  - u-be-orchestrator-core
+                  - u-fe-orchestrator-core
+              processed_at:
+                type: string
+                pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+              action_taken:
+                type: string
+                enum: [no_action, reevaluated, halted]

@@ -1,0 +1,28 @@
+# handoff-receipt — canonical template
+# Produced by: u-be-orchestrator-core or u-fe-orchestrator-core (after consuming a manifest)
+# Consumed by: u-spec-orchestrator (read before issuing a new handoff to detect orphan deliveries)
+# Schema: .claude/skills/u-shared-templates/handoff-receipt.schema.yaml
+# Layer: semi-permanent — stored at {SPECS_DIR}/handoff-receipts/{manifest_id}-{be|fe}.yaml
+# Rules:
+#   - One receipt per (manifest_id, orchestrator) pair — idempotent: re-reading the same manifest does not emit a new receipt
+#   - manifest_sha256 covers the full handoff-manifest.yaml file at consumption time (not a package entry)
+#   - Emitted only when u-handoff-validator returns status: valid
+#   - task_contracts_* arrays list TCs actually acted upon in this session
+
+receipt:
+  manifest_id: HANDOFF-<YYYYMMDD-HHMMSS>
+  manifest_sha256: <64-char hex sha256 of handoff-manifest.yaml file>
+  consumed_by: u-be-orchestrator-core | u-fe-orchestrator-core
+  consumed_at: <YYYY-MM-DDTHH:MM:SSZ>
+  session_id: <session identifier>
+  layer: semi-permanent
+
+decisions:
+  domains_halted: []
+  task_contracts_reevaluated: []
+  task_contracts_proceeded: []
+
+validation:
+  manifest_schema_valid: true
+  sha256_integrity_valid: true
+  validator_envelope_timestamp: <YYYY-MM-DDTHH:MM:SSZ>
