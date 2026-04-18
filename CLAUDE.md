@@ -9,6 +9,44 @@ Its sole purpose is to design, build, and refine agent and skill structures that
 
 ---
 
+## Project Structure
+
+```
+siegard-code/
+├── dist/              # Distribution root — production artifacts (see below)
+├── docs-en/           # End-user documentation (English) for downstream projects
+├── docs/              # Internal project documentation (diagrams, flow maps)
+├── extras/            # Drafts, analysis notes, experimental artifacts — NOT published
+├── tests/             # Test suite that validates dist/ artifacts (9 layers)
+├── install.sh         # Deployment script: syncs dist/ → <target>/.claude/
+├── skills-lock.json   # Locks external skill versions (analogous to package-lock.json)
+└── assets/            # Static assets (logo, images)
+```
+
+### Directory rules
+
+| Path | Purpose | Write rule |
+|------|----------|------------|
+| `dist/` | Published artifacts consumed by target projects | Only complete, validated artifacts |
+| `docs-en/` | Human-readable docs shipped with the system | Update when commands/flows change |
+| `docs/` | Internal diagrams and flow maps | Freely editable |
+| `extras/` | Scratchpad: drafts, changelogs, analysis | Never referenced by agents |
+| `tests/` | Automated validation of `dist/` | Must pass before promoting to `dist/` |
+
+### install.sh
+
+Copies `dist/` into `<target-project>/.claude/`, removing files that no longer exist in `dist/`.
+
+```bash
+./install.sh <path-to-target-project>
+```
+
+### skills-lock.json
+
+Locks the version (hash) of externally sourced skills. Update when pulling a new version of an external skill. Format mirrors a package-lock — one entry per skill with `source`, `sourceType`, and `computedHash`.
+
+---
+
 ## 🧠 AI FIRST PRINCIPLE
 
 This project operates under an **AI FIRST paradigm**.
@@ -207,6 +245,27 @@ Each skill must follow this standard:
 
 ---
 
+## Distribution Directory (`./dist`)
+
+All production-ready artifacts are located in `./dist`. This is the **distribution root** of the project — the only directory consumed by external projects.
+
+```
+dist/
+├── agents/        # Agent definitions (dev, spec, reverse-spec)
+├── commands/      # Entry-point command files (/u-spec, /u-dev, /u-improve, etc.)
+├── skills/        # Reusable skill definitions and shared templates/schemas
+└── templates/     # CLAUDE.md base templates for downstream projects
+```
+
+### Rules for `./dist`
+
+* All content in `./dist` must be written in **English**
+* Every artifact placed in `./dist` is considered **published** — it must be complete and schema-compliant
+* Do not place work-in-progress artifacts in `./dist`
+* Skills, agents, and commands outside `./dist` are considered **draft** until explicitly promoted
+
+---
+
 ## Workflow
 
 1. **Design** — define structure, contracts, and schemas
@@ -214,7 +273,7 @@ Each skill must follow this standard:
 3. **Test** — validate behavior in isolation
 4. **Validate** — ensure schema and protocol compliance
 5. **Document** — update `docs/`
-6. **Export** — make reusable in other projects
+6. **Export** — promote artifact to `./dist`
 
 ---
 
