@@ -21,7 +21,12 @@ Provide the Spec Reviewer with checklists and objective criteria for evaluating 
 ### Endpoints
 - [ ] Every endpoint has a unique `operationId`
 - [ ] Every endpoint has `tags`, `summary`, `description`
-- [ ] HTTP verbs are correct (GET does not modify state)
+- [ ] HTTP verbs are correct:
+  - GET: read-only, no state change
+  - POST: creation or named action (e.g., `/archive`, `/cancel`)
+  - PUT: full replacement of resource
+  - PATCH: partial update or state transition
+  - DELETE: permanent removal only — soft delete must use PATCH or POST
 - [ ] Responses cover: 200/201, 400, 401, 404, 422, 500 (as applicable)
 - [ ] Error response follows standard `ErrorResponse` schema
 - [ ] `example` present in every response
