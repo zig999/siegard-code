@@ -530,3 +530,19 @@ This compression preserves the activation history (needed for short mode) and re
 - **Post-TC checks (Improve):** after QA approves a Task Contract with `Origin: improve`, load `u-improve-mode.md` and execute the post-Task Contract checks before push/merge.
 - **Cleanup:** on Planner run, Task Contract, or Epic completion, read `.claude/agents/dev/protocols/u-cleanup.md` — move consumed files to `{SESSIONS_DIR}/{SESSION}/_temp/`
 - **Full protocol index:** `.claude/agents/dev/u-fe-orchestrator-protocols.md`
+- **Agent tool rejected:** if the user denies an Agent tool call, do NOT retry silently or stop without explanation. Immediately emit:
+  ```yaml
+  status: blocked
+  reason: agent_tool_rejected
+  agent: <name of the agent that was rejected>
+  task_contract: <TC-XX or "n/a">
+  resolution:
+    escalate_to: human
+    message: |
+      An Agent tool call was rejected. The pipeline cannot continue without sub-agent delegation.
+      Options:
+        A) Approve the Agent call when prompted — this is the normal development flow
+        B) Allow Agent tool automatically: run /update-config and add "Agent" to allowedTools
+      No changes were made to the codebase. Safe to retry.
+  ```
+  Log the blocked event in `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md` and stop until the human responds.

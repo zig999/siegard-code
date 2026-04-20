@@ -221,3 +221,19 @@ All phases complete?
 - **Push and merge:** follow `.claude/agents/dev/protocols/u-push-merge.md` — the meta-orchestrator coordinates the final merge after all phases complete
 - **Cleanup:** delegate to domain orchestrators per `.claude/agents/dev/protocols/u-cleanup.md`
 - **Session decisions:** read `{SESSIONS_DIR}/{SESSION}/session-decisions.md` at session start (last 20 entries). Escalations from domain orchestrators that produce decisions must be written there. The meta-orchestrator writes phase-level decisions (cross-domain arch decisions, E2E resolution). Template: `.claude/skills/u-fe-templates/session-decisions.md` (for phase-level cross-domain decisions).
+- **Agent tool rejected:** if the user denies an Agent tool call (to activate `u-be-orchestrator-core` or `u-fe-orchestrator-core`), do NOT retry silently or stop without explanation. Immediately emit:
+  ```yaml
+  status: blocked
+  reason: agent_tool_rejected
+  agent: <u-be-orchestrator-core | u-fe-orchestrator-core>
+  phase: <Phase 1 — Backend | Phase 2 — Frontend>
+  resolution:
+    escalate_to: human
+    message: |
+      An Agent tool call was rejected. The pipeline cannot continue without sub-agent delegation.
+      Options:
+        A) Approve the Agent call when prompted — this is the normal development flow
+        B) Allow Agent tool automatically: run /update-config and add "Agent" to allowedTools
+      No changes were made to the codebase. Safe to retry.
+  ```
+  Log the blocked event in `{SESSIONS_DIR}/{SESSION}/log-fullstack.md` and stop until the human responds.
