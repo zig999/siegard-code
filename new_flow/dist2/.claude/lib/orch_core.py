@@ -367,6 +367,8 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.PHASE_PAUSED.value:              {"phase", "reason"},
     EventType.PHASE_RESUMED.value:             {"phase", "paused_seq"},
     EventType.ESCALATION.value:                {"code", "severity", "reason", "evidence"},
+    EventType.CIRCUIT_BREAKER_TRIPPED.value:   {"window_start", "window_end", "failure_count", "threshold"},
+    EventType.HUMAN_RESPONSE.value:            {"escalation_seq", "action", "operator"},
 }
 
 
@@ -881,6 +883,8 @@ class OrchState:
     circuit_breaker: dict[str, Any] | None = None
     last_seq: int = 0
     last_snapshot_seq: int = 0
+    # ISO timestamps of every task_failed event — used by evaluate_circuit_state
+    failure_timestamps: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1108,6 +1112,7 @@ def _handle_task_failed(state: OrchState, event: Event) -> None:
     task.failed_at = event.ts
     task.last_event_at = event.ts
     task.evidence.append(event.seq)
+    state.failure_timestamps.append(event.ts)
 
 
 def _handle_task_scheduled_retry(state: OrchState, event: Event) -> None:
@@ -1163,6 +1168,13 @@ def _handle_circuit_breaker_tripped(state: OrchState, event: Event) -> None:
     state.circuit_breaker = {"status": "tripped", **event.data}
 
 
+def _handle_human_response(state: OrchState, event: Event) -> None:
+    action = event.data.get("action")
+    if action == "reset_circuit_breaker":
+        state.circuit_breaker = None
+        state.failure_timestamps.clear()
+
+
 _HANDLERS: dict[str, Any] = {
     EventType.PHASE_DECLARED: _handle_phase_declared,
     EventType.PHASE_ENTERED: _handle_phase_entered,
@@ -1180,6 +1192,7 @@ _HANDLERS: dict[str, Any] = {
     EventType.TASK_DLQ: _handle_task_dlq,
     EventType.ESCALATION: _handle_escalation,
     EventType.CIRCUIT_BREAKER_TRIPPED: _handle_circuit_breaker_tripped,
+    EventType.HUMAN_RESPONSE: _handle_human_response,
 }
 
 
@@ -1468,6 +1481,75 @@ def tasks_ready_for_retry(state: OrchState, now: str) -> list[TaskState]:
 
 
 # ---------------------------------------------------------------------------
+# Circuit breaker evaluation
+# ---------------------------------------------------------------------------
+
+def evaluate_circuit_state(
+    state: OrchState,
+    now: str,
+    config: dict | None = None,
+) -> dict[str, Any]:
+    """
+    Evaluates circuit breaker state based on failure frequency in the rolling window.
+
+    Counts task_failed events recorded in state.failure_timestamps that fall within
+    the last window_minutes. Returns a dict with:
+      - should_trip (bool): True if failure_count >= threshold and breaker not already tripped
+      - already_tripped (bool): True if circuit_breaker_tripped is already in state
+      - failure_count (int): failures in current window
+      - threshold (int): configured threshold
+      - window_start (str): ISO timestamp of window start
+      - window_end (str): now
+      - window_minutes (float): configured window
+
+    Args:
+        state: Current OrchState (must have failure_timestamps populated).
+        now:   Current UTC time as ISO 8601 string.
+        config: Optional config dict; uses default_config() if None.
+    """
+    cfg = config if config is not None else default_config()
+    cb_cfg = cfg.get("circuit_breaker", {})
+    enabled: bool = cb_cfg.get("enabled", True)
+    window_minutes: float = cb_cfg.get("window_minutes", 10)
+    threshold: int = cb_cfg.get("failure_threshold", 50)
+
+    now_dt = parse_iso(now)
+    from datetime import timedelta
+    window_start_dt = now_dt - timedelta(minutes=window_minutes)
+    window_start = window_start_dt.isoformat()
+
+    already_tripped: bool = state.circuit_breaker is not None
+
+    if not enabled:
+        return {
+            "should_trip": False,
+            "already_tripped": already_tripped,
+            "failure_count": 0,
+            "threshold": threshold,
+            "window_start": window_start,
+            "window_end": now,
+            "window_minutes": window_minutes,
+        }
+
+    failure_count = sum(
+        1 for ts in state.failure_timestamps
+        if parse_iso(ts) >= window_start_dt
+    )
+
+    should_trip = (not already_tripped) and (failure_count >= threshold)
+
+    return {
+        "should_trip": should_trip,
+        "already_tripped": already_tripped,
+        "failure_count": failure_count,
+        "threshold": threshold,
+        "window_start": window_start,
+        "window_end": now,
+        "window_minutes": window_minutes,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------------------------
 
@@ -1529,4 +1611,6 @@ __all__ = [
     "load_retry_policy",
     "should_retry",
     "tasks_ready_for_retry",
+    # Circuit breaker
+    "evaluate_circuit_state",
 ]

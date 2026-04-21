@@ -83,6 +83,21 @@ python3 .claude/skills/orch-state/scripts/reduce.py
 
 Parse both outputs. Hold the full `OrchState` in memory for this cycle.
 
+**Circuit breaker check:** after deriving state, evaluate the circuit:
+
+- If `state.circuit_breaker` is not null AND `state.circuit_breaker.status == "tripped"`:
+  - Record issue: `{"code": "circuit_breaker_already_tripped", "severity": "critical", "detail": "circuit breaker is tripped — no new spawns until reset"}`
+  - Skip Steps 5 and 6 (no dispatching). Proceed to Step 7.
+
+- Else: compute failure count in window using `state.failure_timestamps` filtered to last `window_minutes` (default 10). If `failure_count >= threshold` (default 50):
+  ```bash
+  python3 .claude/skills/orch-log/scripts/append.py \
+    --agent orchestrator \
+    --event-type circuit_breaker_tripped \
+    --data '{"window_start":"<window_start>","window_end":"<now>","failure_count":<count>,"threshold":<threshold>,"window_minutes":<window_minutes>,"scope":"workflow"}'
+  ```
+  After emitting, record issue and skip Steps 5 and 6. Proceed to Step 7.
+
 ---
 
 ### Step 3 — Single-phase initialization
