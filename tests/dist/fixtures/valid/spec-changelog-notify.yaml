@@ -1,0 +1,33 @@
+layer: semi-permanent
+
+notifications:
+  - id: NOTIFY-20260418-120000
+    notified_at: "2026-04-18T12:00:00Z"
+    domain: auth
+    version_from: 1.0.0
+    version_to: 1.1.0
+    change_type: minor
+    origin: fast_track
+    cr: null
+    changed_files:
+      - specs/auth/openapi.yaml
+    summary: "Added refreshToken endpoint"
+    dev_impact: reevaluate_task_contracts
+    processed_by:
+      - orchestrator: u-be-orchestrator-core
+        processed_at: "2026-04-18T14:00:00Z"
+        action_taken: reevaluated
+
+  - id: NOTIFY-20260418-150000
+    notified_at: "2026-04-18T15:00:00Z"
+    domain: billing
+    version_from: 2.0.0
+    version_to: 2.0.1
+    change_type: patch
+    origin: cr
+    cr: CR-07
+    changed_files:
+      - specs/billing/back.md
+    summary: "Tightened BR-14 validation rule"
+    dev_impact: no_action
+    processed_by: []

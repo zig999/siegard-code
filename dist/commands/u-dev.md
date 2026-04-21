@@ -73,8 +73,9 @@ Read the `domain:` field in `CLAUDE.md` (project root). This field determines wh
 4. `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md` (if exists — session resumption)
 
 ### Based on mode:
-- **Improve / Bug + Improve:** read `improve_scope` block from `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`
-- **Bug / Bug + Improve:** read all `{SESSIONS_DIR}/{SESSION}/bug*.md`
+- **Improve:** read `improve_scope` block from `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`
+  - **Halt-await-spec gate:** if `spec_change_status: pending_spec` is observed, do NOT initialize the orchestrator. Emit a structured halt block to the human (see `u-improve-mode.md` § "Halt-await-spec mode"). Do NOT ask A/B/C-style questions — the pending state is owned by the /u-spec pipeline. Stop immediately.
+  - **Failed-spec gate:** if `spec_change_status: failed` is observed, halt with structured `spec_pipeline_failed` and surface `failure_reason` from the latest `spec_pipeline_return` block. Stop immediately.
 
 ### Spec Detection
 If `{SPECS_DIR}/` exists:
@@ -96,7 +97,7 @@ If `{SPECS_DIR}/` exists:
    - **Do not activate Spec-first mode** with draft specs.
 
 ### No Input Available
-If `{SPECS_DIR}`, improve_scope block in log, `bug##.md`, and `backlog.md` do not exist:
+If `{SPECS_DIR}`, improve_scope block in log, and `backlog.md` do not exist:
 
 1. Check if the project has existing source code (package.json, requirements.txt, src/, etc.) but no `{SPECS_DIR}`:
    - **If yes:** suggest reverse engineering:
@@ -111,8 +112,7 @@ If `{SPECS_DIR}`, improve_scope block in log, `bug##.md`, and `backlog.md` do no
 2. Otherwise, guide:
    - `/u-spec [SPECS_DIR]` — generate technical specifications
    - `/u-reverse-spec [SPECS_DIR]` — generate specs from existing code
-   - `/u-improve [SPECS_DIR] {SESSION}` — register improvement in the session
-   - `/u-bug-report [SPECS_DIR] {SESSION}` — register bug in the session
+   - `/u-improve [SPECS_DIR] {SESSION}` — register any intentional change (bug fix, tweak, or enhancement) in the session
 
 ## Pre-execution Estimate
 
@@ -122,7 +122,8 @@ Before initializing, present an estimate to the human:
 ## Estimate — /u-dev [SPECS_DIR] {SESSION}
 
 Mode: {detected mode} | Domain: {frontend|backend}
-Input: {improve_scope: N TCs estimated | bug##.md: N files | {SPECS_DIR}: N domains}
+Input: {improve_scope: N TCs estimated | {SPECS_DIR}: N domains}
+Source: {improve_scope (handoff_manifest_id: HANDOFF-...) | direct | spec-first}
 
 | Stage | Agents | Estimated Tokens | Estimated Time |
 |-------|--------|-----------------|----------------|
@@ -161,6 +162,5 @@ The Orchestrator reads specs from `{SPECS_DIR}/` and writes dev artifacts to `{S
 
 Use the Orchestrator-Dev Core instructions to coordinate the development cycle.
 ### Mode Protocols (load based on detection)
-- If `improve_scope` block detected in session log: load `.claude/agents/dev/protocols/u-improve-mode.md`
-- If `bug##.md` detected: load `.claude/agents/dev/protocols/u-bug-mode.md`
+- If `improve_scope` block detected in session log: load `.claude/agents/dev/protocols/u-improve-mode.md` — covers bug fixes, tweaks, and enhancements
 - Other protocols: load on demand per the domain orchestrator-protocols index

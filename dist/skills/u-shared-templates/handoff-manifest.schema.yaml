@@ -91,7 +91,7 @@ properties:
     minItems: 1
     items:
       type: object
-      required: [path, artifact]
+      required: [path, artifact, sha256]
       additionalProperties: false
       properties:
         path:
@@ -99,11 +99,15 @@ properties:
         artifact:
           type: string
           enum: [conventions, error-codes, openapi, spec, back-spec]
+        sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: "sha256 hash of file contents at generation time — Dev orchestrator verifies before consumption"
   frontend_package:
     type: array
     items:
       type: object
-      required: [path, artifact]
+      required: [path, artifact, sha256]
       additionalProperties: false
       properties:
         path:
@@ -111,6 +115,10 @@ properties:
         artifact:
           type: string
           enum: [conventions, error-codes, openapi, spec, front, feature-spec, component-spec, flow]
+        sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: "sha256 hash of file contents at generation time — Dev orchestrator verifies before consumption"
   change_summary:
     type: object
     description: "Populated only for evolution/fast-track handoffs"

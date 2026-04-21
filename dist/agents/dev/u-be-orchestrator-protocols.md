@@ -24,8 +24,7 @@ user-invocable: false
 | Tech-debt | `.claude/agents/dev/protocols/u-tech-debt.md` | When `tc-XX-delivery.md` contains "Generated tech debt" |
 | Push and merge | `.claude/agents/dev/protocols/u-push-merge.md` | After QA approves a Task Contract |
 | Cleanup `_temp/` | `.claude/agents/dev/protocols/u-cleanup.md` | After Planner, Task Contract, or Epic completion |
-| Improve Mode | `.claude/agents/dev/protocols/u-improve-mode.md` | When Improve mode is detected (improve_scope block in log) |
-| Bug Mode | `.claude/agents/dev/protocols/u-bug-mode.md` | When Bug mode is detected (bug##.md present) |
+| Improve Mode | `.claude/agents/dev/protocols/u-improve-mode.md` | When Improve mode is detected (improve_scope block in log) — covers bug fixes, tweaks, and enhancements |
 
 ## Blocked response schema
 

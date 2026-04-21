@@ -26,7 +26,7 @@ Define which files are permanent and which are intermediate after handoff to the
 | `{SPECS_DIR}/openapi.root.yaml` | Domain aggregator |
 | `{SPECS_DIR}/log-orchestrator-spec.md` | Session log |
 | `{SPECS_DIR}/decisions.md` | Persistent spec decisions |
-| `{SPECS_DIR}/spec-changelog-notify.md` | Post-handoff spec change notifications |
+| `{SPECS_DIR}/spec-changelog-notify.yaml` | Post-handoff spec change notifications (append-only YAML) |
 | `{SPECS_DIR}/handoff-manifest.yaml` | Handoff manifest |
 | `{SPECS_DIR}/_validation/{domain}-validation-result.yaml` | Historical validation and triage record |
 | `{SPECS_DIR}/_validation/{domain}-compliance.yaml` | Compliance validation result |

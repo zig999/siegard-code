@@ -5,12 +5,10 @@ Intermediate files that have already been consumed must be moved to `{SESSIONS_D
 **Trigger:** the Orchestrator-Dev executes the cleanup **immediately after each event listed below**, before proceeding to the next decision.
 
 ### After Planner completes (`backlog.md` generated)
-Move to `_temp/`:
-- Any `{SESSIONS_DIR}/{SESSION}/bug##.md` files already consumed by the Planner
+No intermediate input files to move — `/u-improve` writes the `improve_scope` block directly into `log-orchestrator-dev.md` (no standalone input artifact).
 
 ### After Task Contract completed (QA approved, status `Done`)
-Move to `_temp/`:
-- Any `{SESSIONS_DIR}/{SESSION}/bug##.md` that were addressed by the completed Task Contract
+No per-TC input files to move. The `improve_scope_status: consumed` marker in the session log is the source of truth.
 
 > **Do not move `tc-XX-delivery.md` and `tc-XX-qa.md` at this point.** These files are needed for the Epic integration QA (see epic-integration protocol). They will be moved after Epic completion.
 

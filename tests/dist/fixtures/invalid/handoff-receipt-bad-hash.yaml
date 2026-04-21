@@ -1,0 +1,17 @@
+# INVALID: manifest_sha256 does not match sha256 hex pattern (too short)
+receipt:
+  manifest_id: HANDOFF-20260418-120000
+  manifest_sha256: abcd1234
+  consumed_by: u-be-orchestrator-core
+  consumed_at: "2026-04-18T14:00:00Z"
+  session_id: session-bad-hash
+  layer: semi-permanent
+
+decisions:
+  domains_halted: []
+  task_contracts_reevaluated: []
+  task_contracts_proceeded: []
+
+validation:
+  manifest_schema_valid: true
+  sha256_integrity_valid: true

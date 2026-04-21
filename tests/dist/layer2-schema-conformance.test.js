@@ -55,6 +55,45 @@ const SCHEMA_FIXTURE_MAP = {
     invalid: ['invalid/architecture-finding-empty-deliveries.yaml'],
     extraValid: ['valid/architecture-finding-with-findings.yaml'],
   },
+  'improve-handoff-envelope.schema.yaml': {
+    valid: 'valid/improve-handoff-envelope.yaml',
+    invalid: [
+      'invalid/improve-handoff-envelope-bad-id.yaml',
+      'invalid/improve-handoff-envelope-missing-return-contract.yaml',
+      'invalid/improve-handoff-envelope-bad-mode-hint.yaml',
+      'invalid/improve-handoff-envelope-bad-source.yaml',
+      'invalid/improve-handoff-envelope-empty-improve-session.yaml',
+      'invalid/improve-handoff-envelope-update-field-wrong.yaml',
+      'invalid/improve-handoff-envelope-missing-execution-policy.yaml',
+      'invalid/improve-handoff-envelope-bad-pipeline.yaml',
+    ],
+    extraValid: [
+      'valid/improve-handoff-envelope-fast-track-patch.yaml',
+      'valid/improve-handoff-envelope-full.yaml',
+      'valid/improve-handoff-envelope-lean.yaml',
+      'valid/improve-handoff-envelope-no-tdd.yaml',
+    ],
+  },
+  'spec-changelog-notify.schema.yaml': {
+    valid: 'valid/spec-changelog-notify.yaml',
+    invalid: [
+      'invalid/spec-changelog-notify-bad-origin.yaml',
+      'invalid/spec-changelog-notify-empty-changed-files.yaml',
+    ],
+  },
+  'handoff-receipt.schema.yaml': {
+    valid: 'valid/handoff-receipt.yaml',
+    invalid: [
+      'invalid/handoff-receipt-bad-consumer.yaml',
+      'invalid/handoff-receipt-bad-hash.yaml',
+    ],
+    extraValid: ['valid/handoff-receipt-halted.yaml'],
+  },
+  'handoff-validation-envelope.schema.yaml': {
+    valid: 'valid/handoff-validation-envelope-valid.yaml',
+    invalid: ['invalid/handoff-validation-envelope-valid-with-errors.yaml'],
+    extraValid: ['valid/handoff-validation-envelope-invalid.yaml'],
+  },
 }
 
 describe('Layer 2 — Schema Conformance', () => {

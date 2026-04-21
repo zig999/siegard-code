@@ -81,29 +81,20 @@ describe('Layer 5 — Design System Config: CLAUDE.md templates', () => {
     }
   })
 
-  it.each(TEMPLATES)('%s — contains canonical defaults comment block', (_, filePath) => {
+  it.each(TEMPLATES)('%s — canonical defaults comment block declares each field with the canonical value', (_, filePath) => {
     const content = readText(filePath)
     expect(content).toContain('design_system block is optional')
-    expect(content).toContain('Canonical defaults')
+    const commentBlock = content.split('Canonical defaults')[1] ?? ''
+    expect(commentBlock, 'Canonical defaults marker not found').not.toBe('')
+    // Pin both the field name AND the value — protects against a rename or a
+    // silent default change. CANONICAL_DEFAULTS at the top of this file is the
+    // single source of truth.
     for (const [field, value] of Object.entries(CANONICAL_DEFAULTS)) {
       expect(
-        content,
-        `Canonical default for "${field}: ${value}" missing in ${filePath}`
-      ).toContain(`${field}:`)
+        commentBlock,
+        `Canonical default "${field}: ${value}" missing in ${filePath}`
+      ).toMatch(new RegExp(`${field}:\\s+${value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`))
     }
-  })
-
-  it.each(TEMPLATES)('%s — default for enforce_tokens is true', (_, filePath) => {
-    const content = readText(filePath)
-    // The comment block must contain enforce_tokens: true (not false)
-    const commentBlock = content.split('Canonical defaults')[1] ?? ''
-    expect(commentBlock).toContain('enforce_tokens:    true')
-  })
-
-  it.each(TEMPLATES)('%s — default for motion_policy is strict', (_, filePath) => {
-    const content = readText(filePath)
-    const commentBlock = content.split('Canonical defaults')[1] ?? ''
-    expect(commentBlock).toContain('motion_policy:     strict')
   })
 
   it('CLAUDE.frontend.md and CLAUDE.fullstack.md have identical canonical defaults', () => {

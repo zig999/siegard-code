@@ -101,6 +101,17 @@ Executed during front phase validation for each component listed in §7 of a fea
 
 ---
 
+## HTTP Verb vs Soft-Delete Cross-Check
+
+Executed during full validation (when both `.back.md` and `openapi.yaml` are ready).
+
+| Check | Severity |
+|-------|----------|
+| `.back.md` declares soft-delete strategy AND `openapi.yaml` uses `DELETE` for that endpoint without a corresponding `PATCH` or `POST` endpoint for the state transition | blocking |
+| `openapi.yaml` uses `DELETE` AND `.back.md` declares the entity as deactivatable/archivable without a BR justifying hard delete | blocking |
+
+---
+
 ## Incremental Validation
 
 | Trigger | What to validate |

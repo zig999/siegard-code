@@ -25,78 +25,76 @@ describe('Layer 1 — Frontmatter', () => {
   const protocolIndexFiles = getProtocolIndexFiles()
   const protocolContentFiles = getProtocolContentFiles()
 
-  it('finds standalone agent files', () => {
-    expect(agentFiles.length).toBeGreaterThan(0)
+  it('discovery sanity: standalone agents, protocol indexes, and protocol content files all present', () => {
+    expect(agentFiles.length, 'no standalone agent files found').toBeGreaterThan(0)
+    expect(protocolIndexFiles.length, 'no *-protocols.md index files found').toBeGreaterThan(0)
+    expect(protocolContentFiles.length, 'no protocol content files found').toBeGreaterThan(0)
   })
 
-  it('finds protocol index files', () => {
-    expect(protocolIndexFiles.length).toBeGreaterThan(0)
-  })
+  // ── Standalone agents — every check on a single frontmatter parse ────────
+  //
+  // Previously these were 4 separate it.each blocks, each parsing the same
+  // frontmatter. Consolidated into one it.each per file: 4 assertions, 1 read.
+  // Vitest still names the failing file ("u-fe-developer.md — frontmatter
+  // well-formed") and the first assertion failure shows which rule broke.
 
-  it('finds protocol content files', () => {
-    expect(protocolContentFiles.length).toBeGreaterThan(0)
-  })
-
-  describe('standalone agents — full frontmatter (including model)', () => {
+  describe('standalone agents — frontmatter well-formed', () => {
     it.each(agentFiles.map(f => [basename(f), f]))(
-      '%s — has all required fields',
+      '%s',
       (_, file) => {
         const fm = parseFrontmatter(file)
+
+        // 1. All required fields present
         for (const field of AGENT_REQUIRED_FIELDS) {
           expect(fm, `"${field}" missing in ${basename(file)}`).toHaveProperty(field)
         }
-      }
-    )
 
-    it.each(agentFiles.map(f => [basename(f), f]))(
-      '%s — model is in allowed list',
-      (_, file) => {
-        const fm = parseFrontmatter(file)
-        expect(ALLOWED_MODELS, `"${fm.model}" not allowed in ${basename(file)}`).toContain(fm.model)
-      }
-    )
+        // 2. Model is in the allow-list
+        expect(
+          ALLOWED_MODELS,
+          `model "${fm.model}" not allowed in ${basename(file)}`
+        ).toContain(fm.model)
 
-    it.each(agentFiles.map(f => [basename(f), f]))(
-      '%s — user-invocable is boolean',
-      (_, file) => {
-        const fm = parseFrontmatter(file)
-        expect(typeof fm['user-invocable'], `user-invocable must be boolean in ${basename(file)}`).toBe('boolean')
-      }
-    )
+        // 3. user-invocable is a boolean
+        expect(
+          typeof fm['user-invocable'],
+          `user-invocable must be boolean in ${basename(file)}`
+        ).toBe('boolean')
 
-    it.each(agentFiles.map(f => [basename(f), f]))(
-      '%s — name matches filename',
-      (_, file) => {
-        const fm = parseFrontmatter(file)
-        const expected = basename(file, '.md')
-        expect(fm.name, `name "${fm.name}" != filename "${expected}"`).toBe(expected)
+        // 4. name field matches the filename
+        const expectedName = basename(file, '.md')
+        expect(
+          fm.name,
+          `name "${fm.name}" != filename "${expectedName}"`
+        ).toBe(expectedName)
       }
     )
   })
 
-  describe('protocol index files (*-protocols.md) — frontmatter without model', () => {
+  // ── Protocol index files (*-protocols.md) — frontmatter without model ────
+
+  describe('protocol index files — frontmatter well-formed', () => {
     it.each(protocolIndexFiles.map(f => [basename(f), f]))(
-      '%s — has required fields',
+      '%s',
       (_, file) => {
         const fm = parseFrontmatter(file)
+
         for (const field of PROTOCOL_INDEX_REQUIRED_FIELDS) {
           expect(fm, `"${field}" missing in ${basename(file)}`).toHaveProperty(field)
         }
-      }
-    )
-
-    it.each(protocolIndexFiles.map(f => [basename(f), f]))(
-      '%s — user-invocable is boolean',
-      (_, file) => {
-        const fm = parseFrontmatter(file)
-        expect(typeof fm['user-invocable'], `user-invocable must be boolean in ${basename(file)}`).toBe('boolean')
+        expect(
+          typeof fm['user-invocable'],
+          `user-invocable must be boolean in ${basename(file)}`
+        ).toBe('boolean')
       }
     )
   })
 
-  describe('protocol content files (protocols/) — non-empty Markdown', () => {
+  // ── Protocol content files — non-empty Markdown ──────────────────────────
+
+  describe('protocol content files — non-empty', () => {
     it.each(protocolContentFiles.map(f => [basename(f), f]))(
-      '%s — is non-empty',
+      '%s',
       (_, file) => {
         const content = readFileSync(file, 'utf8').trim()
         expect(content.length, `${basename(file)} is empty`).toBeGreaterThan(0)

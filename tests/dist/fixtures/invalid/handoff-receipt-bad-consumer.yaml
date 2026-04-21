@@ -1,0 +1,17 @@
+# INVALID: consumed_by must be a Dev orchestrator; u-spec-orchestrator emits manifests, not receipts
+receipt:
+  manifest_id: HANDOFF-20260418-120000
+  manifest_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  consumed_by: u-spec-orchestrator
+  consumed_at: "2026-04-18T14:00:00Z"
+  session_id: session-bad
+  layer: semi-permanent
+
+decisions:
+  domains_halted: []
+  task_contracts_reevaluated: []
+  task_contracts_proceeded: []
+
+validation:
+  manifest_schema_valid: true
+  sha256_integrity_valid: true

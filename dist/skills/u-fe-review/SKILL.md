@@ -3,6 +3,21 @@ name: u-fe-review
 description: Ad-hoc audit of a frontend component or feature against all quality rules (code quality, design system, visual design, anti-patterns, accessibility). User-invocable. Produces a structured report; with --fix flag also applies mechanical auto-fixes.
 user-invocable: true
 invocation: /u-fe-review [target] [--fix]
+dependencies:
+  required:
+    - skill: u-fe-standards
+      path: .claude/skills/u-fe-standards/SKILL.md
+      sections: ["§2.2 Code quality", "§3 Visual design", "§4 Accessibility"]
+      on_missing: halt — report status: error / reason: dependency_not_found / dependency: u-fe-standards
+    - skill: u-ui-design
+      path: .claude/skills/u-ui-design/anti-patterns.md
+      on_missing: halt — report status: error / reason: dependency_not_found / dependency: u-ui-design/anti-patterns.md
+  optional:
+    - artifact: design-system/tokens.md
+      resolve_order:
+        - arg: --design-system
+        - path: "{SPECS_DIR}/front/design-system/tokens.md"
+      on_missing: set ds_available=false — skip DS-02 — emit Warning
 ---
 
 # SKILL: Frontend Review
@@ -124,9 +139,50 @@ slop_category: warn                         # flag as Medium
 
 ---
 
+## Dependencies
+
+Resolve before executing any audit step. Halt on missing required dependency.
+
+```yaml
+dependencies:
+  required:
+    - skill: u-fe-standards
+      path: .claude/skills/u-fe-standards/SKILL.md
+      used_in: [CQ-01..CQ-14, VD-01..VD-16, A11-01..A11-07]
+      on_missing:
+        status: error
+        reason: dependency_not_found
+        dependency: u-fe-standards
+
+    - artifact: u-ui-design/anti-patterns.md
+      path: .claude/skills/u-ui-design/anti-patterns.md
+      used_in: [AP-01..AP-25]
+      on_missing:
+        status: error
+        reason: dependency_not_found
+        dependency: u-ui-design/anti-patterns.md
+
+  optional:
+    - artifact: design-system/tokens.md
+      resolve_order:
+        - arg: --design-system
+        - path: "{SPECS_DIR}/front/design-system/tokens.md"
+      on_missing:
+        action: set ds_available=false
+        skip_rules: [DS-02]
+        emit: "Warning: design-system/tokens.md not found — DS-02 checks skipped"
+```
+
+---
+
 ## Execution process
 
 ```
+Step 0 — Resolve dependencies
+  - Read .claude/skills/u-fe-standards/SKILL.md — halt if not found
+  - Read .claude/skills/u-ui-design/anti-patterns.md — halt if not found
+  - Attempt design-system/tokens.md resolution (see ## Dependencies)
+
 Step 1 — Resolve target
   - If file: add to scan list
   - If directory: glob *.tsx, *.ts, *.jsx, *.js, *.css, *.scss recursively

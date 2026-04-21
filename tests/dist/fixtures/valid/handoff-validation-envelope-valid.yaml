@@ -1,0 +1,32 @@
+validation_envelope:
+  validated_by: u-handoff-validator
+  timestamp: "2026-04-18T13:58:00Z"
+  manifest_id: HANDOFF-20260418-120000
+  manifest_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  caller: u-be-orchestrator-core
+  layer: ephemeral
+
+status: valid
+
+checks:
+  - rule: FLOW-030
+    status: pass
+    severity: blocking
+  - rule: FLOW-031
+    status: pass
+    severity: blocking
+  - rule: FLOW-032
+    status: pass
+    severity: blocking
+  - rule: FLOW-037
+    status: pass
+    severity: blocking
+  - rule: HDF-010
+    status: pass
+    severity: blocking
+  - rule: HDF-020
+    status: pass
+    severity: blocking
+
+errors: []
+warnings: []

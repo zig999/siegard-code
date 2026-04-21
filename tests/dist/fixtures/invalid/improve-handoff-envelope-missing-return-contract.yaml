@@ -1,0 +1,13 @@
+# return_contract is required — missing field violates schema
+handoff_envelope:
+  id: IMPROVE-20260417-103045
+  source: u-improve
+  invocation_source: u-improve
+  improve_session: subjects-fe-review
+  improvement_task: "task"
+  mode_hint: "fast-track:minor"
+  affected_specs:
+    - path: "front/features/subject-detail.feature.spec.md"
+      sections: ["§2"]
+      change_summary: "summary"
+  estimated_task_contracts: 1

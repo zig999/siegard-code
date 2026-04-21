@@ -219,7 +219,7 @@ Write a DEC-NN entry when:
 - A decision affects 2+ spec files
 - A previously established pattern is being intentionally changed
 - A trade-off was made consciously between valid alternatives
-- The Orchestrator approves a spec divergence in Improve or Bug mode
+- The Orchestrator approves a spec divergence in Improve mode
 
 ### What NOT to record
 - Implementation choices already covered by SKILL.md (e.g., "use kebab-case for files")

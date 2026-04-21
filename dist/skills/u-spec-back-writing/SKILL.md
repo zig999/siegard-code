@@ -14,6 +14,8 @@ user-invocable: false
 - [ ] Enum values listed explicitly — no open-ended "etc."
 - [ ] Nullable vs. required fields declared for every column
 - [ ] Soft-delete strategy declared if entities can be deactivated
+- [ ] If soft-delete: corresponding endpoint uses PATCH or POST (never DELETE)
+- [ ] If hard-delete: DELETE endpoint is justified in a BR (irreversible by design)
 
 ## Business Rules Checklist
 

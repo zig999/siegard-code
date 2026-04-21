@@ -61,8 +61,25 @@ Immediately after verifying all preconditions and assembling the delivery packag
 - Template: `.claude/skills/u-shared-templates/handoff-manifest.yaml`
 - Overwrite on every handoff — always reflects the most recent delivery
 - For fast-track/evolution handoffs, populate `change_summary` with type, CR, changed files, and `dev_impact`
+- Compute sha256 for every entry in `backend_package[]` and `frontend_package[]` at generation time. The hash covers the raw file contents at `{SPECS_DIR}/{path}` — Dev orchestrators verify the hash before consuming the artifact (rules HDF-020 / HDF-021 in `u-handoff-validator`).
+- Before writing the file, invoke `u-handoff-validator` with `caller=u-spec-orchestrator` against the in-memory manifest. If the envelope returns `status: invalid`, halt and fix — do not persist an invalid manifest.
 
-The Dev Orchestrator reads this manifest at session start to detect available specs and pinned versions.
+The Dev Orchestrator reads this manifest at session start, invokes `u-handoff-validator` to validate it, and consumes the returned envelope (it does NOT parse narrative text). The orchestrator then emits a `handoff-receipt.yaml` acknowledging consumption (see "Handoff receipt" below).
+
+## Handoff receipt (bidirectional acknowledgment)
+
+After consuming a valid manifest, the Dev Orchestrator MUST emit a machine-readable receipt:
+
+- Path: `{SPECS_DIR}/handoff-receipts/{manifest_id}-{orchestrator}.yaml`
+  - `{manifest_id}` matches `handoff.id` from the consumed manifest
+  - `{orchestrator}` is `be` or `fe`
+- Template: `.claude/skills/u-shared-templates/handoff-receipt.yaml`
+- Schema: `.claude/skills/u-shared-templates/handoff-receipt.schema.yaml`
+- One receipt per `(manifest_id, orchestrator)` pair — idempotent: re-reading the same manifest does NOT emit a new receipt
+
+The receipt records: consumer identity, consumption timestamp, validated manifest sha256, and the decisions the orchestrator took (`domains_halted`, `task_contracts_reevaluated`, `task_contracts_proceeded`).
+
+**Spec side:** before issuing a new handoff of type `fast_track` or `major_evolution` that targets a domain already delivered, the Spec Orchestrator SHOULD read the latest receipts for the previous manifest. If no receipt exists for the BE orchestrator (or FE, for frontend-bearing handoffs), log a warning — the previous handoff may not have been consumed.
 
 ---
 
@@ -101,52 +118,54 @@ The Orchestrator-Dev records consumed versions in `log-orchestrator-dev.md`.
 
 When the Spec Orchestrator updates a spec that has already been delivered to Dev (via CR, feedback, or fast-track):
 
-1. **Register in the notification file:** create or update `{SPECS_DIR}/spec-changelog-notify.md`:
-   ```markdown
-   # Spec Change Notifications
+1. **Append to the notification file:** create or append `{SPECS_DIR}/spec-changelog-notify.yaml` using the canonical template at `.claude/skills/u-shared-templates/spec-changelog-notify.yaml`:
 
-   **Layer:** semi-permanent
+   ```yaml
+   layer: semi-permanent
 
-   ## [{date}] — {domain} v{previous-version} -> v{new-version}
-   **Type:** patch | minor | major
-   **CR:** CR-NN (or "fast-track" or "triage")
-   **Origin:** CR-NN | fast-track | triage (items #{list})
-   **Changed files:** {list}
-   **Summary:** {1 sentence}
-   **Impact on Dev:**
-   - patch: no action needed
-   - minor: reevaluate Task Contracts for the domain
-   - major: STOP Task Contracts for the domain until reevaluation
+   notifications:
+     - id: NOTIFY-<YYYYMMDD-HHMMSS>
+       notified_at: <ISO-8601>
+       domain: <domain-name>
+       version_from: <semver>
+       version_to: <semver>
+       change_type: patch | minor | major
+       origin: cr | fast_track | triage
+       cr: CR-NN | null
+       changed_files: [<path>]
+       summary: <one structured sentence>
+       dev_impact: no_action | reevaluate_task_contracts | stop_domain_task_contracts
+       processed_by: []
    ```
 
-2. **Rule:** this file is the only form of Spec -> Dev post-handoff communication. The Spec Orchestrator MUST update it whenever a delivered spec changes.
+2. **Rules:**
+   - Append-only: never remove or reorder existing entries — the file is history
+   - Schema: `.claude/skills/u-shared-templates/spec-changelog-notify.schema.yaml`
+   - This file is the **only** post-handoff Spec → Dev communication channel when no new `handoff-manifest.yaml` covers the same change
+   - The `handoff-manifest.yaml` takes precedence when present — this file is the fallback for changes that do not warrant a full re-handoff
 
-### Dev side: detect changes when starting a session
+### Dev side: detect unprocessed notifications at session start
 
-When the Spec Team updates a spec that has already been delivered:
+The Dev Orchestrator (BE or FE) reads `{SPECS_DIR}/spec-changelog-notify.yaml` at session start and filters for entries where `processed_by` has no element with `orchestrator=<self>`.
 
-1. **Patch:** Dev can ignore (does not affect implementation)
-2. **Minor:** Dev must reevaluate affected Task Contracts — new endpoint or UC may generate an additional Task Contract
-3. **Major:** Dev must STOP Task Contracts for the affected domain until reevaluating impact
+Decision table driven by `dev_impact`:
 
-### How Dev detects changes
+| `dev_impact` | Action |
+|---|---|
+| `no_action` | Log and continue |
+| `reevaluate_task_contracts` | Reevaluate affected Task Contracts for the domain |
+| `stop_domain_task_contracts` | Halt Task Contracts for the domain until reevaluated |
 
-When starting a `/u-dev` session, the Orchestrator-Dev must:
+After acting on a notification, the Dev Orchestrator MUST append an entry to that notification's `processed_by[]`:
 
-1. Check if `{SPECS_DIR}/spec-changelog-notify.md` exists
-2. If it exists, check for unprocessed notifications (compare with log)
-3. Additionally, compare versions in the log vs current versions of files in `specs/`
-4. If there is a difference by any mechanism:
-   ```
-   Spec update detected:
-   | File | Version in log | Current version | Type | Impact |
-   |------|---------------|----------------|------|--------|
-   | auth.spec.md | 1.0.0 | 1.1.0 | minor | Reevaluate Task Contracts |
+```yaml
+processed_by:
+  - orchestrator: u-be-orchestrator-core | u-fe-orchestrator-core
+    processed_at: <ISO-8601>
+    action_taken: no_action | reevaluated | halted
+```
 
-   Recommended action: reevaluate Task Contracts for the auth domain.
-   Confirm? [Y / N]
-   ```
-5. Record in log: "Spec change detected: {domain} v{old} -> v{new} — {action taken}"
+This is the source of truth for "has this Dev team seen this change?" — no log parsing, no free-form interpretation.
 
 ## Artifact mapping Spec -> Dev
 

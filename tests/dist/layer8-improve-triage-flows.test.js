@@ -41,13 +41,16 @@ function validateImproveScope(data) {
     )
   }
 
-  // IMPV-002: spec_change_required → spec_change_status must be completed or divergence_accepted
+  // IMPV-002: spec_change_required → spec_change_status must be one of the allowed values.
+  //   - pending_spec / failed are valid transient/failure states written by /u-improve
+  //     (Step 3a write-before-confirm) or by the spec orchestrator return contract.
+  //   - completed / divergence_accepted are terminal states that allow /u-dev to proceed.
   if (
     type === 'spec_change_required' &&
-    !['completed', 'divergence_accepted'].includes(spec_change_status)
+    !['completed', 'divergence_accepted', 'pending_spec', 'failed'].includes(spec_change_status)
   ) {
     errors.push(
-      `IMPV-002: type=spec_change_required requires spec_change_status=completed|divergence_accepted, got "${spec_change_status}"`
+      `IMPV-002: type=spec_change_required requires spec_change_status=completed|divergence_accepted|pending_spec|failed, got "${spec_change_status}"`
     )
   }
 
@@ -140,10 +143,18 @@ function validateImproveScope(data) {
 // Pipeline routing decision derived from scope block
 function resolvesPipelineRoute(scope) {
   const { planner_required, source, spec_change_status } = scope.improve_scope
+  const blocked = spec_change_status === 'pending_spec' || spec_change_status === 'failed'
   return {
-    lean: planner_required === false,
-    full: planner_required === true,
+    lean: !blocked && planner_required === false,
+    full: !blocked && planner_required === true,
     shortCircuit: source === 'spec-triage' && spec_change_status === 'completed',
+    blocked,
+    haltMode:
+      spec_change_status === 'pending_spec'
+        ? 'Halt-await-spec'
+        : spec_change_status === 'failed'
+        ? 'Halt-spec-failed'
+        : null,
   }
 }
 
@@ -152,36 +163,12 @@ function resolvesPipelineRoute(scope) {
 describe('Layer 8 — Improve & Triage Flow Invariants', () => {
 
   // ── /u-improve: valid scope blocks ──────────────────────────────────────────
-
-  describe('/u-improve — valid scope blocks', () => {
-
-    it('implementation_only + lean pipeline (no spec, single TC)', () => {
-      const data = loadFixture('valid/improve-scope-implementation-only.yaml')
-      expect(validateImproveScope(data)).toHaveLength(0)
-    })
-
-    it('implementation_only + full pipeline (multiple TCs)', () => {
-      const data = loadFixture('valid/improve-scope-implementation-only-with-planner.yaml')
-      expect(validateImproveScope(data)).toHaveLength(0)
-    })
-
-    it('spec_change_required + completed + full pipeline', () => {
-      const data = loadFixture('valid/improve-scope-spec-change-completed.yaml')
-      expect(validateImproveScope(data)).toHaveLength(0)
-    })
-
-    it('spec_change_required + completed + lean pipeline (single TC, single spec)', () => {
-      const data = loadFixture('valid/improve-scope-spec-change-completed-lean.yaml')
-      expect(validateImproveScope(data)).toHaveLength(0)
-    })
-
-    it('spec_change_required + divergence_accepted (human declined /u-spec)', () => {
-      const data = loadFixture('valid/improve-scope-divergence-accepted.yaml')
-      expect(validateImproveScope(data)).toHaveLength(0)
-    })
-
-  })
-
+  //
+  // Per-fixture "passes all rules" tests live in the parameterized
+  // "schema completeness — all valid fixtures pass all rules" describe at the
+  // bottom of this file. Adding them again here is duplicate coverage — Vitest
+  // already reports the failing fixture name from the it.each.
+  //
   // ── /u-improve: type / spec_change_status consistency ──────────────────────
 
   describe('/u-improve — type/spec_change_status invariants', () => {
@@ -204,17 +191,10 @@ describe('Layer 8 — Improve & Triage Flow Invariants', () => {
       expect(errors.some(e => e.startsWith('IMPV-003'))).toBe(true)
     })
 
-    it('implementation_only may have empty affected_specs without violation', () => {
-      const data = loadFixture('valid/improve-scope-implementation-only.yaml')
-      const errors = validateImproveScope(data).filter(e => e.startsWith('IMPV-003'))
-      expect(errors).toHaveLength(0)
-    })
-
-    it('divergence_accepted is valid for spec_change_required type', () => {
-      const data = loadFixture('valid/improve-scope-divergence-accepted.yaml')
-      const errors = validateImproveScope(data).filter(e => e.startsWith('IMPV-002'))
-      expect(errors).toHaveLength(0)
-    })
+    // Subset checks against valid fixtures (e.g. "no IMPV-003 violation on
+    // implementation_only", "no IMPV-002 on divergence_accepted") are strict
+    // subsets of the parameterized "all valid fixtures pass all rules" block —
+    // omitted to avoid duplicate coverage.
 
   })
 
@@ -246,17 +226,8 @@ describe('Layer 8 — Improve & Triage Flow Invariants', () => {
       expect(errors.some(e => e.startsWith('IMPV-013'))).toBe(true)
     })
 
-    it('planner_required=false passes IMPV-010 when skip_reason is present', () => {
-      const data = loadFixture('valid/improve-scope-implementation-only.yaml')
-      const errors = validateImproveScope(data).filter(e => e.startsWith('IMPV-010'))
-      expect(errors).toHaveLength(0)
-    })
-
-    it('planner_required=true passes IMPV-012 when skip_reason is absent', () => {
-      const data = loadFixture('valid/improve-scope-spec-change-completed.yaml')
-      const errors = validateImproveScope(data).filter(e => e.startsWith('IMPV-012'))
-      expect(errors).toHaveLength(0)
-    })
+    // Subset checks against valid fixtures (no IMPV-010 / IMPV-012 violation)
+    // are subsumed by the parameterized "all valid fixtures pass all rules" block.
 
   })
 
@@ -264,15 +235,10 @@ describe('Layer 8 — Improve & Triage Flow Invariants', () => {
 
   describe('/u-spec-triage — valid scope blocks', () => {
 
-    it('patch corrections (planner_required=false) — source=spec-triage', () => {
-      const data = loadFixture('valid/improve-scope-spec-triage-patch.yaml')
-      expect(validateImproveScope(data)).toHaveLength(0)
-    })
-
-    it('structural corrections (planner_required=true) — source=spec-triage', () => {
-      const data = loadFixture('valid/improve-scope-spec-triage-structural.yaml')
-      expect(validateImproveScope(data)).toHaveLength(0)
-    })
+    // "patch corrections" and "structural corrections" passing all rules are
+    // subsumed by the parameterized "schema completeness — all valid fixtures"
+    // block at the bottom of this file. Only the assertions that check
+    // properties NOT covered by validateImproveScope remain here.
 
     it('spec-triage block always has spec_change_status=completed', () => {
       const patch = loadFixture('valid/improve-scope-spec-triage-patch.yaml')
@@ -403,6 +369,48 @@ describe('Layer 8 — Improve & Triage Flow Invariants', () => {
       expect(route.shortCircuit).toBe(false)
     })
 
+    it('pending_spec → blocked + Halt-await-spec mode (neither lean nor full)', () => {
+      const data = loadFixture('valid/improve-scope-pending-spec.yaml')
+      const route = resolvesPipelineRoute(data)
+      expect(route.blocked).toBe(true)
+      expect(route.lean).toBe(false)
+      expect(route.full).toBe(false)
+      expect(route.haltMode).toBe('Halt-await-spec')
+    })
+
+    it('failed → blocked + Halt-spec-failed mode (neither lean nor full)', () => {
+      const data = loadFixture('valid/improve-scope-spec-failed.yaml')
+      const route = resolvesPipelineRoute(data)
+      expect(route.blocked).toBe(true)
+      expect(route.lean).toBe(false)
+      expect(route.full).toBe(false)
+      expect(route.haltMode).toBe('Halt-spec-failed')
+    })
+
+    it('completed → not blocked, no halt mode', () => {
+      const data = loadFixture('valid/improve-scope-spec-change-completed.yaml')
+      const route = resolvesPipelineRoute(data)
+      expect(route.blocked).toBe(false)
+      expect(route.haltMode).toBeNull()
+    })
+
+  })
+
+  // ── pending_spec / failed transient & failure states ────────────────────────
+  //
+  // The "valid pending_spec" / "valid failed" passes are subsumed by the
+  // parameterized "schema completeness" block below. Only the IMPV-001 negative
+  // case (implementation_only + pending_spec) remains here as it asserts the
+  // specific violation code rather than just "any violation".
+
+  describe('transient and failure states (pending_spec / failed)', () => {
+
+    it('IMPV-001: implementation_only + pending_spec → violation', () => {
+      const data = loadFixture('invalid/improve-scope-impl-only-pending-spec.yaml')
+      const errors = validateImproveScope(data)
+      expect(errors.some(e => e.startsWith('IMPV-001'))).toBe(true)
+    })
+
   })
 
   // ── Schema-level completeness ────────────────────────────────────────────────
@@ -417,6 +425,8 @@ describe('Layer 8 — Improve & Triage Flow Invariants', () => {
       'valid/improve-scope-divergence-accepted.yaml',
       'valid/improve-scope-spec-triage-patch.yaml',
       'valid/improve-scope-spec-triage-structural.yaml',
+      'valid/improve-scope-pending-spec.yaml',
+      'valid/improve-scope-spec-failed.yaml',
     ]
 
     it.each(validFixtures)('%s — no violations', (fixturePath) => {
@@ -440,6 +450,7 @@ describe('Layer 8 — Improve & Triage Flow Invariants', () => {
       'invalid/improve-scope-triage-no-generated-on.yaml',
       'invalid/improve-scope-triage-tc-count-mismatch.yaml',
       'invalid/improve-scope-affected-spec-missing-summary.yaml',
+      'invalid/improve-scope-impl-only-pending-spec.yaml',
     ]
 
     it.each(invalidFixtures)('%s — at least one violation detected', (fixturePath) => {

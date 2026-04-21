@@ -1,0 +1,30 @@
+# spec-changelog-notify — canonical template
+# Produced by: u-spec-orchestrator (whenever a delivered spec is updated)
+# Consumed by: u-be-orchestrator-core, u-fe-orchestrator-core (session start)
+# Schema: .claude/skills/u-shared-templates/spec-changelog-notify.schema.yaml
+# Layer: semi-permanent — stored at {SPECS_DIR}/spec-changelog-notify.yaml
+# Rules:
+#   - Append-only: never remove or reorder existing notifications[]
+#   - Dev orchestrators append to processed_by when they consume a notification
+#   - An entry is "unprocessed" for an orchestrator when processed_by has no entry
+#     with orchestrator=<caller>
+#   - This file replaces the former free-form markdown spec-changelog-notify.md
+#   - When handoff-manifest.yaml exists and covers the same change, the manifest
+#     takes precedence; this file is the fallback channel
+
+layer: semi-permanent
+
+notifications:
+  - id: NOTIFY-<YYYYMMDD-HHMMSS>
+    notified_at: <YYYY-MM-DDTHH:MM:SSZ>
+    domain: <domain-name>
+    version_from: <semver>
+    version_to: <semver>
+    change_type: patch | minor | major
+    origin: cr | fast_track | triage
+    cr: CR-NN | null
+    changed_files:
+      - <relative-path>
+    summary: <single structured sentence>
+    dev_impact: no_action | reevaluate_task_contracts | stop_domain_task_contracts
+    processed_by: []

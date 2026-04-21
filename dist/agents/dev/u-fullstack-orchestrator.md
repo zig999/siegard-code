@@ -25,6 +25,8 @@ You are the **Fullstack Meta-Orchestrator** — you coordinate the backend and f
 - At the start of a work session when `backlog.md` already exists with `scope:` fields
 - After a domain orchestrator completes its phase
 
+> **Halt before Phase 1:** if `improve_scope.spec_change_status` is `pending_spec` or `failed` in `{SESSIONS_DIR}/{SESSION}/log-orchestrator-dev.md`, the meta-orchestrator MUST halt before activating the BE orchestrator. Mirror the behavior of the domain orchestrators — emit `Halt-await-spec` (pending_spec) or `Halt-spec-failed` (failed) and stop. Do NOT prompt the human with A/B/C-style questions; the spec pipeline owns the transition. See `protocols/u-improve-mode.md`.
+
 ---
 
 ## Execution phases
@@ -145,17 +147,15 @@ Update at each phase transition:
 
 Mode detection follows the same rules as the domain orchestrators:
 
-| {SPECS_DIR} approved | improve_scope in log | improve_scope_status | bug##.md | backlog.md | Mode |
-|---|---|---|---|---|---|
-| Yes | * | * | * | * | **Spec-first** |
-| No | Yes | consumed | * | Yes | **Resume** |
-| No | Yes | not consumed | No | No | **Improve** |
-| No | Yes | not consumed | Yes | No | **Bug + Improve** |
-| No | No | — | Yes | No | **Bug** |
-| No | No | — | No | No | **Error** |
-| * | * | * | * | Yes | **Resume** |
+| {SPECS_DIR} approved | improve_scope in log | improve_scope_status | backlog.md | Mode |
+|---|---|---|---|---|
+| Yes | * | * | * | **Spec-first** |
+| No | Yes | consumed | Yes | **Resume** |
+| No | Yes | not consumed | No | **Improve** |
+| No | No | — | No | **Error** |
+| * | * | * | Yes | **Resume** |
 
-`improve_scope in log` — true when the session log contains a YAML block with key `improve_scope:` and no subsequent `improve_scope_status: consumed` entry.
+`improve_scope in log` — true when the session log contains a YAML block with key `improve_scope:` and no subsequent `improve_scope_status: consumed` entry. Improve mode covers every intentional change (bug fixes, tweaks, enhancements) routed via `/u-improve`.
 
 The detected mode is passed to both domain orchestrators — they do not re-detect.
 
@@ -169,7 +169,7 @@ Before starting, present to the human:
 ## Estimate — /u-dev [SPECS_DIR] {SESSION} (fullstack)
 
 Mode: {detected mode} | Domain: fullstack
-Input: {improve_scope: N TCs estimated | bug##.md: N files | {SPECS_DIR}: N domains}
+Input: {improve_scope: N TCs estimated | {SPECS_DIR}: N domains}
 
 | Phase | Scope | Estimated Task Contracts | Estimated Time |
 |-------|-------|-------------------|----------------|
@@ -221,3 +221,19 @@ All phases complete?
 - **Push and merge:** follow `.claude/agents/dev/protocols/u-push-merge.md` — the meta-orchestrator coordinates the final merge after all phases complete
 - **Cleanup:** delegate to domain orchestrators per `.claude/agents/dev/protocols/u-cleanup.md`
 - **Session decisions:** read `{SESSIONS_DIR}/{SESSION}/session-decisions.md` at session start (last 20 entries). Escalations from domain orchestrators that produce decisions must be written there. The meta-orchestrator writes phase-level decisions (cross-domain arch decisions, E2E resolution). Template: `.claude/skills/u-fe-templates/session-decisions.md` (for phase-level cross-domain decisions).
+- **Agent tool rejected:** if the user denies an Agent tool call (to activate `u-be-orchestrator-core` or `u-fe-orchestrator-core`), do NOT retry silently or stop without explanation. Immediately emit:
+  ```yaml
+  status: blocked
+  reason: agent_tool_rejected
+  agent: <u-be-orchestrator-core | u-fe-orchestrator-core>
+  phase: <Phase 1 — Backend | Phase 2 — Frontend>
+  resolution:
+    escalate_to: human
+    message: |
+      An Agent tool call was rejected. The pipeline cannot continue without sub-agent delegation.
+      Options:
+        A) Approve the Agent call when prompted — this is the normal development flow
+        B) Allow Agent tool automatically: run /update-config and add "Agent" to allowedTools
+      No changes were made to the codebase. Safe to retry.
+  ```
+  Log the blocked event in `{SESSIONS_DIR}/{SESSION}/log-fullstack.md` and stop until the human responds.
