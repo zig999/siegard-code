@@ -9,7 +9,7 @@ Last updated: 2026-04-21
 | 0 | Setup | ✅ Complete |
 | 1 | `orch_core.py` — foundation | ✅ Complete + reviewed (1.8 deferred) |
 | 2 | CLI skills | ✅ Complete (2.4 skipped — depende de 1.8 deferida) |
-| 3 | Orchestrator single-phase | 🔜 Next |
+| 3 | Orchestrator single-phase | 🔄 In progress (3.1 done) |
 | 4 | Robustness | ⏳ Not started |
 | 5 | Phase lifecycle | ⏳ Not started |
 | 6 | Production workers | ⏳ Not started |
@@ -112,3 +112,19 @@ new_flow/dist2/
     ├── test_reducer.py
     └── test_integration.py
 ```
+
+---
+
+## Phase 3 — Orchestrator single-phase (in progress)
+
+| Task | Description | Deliverables | Status |
+|------|-------------|--------------|--------|
+| 3.1 | `orchestrator.md` mínimo (single-phase, sem spawning) | `.claude/agents/orchestrator.md` | ✅ Validated |
+| 3.2 | `test-worker.md` (dummy worker) | `.claude/agents/test-worker.md` | 🔜 Next |
+| 3.3 | Orchestrator spawna worker + processa resultado | Updated `orchestrator.md` | ⏳ |
+| 3.4 | Múltiplas tasks e deps | Updated `orchestrator.md` | ⏳ |
+| 3.5 | Detecção de stale tasks | `orch_core.stale_tasks()` + `orchestrator.md` | ⏳ |
+| 3.6 | DLQ cascade por dep falhada | Updated `orchestrator.md` | ⏳ |
+| 3.7 | Snapshot periódico e relatório final | `on_stop.py` + `orchestrator.md` | ⏳ |
+
+**Note on `phase_entered` schema:** requires both `phase` and `order` fields. Discovered during 3.1 manual validation.
