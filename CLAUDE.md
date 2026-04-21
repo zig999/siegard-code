@@ -35,7 +35,7 @@ siegard-code/
 
 ### install.sh
 
-Copies `dist/` into `<target-project>/.claude/`, removing files that no longer exist in `dist/`.
+Copies and replaces files from `dist/` into `<target-project>/.claude/`. Does not remove existing files in the destination.
 
 ```bash
 ./install.sh <path-to-target-project>
