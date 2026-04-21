@@ -1147,9 +1147,11 @@ def _handle_task_dlq(state: OrchState, event: Event) -> None:
     if task_id is None or task_id not in state.tasks:
         return
     task = state.tasks[task_id]
-    if task.status not in (TaskStatus.FAILED, TaskStatus.RUNNING):
+    # PENDING is allowed for cascade-from-dep: dep went to DLQ, so dependent
+    # can never run and goes directly to DLQ without transitioning through FAILED.
+    if task.status not in (TaskStatus.FAILED, TaskStatus.RUNNING, TaskStatus.PENDING):
         raise IllegalTransition(
-            f"task_dlq: task {task_id!r} is {task.status!r}, expected failed or running"
+            f"task_dlq: task {task_id!r} is {task.status!r}, expected failed, running, or pending"
         )
     task.status = TaskStatus.DLQ
     task.last_event_at = event.ts

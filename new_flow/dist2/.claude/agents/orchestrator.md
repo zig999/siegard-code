@@ -182,6 +182,22 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 After emitting stale failures, re-read state before proceeding.
 
+**DLQ cascade:** after stale detection, scan all tasks with `status = "pending"`. For each, check its `deps` list. If **any** dep has `status = "dlq"`, emit `task_dlq` for this task immediately (it can never run):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type task_dlq \
+  --task-id <task_id> \
+  --data '{"phase":"<task.phase>","reason":"cascade_from_dep","last_error":"dep <dep_id> is in dlq"}'
+```
+
+Emit one `task_dlq` per cascaded task. After all cascades, re-read state. The loop naturally propagates multi-level chains (A→B→C: A goes DLQ → B cascades → next iteration → C cascades).
+
+**Important:** only cascade for deps in `dlq` status. A dep in `failed` (transient failure, may retry) does NOT trigger cascade.
+
+After emitting stale failures and DLQ cascades, re-read state before proceeding.
+
 Stop the loop if:
 - No tasks have `status = "ready"` → break
 - `circuit_breaker_tripped` is present in state → break (record issue)
