@@ -10,7 +10,7 @@ Last updated: 2026-04-21
 | 1 | `orch_core.py` — foundation | ✅ Complete + reviewed (1.8 deferred) |
 | 2 | CLI skills | ✅ Complete (2.4 skipped — depende de 1.8 deferida) |
 | 3 | Orchestrator single-phase | ✅ Complete (3.7 snapshot part deferred with 1.8) |
-| 4 | Robustness | 🔄 In progress (4.1 done) |
+| 4 | Robustness | ✅ Complete |
 | 5 | Phase lifecycle | ⏳ Not started |
 | 6 | Production workers | ⏳ Not started |
 | 7 | Hardening | ⏳ Not started |
@@ -140,6 +140,6 @@ new_flow/dist2/
 | 4.3 | Circuit breaker — `evaluate_circuit_state()`, reset script | `orch_core.py` + `scripts/circuit_breaker.py` + `test_circuit_breaker.py` | ✅ 21 tests |
 | 4.4 | `verify_and_recover` — `--recover --confirm` mode | `orch_core.py` + `verify.py` + `test_verify_and_recover.py` | ✅ 18 tests |
 | 4.5 | `preflight.py` — local and remote checks | `scripts/preflight.py` + `test_preflight.py` | ✅ 33 tests |
-| 4.6 | DLQ triage + escalations (E03, E04, E06) | `scripts/dlq_triage.py` | ⏳ Not started |
+| 4.6 | DLQ triage + escalations (E03, E04, E06) | `hooks/dlq_triage.py` + `orch_core.py` + `orchestrator.md` + `test_dlq_triage.py` | ✅ 37 tests |
 
-**Test count: 418 total.**
+**Test count: 455 total.**

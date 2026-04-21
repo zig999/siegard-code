@@ -146,6 +146,41 @@ From the `OrchState`, compute:
 
 **G. Issues:** Any `escalation` in state, any `circuit_breaker_tripped`.
 
+**H. Escalation checks (emit at most once per cycle per code):**
+
+**E03 — Dependency cycle:** scan all non-terminal tasks. If any pair `(A, B)` forms a cycle (A depends on B AND B depends on A, directly or transitively), emit:
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type escalation \
+  --data '{"code":"E03_dependency_cycle","severity":"critical","reason":"Circular dependency detected among tasks: <cycle_task_ids>","evidence":[<seq_of_task_created_events>],"suggested_actions":["remove circular dependency","cancel affected tasks"]}'
+```
+After emitting E03, skip Steps 5 and 6 (dispatching is impossible until cycle is resolved).
+
+**E04 — Critical task in DLQ:** scan all tasks with `status = "dlq"` and `tier = "critical"`. For each such task (not already escalated), emit:
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type escalation \
+  --data '{"code":"E04_critical_task_dlq","severity":"critical","reason":"Critical task <task_id> is in DLQ after <attempts> attempt(s): <last_error>","evidence":[<task_dlq_seq>],"suggested_actions":["inspect DLQ","run dlq_triage.py","force-retry or cancel"]}'
+```
+
+**E06 — Deadlock:** if ALL of the following are true:
+- No tasks have `status = "ready"` or `status = "running"` or `status = "scheduled"`
+- At least one task has `status = "pending"`
+- All pending tasks have deps that are either in `dlq`, non-existent, or part of a cycle
+
+Emit:
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type escalation \
+  --data '{"code":"E06_deadlock","severity":"critical","reason":"Workflow deadlocked: <n> pending tasks cannot make progress","evidence":[<relevant_task_seqs>],"suggested_actions":["inspect pending tasks","resolve DLQ dependencies","cancel blocked tasks"]}'
+```
+After emitting E06, skip Steps 5 and 6.
+
+**Important:** if `state.escalation` already exists (escalation previously emitted), do NOT emit a duplicate. Check `state.escalation.code` before emitting.
+
 ---
 
 ### Step 5 — Task creation (if requested)

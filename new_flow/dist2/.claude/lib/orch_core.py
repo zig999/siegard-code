@@ -1693,6 +1693,106 @@ def evaluate_circuit_state(
 
 
 # ---------------------------------------------------------------------------
+# Escalation detection helpers
+# ---------------------------------------------------------------------------
+
+def detect_dependency_cycle(state: OrchState) -> list[str]:
+    """
+    Detects cycles in the task dependency graph using DFS.
+
+    Returns a list of task_ids that form part of a cycle. Empty if no cycle.
+    Only considers non-terminal tasks (pending, ready, running, scheduled, failed).
+    """
+    terminal = {TaskStatus.COMPLETED, TaskStatus.DLQ}
+    live_tasks = {
+        tid: t for tid, t in state.tasks.items()
+        if t.status not in terminal
+    }
+
+    # Build adjacency: task → its unresolved deps
+    adj: dict[str, list[str]] = {}
+    for tid, task in live_tasks.items():
+        adj[tid] = [d for d in task.deps if d in live_tasks]
+
+    visited: set[str] = set()
+    rec_stack: set[str] = set()
+    cycle_nodes: list[str] = []
+
+    def _dfs(node: str) -> bool:
+        visited.add(node)
+        rec_stack.add(node)
+        for neighbour in adj.get(node, []):
+            if neighbour not in visited:
+                if _dfs(neighbour):
+                    return True
+            elif neighbour in rec_stack:
+                cycle_nodes.append(node)
+                return True
+        rec_stack.discard(node)
+        return False
+
+    for tid in list(adj.keys()):
+        if tid not in visited:
+            if _dfs(tid):
+                break
+
+    return cycle_nodes
+
+
+def detect_deadlock(state: OrchState) -> bool:
+    """
+    Returns True if the workflow is deadlocked.
+
+    Deadlock: tasks exist, none are ready/running/scheduled, and the remaining
+    pending tasks cannot make progress (all their deps are DLQ or non-existent,
+    or there is a dependency cycle).
+    """
+    if not state.tasks:
+        return False
+
+    actionable = {TaskStatus.READY, TaskStatus.RUNNING, TaskStatus.SCHEDULED}
+    if any(t.status in actionable for t in state.tasks.values()):
+        return False
+
+    # Any pending tasks remaining?
+    pending = [t for t in state.tasks.values() if t.status == TaskStatus.PENDING]
+    if not pending:
+        return False  # all tasks are terminal — not a deadlock, it's completion
+
+    # Cycle among live tasks is always a deadlock
+    if detect_dependency_cycle(state):
+        return True
+
+    # Check if any pending task can ever become ready:
+    # A dep blocks progress if it is DLQ or does not exist
+    blocking_statuses = {TaskStatus.DLQ}
+
+    def _can_become_ready(task: TaskState) -> bool:
+        for dep_id in task.deps:
+            dep = state.tasks.get(dep_id)
+            if dep is None or dep.status in blocking_statuses:
+                return False
+        return True
+
+    if any(_can_become_ready(t) for t in pending):
+        return False
+
+    return True
+
+
+def detect_critical_dlq(state: OrchState) -> list[str]:
+    """
+    Returns task_ids of critical-tier tasks that are in DLQ status.
+
+    A critical task in DLQ requires immediate escalation (E04).
+    """
+    return [
+        tid for tid, t in state.tasks.items()
+        if t.status == TaskStatus.DLQ and t.tier == Tier.CRITICAL
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------------------------
 
@@ -1758,4 +1858,8 @@ __all__ = [
     "evaluate_circuit_state",
     # Recovery
     "verify_and_recover",
+    # Escalation detection
+    "detect_dependency_cycle",
+    "detect_deadlock",
+    "detect_critical_dlq",
 ]
