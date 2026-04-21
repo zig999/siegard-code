@@ -122,7 +122,7 @@ new_flow/dist2/
 | 3.1 | `orchestrator.md` mínimo (single-phase, sem spawning) | `.claude/agents/orchestrator.md` | ✅ Validated |
 | 3.2 | `test-worker.md` (dummy worker) | `.claude/agents/test-worker.md` | ✅ Validated |
 | 3.3 | Orchestrator spawna worker + processa resultado | Updated `orchestrator.md` | ✅ Validated |
-| 3.4 | Múltiplas tasks e deps | Updated `orchestrator.md` | ⏳ |
+| 3.4 | Múltiplas tasks e deps | Updated `orchestrator.md` | ✅ Validated |
 | 3.5 | Detecção de stale tasks | `orch_core.stale_tasks()` + `orchestrator.md` | ⏳ |
 | 3.6 | DLQ cascade por dep falhada | Updated `orchestrator.md` | ⏳ |
 | 3.7 | Snapshot periódico e relatório final | `on_stop.py` + `orchestrator.md` | ⏳ |

@@ -149,17 +149,36 @@ After emission, re-run Step 2 and Step 4 to refresh state. Then continue to Step
 
 ---
 
-### Step 6 — Worker dispatch
+### Step 6 — Dispatch loop
 
-Dispatch up to **2 ready tasks** concurrently. For each task in the ready queue (up to 2):
+Run until no ready tasks remain, the circuit breaker is tripped, or 20 iterations are reached (safety limit).
 
-#### 6.1 — Claim the task
+**Each iteration:**
+
+#### 6.0 — Check loop conditions
+
+Re-read state:
+```bash
+python3 .claude/skills/orch-state/scripts/reduce.py
+```
+
+Stop the loop if:
+- No tasks have `status = "ready"` → break
+- `circuit_breaker_tripped` is present in state → break (record issue)
+- Iteration count ≥ 20 → break (safety limit; record issue)
+
+#### 6.1 — Select batch
+
+From the current ready queue (sorted by tier priority then creation seq), select up to **2 tasks** to dispatch this iteration.
+
+#### 6.2 — Claim each selected task
+
+For each task in the batch:
 
 Generate worker identity: `worker_id = "<worker_type>-<task_id>"` (e.g. `test-worker-t_001`).
 
 Derive `attempt` from `task.attempts + 1` (first attempt = 1).
 
-Emit `task_claimed`:
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator \
@@ -169,13 +188,12 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"<task.phase>","worker_type":"<worker_type>","worker_id":"<worker_id>"}'
 ```
 
-If `append.py` returns exit 1: skip this task, record issue, continue with next ready task.
+If `append.py` returns exit 1: skip this task, record issue, continue with next.
 
-#### 6.2 — Spawn the worker
+#### 6.3 — Spawn each claimed task
 
-Look up `worker_type` from the routing table using `task.type`.
+For each claimed task, look up `worker_type` from the routing table using `task.type`. Set env vars:
 
-Set env vars before spawning:
 ```bash
 export ORCH_TASK_ID="<task_id>"
 export ORCH_ATTEMPT="<attempt>"
@@ -184,7 +202,7 @@ export ORCH_WORKER_ID="<worker_id>"
 
 Use the **Agent tool** to spawn the worker:
 - `subagent_type`: the worker type (e.g. `test-worker`)
-- `prompt`: include the env var values explicitly so the worker has them regardless of shell inheritance:
+- `prompt`: include env var values explicitly so the worker has them:
   ```
   Execute your task.
   Environment context:
@@ -194,18 +212,13 @@ Use the **Agent tool** to spawn the worker:
   Use these values in all emit.py calls.
   ```
 
-The Agent tool call is **blocking** — it waits for the worker to complete before continuing.
+The Agent tool call is **blocking** — waits for the worker to complete before proceeding.
 
-#### 6.3 — Verify terminal event
+#### 6.4 — Verify terminal event
 
-After the Agent call returns, re-read state:
-```bash
-python3 .claude/skills/orch-state/scripts/reduce.py
-```
-
-Check `state.tasks[task_id].status`:
-- `completed` or `failed` or `dlq` → terminal event was emitted. Proceed.
-- `running` → worker exited without terminal event. The `on_subagent_stop` hook should have synthesized `task_failed`. If not:
+After the Agent call returns, read state and check `state.tasks[task_id].status`:
+- `completed`, `failed`, or `dlq` → terminal emitted. Continue.
+- `running` → worker exited without terminal. Synthesize:
   ```bash
   python3 .claude/skills/orch-log/scripts/append.py \
     --agent orchestrator \
@@ -215,7 +228,9 @@ Check `state.tasks[task_id].status`:
     --data '{"phase":"<task.phase>","reason":"worker_exited_without_terminal","retryable":true,"synthesized_by":"orchestrator_cycle"}'
   ```
 
-Repeat 6.1–6.3 for each task in the ready queue (up to 2).
+Repeat 6.2–6.4 for the remaining tasks in the batch, then return to 6.0 for the next iteration.
+
+**Why the loop matters for deps:** When task A completes, the reducer automatically promotes tasks whose only unmet dep was A to `ready`. The next iteration detects them and dispatches. This handles serial chains (A→B→C) without re-invocation.
 
 ---
 
