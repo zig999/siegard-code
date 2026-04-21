@@ -52,7 +52,7 @@ ORCH_WORKER_ID="$ORCH_WORKER_ID" python3 .claude/skills/orch-report/scripts/emit
   --kind progress \
   --task-id "$ORCH_TASK_ID" \
   --attempt "$ORCH_ATTEMPT" \
-  --data '{"message":"started","step":1}'
+  --data '{"phase":"default","note":"started"}'
 ```
 
 ### Step 3 — Create output file
@@ -75,7 +75,7 @@ ORCH_WORKER_ID="$ORCH_WORKER_ID" python3 .claude/skills/orch-report/scripts/emit
   --kind progress \
   --task-id "$ORCH_TASK_ID" \
   --attempt "$ORCH_ATTEMPT" \
-  --data '{"message":"output file created","step":2}'
+  --data '{"phase":"default","note":"output file created"}'
 ```
 
 ### Step 5 — Emit completed
