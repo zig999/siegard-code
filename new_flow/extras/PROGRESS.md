@@ -138,8 +138,8 @@ new_flow/dist2/
 | 4.1 | `backoff_seconds`, `RetryPolicy`, `should_retry`, `tasks_ready_for_retry`, `load_config` | `orch_core.py` + `test_retry.py` | ✅ 31 tests |
 | 4.2 | `task_scheduled_retry` + `task_retried` in orchestrator + reducer | Updated `orchestrator.md` + `test_retry_reducer.py` | ✅ 12 tests |
 | 4.3 | Circuit breaker — `evaluate_circuit_state()`, reset script | `orch_core.py` + `scripts/circuit_breaker.py` + `test_circuit_breaker.py` | ✅ 21 tests |
-| 4.4 | `verify_and_recover` — `--recover --confirm` mode | Updated `verify.py` | ⏳ Not started |
+| 4.4 | `verify_and_recover` — `--recover --confirm` mode | `orch_core.py` + `verify.py` + `test_verify_and_recover.py` | ✅ 18 tests |
 | 4.5 | `preflight.py` — local and remote checks | `scripts/preflight.py` | ⏳ Not started |
 | 4.6 | DLQ triage + escalations (E03, E04, E06) | `scripts/dlq_triage.py` | ⏳ Not started |
 
-**Test count: 367 total.**
+**Test count: 385 total.**

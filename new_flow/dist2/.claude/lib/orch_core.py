@@ -369,6 +369,7 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.ESCALATION.value:                {"code", "severity", "reason", "evidence"},
     EventType.CIRCUIT_BREAKER_TRIPPED.value:   {"window_start", "window_end", "failure_count", "threshold"},
     EventType.HUMAN_RESPONSE.value:            {"escalation_seq", "action", "operator"},
+    EventType.LOG_RECOVERED.value:             {"seq_truncated_from", "events_removed", "operator", "corrupt_file_path"},
 }
 
 
@@ -617,6 +618,147 @@ def verify_chain(
         mode=mode,
         events_verified=count,
     )
+
+
+# ---------------------------------------------------------------------------
+# Log recovery
+# ---------------------------------------------------------------------------
+
+def verify_and_recover(
+    from_seq: int,
+    operator: str,
+    confirm: bool,
+) -> Event:
+    """
+    Truncates the log at from_seq, archives the corrupt tail, and emits log_recovered.
+
+    The log is truncated so that events with seq >= from_seq are removed.
+    The removed events are written to .orch/log.jsonl.corrupt.{timestamp}.
+    A log_recovered event is then appended to the clean log.
+
+    Args:
+        from_seq: First seq to remove (events 1..from_seq-1 are kept).
+        operator: Identity of the operator authorising this recovery.
+        confirm:  Must be True. Raises ValueError if False (safety gate).
+
+    Returns:
+        The log_recovered Event that was appended.
+
+    Raises:
+        ValueError: confirm is False.
+        ValueError: from_seq < 1.
+        FileNotFoundError: log does not exist.
+        OSError: filesystem errors.
+    """
+    if not confirm:
+        raise ValueError(
+            "verify_and_recover requires confirm=True — this operation is never automatic"
+        )
+    if from_seq < 1:
+        raise ValueError(f"from_seq must be >= 1, got {from_seq!r}")
+
+    if not LOG_PATH.exists():
+        raise FileNotFoundError(f"Log not found: {LOG_PATH}")
+
+    ensure_dirs()
+
+    with LogLock():
+        # Read all raw lines from the log
+        raw_lines = LOG_PATH.read_bytes().splitlines(keepends=True)
+
+        # Separate good lines (seq < from_seq) from corrupt lines (seq >= from_seq)
+        good_lines: list[bytes] = []
+        corrupt_lines: list[bytes] = []
+        last_good_hash: str = "GENESIS"
+        events_removed = 0
+
+        for line in raw_lines:
+            line = line.rstrip(b"\n") + b"\n"
+            try:
+                obj = json.loads(line)
+                seq = obj.get("seq", 0)
+            except (json.JSONDecodeError, AttributeError):
+                # Unparseable lines go to corrupt
+                corrupt_lines.append(line)
+                events_removed += 1
+                continue
+
+            if seq < from_seq:
+                good_lines.append(line)
+                last_good_hash = obj.get("hash", last_good_hash)
+            else:
+                corrupt_lines.append(line)
+                events_removed += 1
+
+        # Determine last good seq for the event data
+        last_good_seq = from_seq - 1
+
+        # Write the corrupt portion to a timestamped file
+        ts_tag = now_iso().replace(":", "-").replace("+", "Z").rstrip("Z")[:19].replace("T", "T")
+        corrupt_filename = f"log.jsonl.corrupt.{ts_tag}"
+        corrupt_rel_path = f".orch/{corrupt_filename}"
+        corrupt_path = ORCH_DIR / corrupt_filename
+
+        if corrupt_lines:
+            corrupt_path.write_bytes(b"".join(corrupt_lines))
+
+        # Rewrite the clean log
+        LOG_PATH.write_bytes(b"".join(good_lines))
+
+        # Build and append the log_recovered event inline (bypasses append_event
+        # to avoid acquiring the lock a second time)
+        last_line = good_lines[-1] if good_lines else None
+        if last_line:
+            try:
+                last_obj = json.loads(last_line)
+                prev_hash = last_obj.get("hash", "GENESIS")
+                next_seq = last_obj.get("seq", 0) + 1
+            except json.JSONDecodeError:
+                prev_hash = "GENESIS"
+                next_seq = 1
+        else:
+            prev_hash = "GENESIS"
+            next_seq = 1
+
+        event_id = new_event_id()
+        recovery_data: dict[str, Any] = {
+            "seq_truncated_from": from_seq,
+            "seq_truncated_to": last_good_seq,
+            "events_removed": max(events_removed, 1),
+            "operator": operator,
+            "corrupt_file_path": corrupt_rel_path,
+            "hash_before_truncation": last_good_hash,
+        }
+
+        recovery_event = Event(
+            seq=next_seq,
+            event_id=event_id,
+            ts=now_iso(),
+            agent="operator",
+            event_type=EventType.LOG_RECOVERED.value,
+            task_id=None,
+            attempt=1,
+            data=recovery_data,
+            prev_hash=prev_hash,
+            hash="",
+        )
+        recovery_event.hash = recovery_event.compute_hash()
+        # hash_after_truncation is the event's own hash (the new chain head after recovery).
+        # Store it in data so auditors can reference it, but recompute hash to stay consistent.
+        recovery_event.data["hash_after_truncation"] = recovery_event.hash
+        recovery_event.hash = recovery_event.compute_hash()
+
+        line_bytes = (
+            json.dumps(recovery_event.to_dict(), sort_keys=True,
+                       separators=(",", ":"), ensure_ascii=False) + "\n"
+        ).encode("utf-8")
+
+        with open(LOG_PATH, "ab") as f:
+            f.write(line_bytes)
+            f.flush()
+            os.fsync(f.fileno())
+
+    return recovery_event
 
 
 # ---------------------------------------------------------------------------
@@ -1193,6 +1335,7 @@ _HANDLERS: dict[str, Any] = {
     EventType.ESCALATION: _handle_escalation,
     EventType.CIRCUIT_BREAKER_TRIPPED: _handle_circuit_breaker_tripped,
     EventType.HUMAN_RESPONSE: _handle_human_response,
+    # log_recovered is a no-op in the reducer — it's an audit marker only
 }
 
 
@@ -1613,4 +1756,6 @@ __all__ = [
     "tasks_ready_for_retry",
     # Circuit breaker
     "evaluate_circuit_state",
+    # Recovery
+    "verify_and_recover",
 ]
