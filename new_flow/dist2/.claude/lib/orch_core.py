@@ -10,6 +10,7 @@ import fcntl
 import hashlib
 import json
 import os
+import random
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -1268,6 +1269,205 @@ def stale_tasks(state: OrchState, now: str) -> list[TaskState]:
 
 
 # ---------------------------------------------------------------------------
+# Config loading
+# ---------------------------------------------------------------------------
+
+def default_config() -> dict[str, Any]:
+    """Returns the full default config (matches architecture §19)."""
+    return {
+        "version": "1.0",
+        "retry_policy": {
+            "defaults_by_tier": {
+                "critical": {"max_attempts": 5, "base_delay_s": 15.0, "cap_s": 600.0},
+                "standard": {"max_attempts": 3, "base_delay_s": 30.0, "cap_s": 600.0},
+                "bulk":     {"max_attempts": 1, "base_delay_s": 0.0,  "cap_s": 0.0},
+            },
+            "overrides_by_task_type": {},
+        },
+        "circuit_breaker": {
+            "enabled": True,
+            "window_minutes": 10,
+            "failure_threshold": 50,
+            "scope": "workflow",
+            "cooldown_minutes": 30,
+            "reset_on_success_count": 5,
+        },
+        "payload_limits": {
+            "max_inline_bytes": 3500,
+            "blob_storage_path": ".orch/blobs",
+        },
+        "verify": {
+            "startup_mode": "strict",
+            "auto_recover": False,
+        },
+        "preflight": {
+            "runtime_threshold_tasks": 10,
+            "timeout_seconds": 60,
+        },
+        "phases": {
+            "default_workflow": "dev-cycle",
+            "workflows": {
+                "dev-cycle": {"description": "Feature development", "phases": ["sdd", "dev", "review", "test"]},
+                "bug-fix":   {"description": "Bug fix", "phases": ["reproduce", "fix", "verify", "regression"]},
+                "refactor":  {"description": "Refactor", "phases": ["analyze", "migrate", "verify"]},
+                "spike":     {"description": "Research spike", "phases": ["research", "document"]},
+            },
+        },
+    }
+
+
+def load_config(config_path: Path | None = None) -> dict[str, Any]:
+    """
+    Loads .orch/config.json with defaults for missing fields.
+
+    If file doesn't exist, returns full default config.
+
+    Raises:
+        ConfigError: File exists but contains invalid JSON.
+    """
+    path = config_path or CONFIG_PATH
+    cfg = default_config()
+    if not path.exists():
+        return cfg
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"Invalid config JSON at {path}: {exc}") from exc
+    # Deep-merge loaded over defaults (top-level keys only for simplicity)
+    for key, val in loaded.items():
+        if isinstance(val, dict) and isinstance(cfg.get(key), dict):
+            cfg[key].update(val)
+        else:
+            cfg[key] = val
+    return cfg
+
+
+# ---------------------------------------------------------------------------
+# Retry policy
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RetryPolicy:
+    """Retry configuration for a tier or task_type."""
+    max_attempts: int
+    base_delay_s: float
+    cap_s: float
+
+    @classmethod
+    def for_tier(cls, tier: str, config: dict) -> "RetryPolicy":
+        """Loads policy from config defaults for the given tier."""
+        defaults = config.get("retry_policy", {}).get("defaults_by_tier", {})
+        t = Tier(tier) if tier in (t.value for t in Tier) else Tier.STANDARD
+        d = defaults.get(t.value, {})
+        return cls(
+            max_attempts=d.get("max_attempts", t.default_max_attempts),
+            base_delay_s=d.get("base_delay_s", t.default_base_delay_s),
+            cap_s=d.get("cap_s", 600.0),
+        )
+
+    @classmethod
+    def for_task(cls, task_type: str, tier: str, config: dict) -> "RetryPolicy":
+        """Loads policy with task_type override precedence over tier defaults."""
+        overrides = config.get("retry_policy", {}).get("overrides_by_task_type", {})
+        if task_type and task_type in overrides:
+            ov = overrides[task_type]
+            # Start from tier defaults, then apply overrides
+            base = cls.for_tier(tier, config)
+            return cls(
+                max_attempts=ov.get("max_attempts", base.max_attempts),
+                base_delay_s=ov.get("base_delay_s", base.base_delay_s),
+                cap_s=ov.get("cap_s", base.cap_s),
+            )
+        return cls.for_tier(tier, config)
+
+
+def backoff_seconds(
+    attempts: int,
+    base_delay_s: float = 30.0,
+    cap_s: float = 600.0,
+    jitter_range: tuple[float, float] = (0.8, 1.2),
+) -> float:
+    """
+    Computes exponential backoff with multiplicative jitter.
+
+    formula: min(base * 2^(attempts-1), cap) * uniform(jitter_range)
+
+    Args:
+        attempts: Attempt number that just failed (>= 1).
+        base_delay_s: Base delay in seconds for the first retry.
+        cap_s: Maximum delay before jitter.
+        jitter_range: (low, high) multiplicative jitter.
+
+    Returns:
+        Seconds to wait before next retry (>= 0).
+    """
+    if attempts < 1:
+        attempts = 1
+    raw = min(base_delay_s * (2 ** (attempts - 1)), cap_s)
+    return raw * random.uniform(*jitter_range)
+
+
+def load_retry_policy(
+    tier: str,
+    task_type: str | None = None,
+    config_path: Path | None = None,
+) -> RetryPolicy:
+    """
+    Loads retry policy from config with task_type override precedence.
+
+    Args:
+        tier: Task tier (critical/standard/bulk).
+        task_type: Optional task_type for override lookup.
+        config_path: Override default config path.
+
+    Returns:
+        RetryPolicy to apply.
+    """
+    cfg = load_config(config_path)
+    return RetryPolicy.for_task(task_type or "", tier, cfg)
+
+
+def should_retry(task: TaskState, policy: RetryPolicy) -> bool:
+    """
+    Returns True if task should be retried after a failure.
+
+    Rules (in order):
+      - last_failure_retryable is False → False (immediate DLQ)
+      - attempts >= policy.max_attempts → False (max exhausted)
+      - otherwise → True
+    """
+    if task.last_failure_retryable is False:
+        return False
+    if task.attempts >= policy.max_attempts:
+        return False
+    return True
+
+
+def tasks_ready_for_retry(state: OrchState, now: str) -> list[TaskState]:
+    """
+    Returns scheduled tasks whose next_retry_at has passed.
+
+    Args:
+        state: Current OrchState.
+        now:   Current UTC time as ISO 8601 string.
+
+    Returns:
+        List of TaskState objects ready to be retried. Empty if none.
+    """
+    now_dt = parse_iso(now)
+    result: list[TaskState] = []
+    for task in state.tasks.values():
+        if task.status != TaskStatus.SCHEDULED:
+            continue
+        if task.next_retry_at is None:
+            result.append(task)
+            continue
+        if parse_iso(task.next_retry_at) <= now_dt:
+            result.append(task)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------------------------
 
@@ -1321,4 +1521,12 @@ __all__ = [
     "apply_event",
     "reduce_all",
     "stale_tasks",
+    # Config and retry
+    "default_config",
+    "load_config",
+    "RetryPolicy",
+    "backoff_seconds",
+    "load_retry_policy",
+    "should_retry",
+    "tasks_ready_for_retry",
 ]

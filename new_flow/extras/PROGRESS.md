@@ -10,7 +10,7 @@ Last updated: 2026-04-21
 | 1 | `orch_core.py` — foundation | ✅ Complete + reviewed (1.8 deferred) |
 | 2 | CLI skills | ✅ Complete (2.4 skipped — depende de 1.8 deferida) |
 | 3 | Orchestrator single-phase | ✅ Complete (3.7 snapshot part deferred with 1.8) |
-| 4 | Robustness | ⏳ Not started |
+| 4 | Robustness | 🔄 In progress (4.1 done) |
 | 5 | Phase lifecycle | ⏳ Not started |
 | 6 | Production workers | ⏳ Not started |
 | 7 | Hardening | ⏳ Not started |
@@ -128,3 +128,18 @@ new_flow/dist2/
 | 3.7 | `on_stop.py` + métricas (snapshot parte deferida com 1.8) | `.claude/hooks/on_stop.py` | ✅ 7 tests |
 
 **Note on `phase_entered` schema:** requires both `phase` and `order` fields. Discovered during 3.1 manual validation.
+
+---
+
+## Phase 4 — Robustness (in progress)
+
+| Task | Description | Deliverables | Status |
+|------|-------------|--------------|--------|
+| 4.1 | `backoff_seconds`, `RetryPolicy`, `should_retry`, `tasks_ready_for_retry`, `load_config` | `orch_core.py` + `test_retry.py` | ✅ 31 tests |
+| 4.2 | `task_scheduled_retry` + `task_retried` in orchestrator + reducer | Updated `orchestrator.md` + `orch_core.py` | ⏳ Not started |
+| 4.3 | Circuit breaker — `evaluate_circuit_state()`, reset script | `orch_core.py` + `scripts/circuit_breaker.py` | ⏳ Not started |
+| 4.4 | `verify_and_recover` — `--recover --confirm` mode | Updated `verify.py` | ⏳ Not started |
+| 4.5 | `preflight.py` — local and remote checks | `scripts/preflight.py` | ⏳ Not started |
+| 4.6 | DLQ triage + escalations (E03, E04, E06) | `scripts/dlq_triage.py` | ⏳ Not started |
+
+**Test count: 334 total.**
