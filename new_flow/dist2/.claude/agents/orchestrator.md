@@ -198,6 +198,21 @@ Emit one `task_dlq` per cascaded task. After all cascades, re-read state. The lo
 
 After emitting stale failures and DLQ cascades, re-read state before proceeding.
 
+**Retry re-queue:** after DLQ cascade, scan all tasks with `status = "scheduled"`. For each, compare `task.next_retry_at` against current UTC time. If `next_retry_at` is null OR `next_retry_at <= now`:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type task_retried \
+  --task-id <task_id> \
+  --attempt <task.attempts + 1> \
+  --data '{"phase":"<task.phase>","previous_attempt":<task.attempts>,"scheduled_retry_seq":<scheduled_retry_seq>}'
+```
+
+Where `scheduled_retry_seq` is the seq of the `task_scheduled_retry` event (found in `task.evidence`). Emit one `task_retried` per expired scheduled task. After all re-queues, re-read state.
+
+**Important:** If a task is scheduled but `next_retry_at` is still in the future, do NOT emit `task_retried`. The task will be picked up in a future invocation.
+
 Stop the loop if:
 - No tasks have `status = "ready"` → break
 - `circuit_breaker_tripped` is present in state → break (record issue)
@@ -253,8 +268,8 @@ The Agent tool call is **blocking** — waits for the worker to complete before 
 #### 6.4 — Verify terminal event
 
 After the Agent call returns, read state and check `state.tasks[task_id].status`:
-- `completed`, `failed`, or `dlq` → terminal emitted. Continue.
-- `running` → worker exited without terminal. Synthesize:
+- `completed` or `dlq` → terminal emitted. Proceed to 6.5.
+- `running` → worker exited without terminal. Synthesize before proceeding to 6.5:
   ```bash
   python3 .claude/skills/orch-log/scripts/append.py \
     --agent orchestrator \
@@ -263,8 +278,45 @@ After the Agent call returns, read state and check `state.tasks[task_id].status`
     --attempt <attempt> \
     --data '{"phase":"<task.phase>","reason":"worker_exited_without_terminal","retryable":true,"synthesized_by":"orchestrator_cycle"}'
   ```
+- `failed` → proceed to 6.5 for retry decision.
 
-Repeat 6.2–6.4 for the remaining tasks in the batch, then return to 6.0 for the next iteration.
+#### 6.5 — Retry decision
+
+Re-read state. If `state.tasks[task_id].status == "failed"`:
+
+Load retry policy for this task:
+- `tier` = `task.tier`
+- `task_type` = `task.task_type`
+- Use `default_config()` (no config file yet; Task 4.5 adds `preflight.py` which validates config)
+
+Apply `should_retry(task, policy)`:
+
+**If True** — schedule retry:
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type task_scheduled_retry \
+  --task-id <task_id> \
+  --data '{"phase":"<task.phase>","next_retry_at":"<now + backoff_seconds>","backoff_seconds":<backoff>,"previous_failure_seq":<last_failure_seq>}'
+```
+
+Where:
+- `backoff` = `backoff_seconds(task.attempts, policy.base_delay_s, policy.cap_s)`
+- `next_retry_at` = current UTC + `backoff` seconds, formatted as ISO 8601
+- `last_failure_seq` = the seq of the most recent `task_failed` event (found in `task.evidence`)
+
+**If False** — send to DLQ:
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type task_dlq \
+  --task-id <task_id> \
+  --data '{"phase":"<task.phase>","reason":"<max_attempts_exceeded|non_retryable>","last_error":"<task.last_error or reason from last task_failed>"}'
+```
+
+Use `reason = "max_attempts_exceeded"` if `task.attempts >= policy.max_attempts`, else `"non_retryable"`.
+
+Repeat 6.2–6.5 for the remaining tasks in the batch, then return to 6.0 for the next iteration.
 
 **Why the loop matters for deps:** When task A completes, the reducer automatically promotes tasks whose only unmet dep was A to `ready`. The next iteration detects them and dispatches. This handles serial chains (A→B→C) without re-invocation.
 
@@ -369,6 +421,6 @@ Tasks with a phase not matching any declared phase remain `pending` indefinitely
 
 - **Worker routing**: all task types map to `test-worker`. Phase-specific routing added in Task 5.3.
 - **Multi-phase**: only the `default` single-phase workflow is auto-initialized. Full multi-phase support added in Task 5.4.
-- **Retry scheduling**: failed tasks are not automatically retried. Retry logic added in Tasks 4.1–4.2.
+- **Retry scheduling**: implemented in Task 4.2. Failed tasks with `retryable=true` and `attempts < max_attempts` are scheduled with exponential backoff. Non-retryable or exhausted tasks go to DLQ.
 - **Concurrency limit**: hardcoded at 2. Configurable via `.orch/config.json` in Task 4.5.
 - **Periodic snapshots**: `should_snapshot()` / `save_snapshot()` not yet implemented (Task 1.8 deferred). The `on_stop.py` hook writes session metrics on every session end.
