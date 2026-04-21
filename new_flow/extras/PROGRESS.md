@@ -9,7 +9,7 @@ Last updated: 2026-04-21
 | 0 | Setup | ✅ Complete |
 | 1 | `orch_core.py` — foundation | ✅ Complete + reviewed (1.8 deferred) |
 | 2 | CLI skills | ✅ Complete (2.4 skipped — depende de 1.8 deferida) |
-| 3 | Orchestrator single-phase | 🔄 In progress (3.1 done) |
+| 3 | Orchestrator single-phase | ✅ Complete (3.7 snapshot part deferred with 1.8) |
 | 4 | Robustness | ⏳ Not started |
 | 5 | Phase lifecycle | ⏳ Not started |
 | 6 | Production workers | ⏳ Not started |
@@ -125,6 +125,6 @@ new_flow/dist2/
 | 3.4 | Múltiplas tasks e deps | Updated `orchestrator.md` | ✅ Validated |
 | 3.5 | Detecção de stale tasks | `orch_core.stale_tasks()` + `orchestrator.md` | ✅ 12 tests |
 | 3.6 | DLQ cascade por dep falhada | Updated `orchestrator.md` + reducer | ✅ 11 tests |
-| 3.7 | Snapshot periódico e relatório final | `on_stop.py` + `orchestrator.md` | ⏳ |
+| 3.7 | `on_stop.py` + métricas (snapshot parte deferida com 1.8) | `.claude/hooks/on_stop.py` | ✅ 7 tests |
 
 **Note on `phase_entered` schema:** requires both `phase` and `order` fields. Discovered during 3.1 manual validation.

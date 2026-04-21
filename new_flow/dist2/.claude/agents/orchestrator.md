@@ -371,3 +371,4 @@ Tasks with a phase not matching any declared phase remain `pending` indefinitely
 - **Multi-phase**: only the `default` single-phase workflow is auto-initialized. Full multi-phase support added in Task 5.4.
 - **Retry scheduling**: failed tasks are not automatically retried. Retry logic added in Tasks 4.1–4.2.
 - **Concurrency limit**: hardcoded at 2. Configurable via `.orch/config.json` in Task 4.5.
+- **Periodic snapshots**: `should_snapshot()` / `save_snapshot()` not yet implemented (Task 1.8 deferred). The `on_stop.py` hook writes session metrics on every session end.
