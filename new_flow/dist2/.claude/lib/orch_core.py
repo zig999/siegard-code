@@ -1230,6 +1230,41 @@ def reduce_all() -> OrchState:
     return state
 
 
+def stale_tasks(state: OrchState, now: str) -> list[TaskState]:
+    """
+    Returns tasks in `running` status whose last activity exceeds the tier's
+    stale threshold.
+
+    A task is stale when (now - last_event_at) > tier.default_stale_seconds.
+    `last_event_at` is updated on every event for the task, including
+    task_progress, so recent heartbeats reset the staleness timer.
+
+    Args:
+        state: Current OrchState (from reduce_all or reduce_incremental).
+        now:   Current UTC time as ISO 8601 string (e.g. from now_iso()).
+
+    Returns:
+        List of TaskState objects that are stale. Empty list if none.
+    """
+    now_dt = parse_iso(now)
+    result: list[TaskState] = []
+    for task in state.tasks.values():
+        if task.status != TaskStatus.RUNNING:
+            continue
+        if task.last_event_at is None:
+            continue
+        try:
+            tier = Tier(task.tier)
+        except ValueError:
+            tier = Tier.STANDARD
+        threshold = tier.default_stale_seconds
+        last_dt = parse_iso(task.last_event_at)
+        elapsed = (now_dt - last_dt).total_seconds()
+        if elapsed > threshold:
+            result.append(task)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------------------------
@@ -1283,4 +1318,5 @@ __all__ = [
     # Reducer
     "apply_event",
     "reduce_all",
+    "stale_tasks",
 ]

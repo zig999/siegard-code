@@ -155,12 +155,32 @@ Run until no ready tasks remain, the circuit breaker is tripped, or 20 iteration
 
 **Each iteration:**
 
-#### 6.0 — Check loop conditions
+#### 6.0 — Check loop conditions and detect stale tasks
 
 Re-read state:
 ```bash
 python3 .claude/skills/orch-state/scripts/reduce.py
 ```
+
+**Stale detection:** before checking for ready tasks, scan all tasks with `status = "running"`. For each, compute elapsed seconds since `last_event_at` using the current UTC time. Compare against the tier threshold:
+
+| Tier | stale_seconds |
+|------|--------------|
+| `critical` | 600 |
+| `standard` | 300 |
+| `bulk` | 120 |
+
+For each stale task (elapsed > threshold):
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type task_failed \
+  --task-id <task_id> \
+  --attempt <current_attempt> \
+  --data '{"phase":"<task.phase>","reason":"stale_timeout","retryable":true,"synthesized_by":"stale_detection"}'
+```
+
+After emitting stale failures, re-read state before proceeding.
 
 Stop the loop if:
 - No tasks have `status = "ready"` → break
