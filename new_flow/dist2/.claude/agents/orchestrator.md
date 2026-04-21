@@ -147,6 +147,18 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"default","deps":[...],"tier":"standard","type":"<type>","spec":"<spec>"}'
 ```
 
+**`task_claimed` required fields:** `phase`, `worker_type`, `worker_id`. Example:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type task_claimed \
+  --task-id <task_id> \
+  --data '{"phase":"default","worker_type":"test-worker","worker_id":"<worker_id>"}'
+```
+
+Note: `task_claimed` is reserved for Task 3.3 when worker spawning is enabled.
+
 After emission, re-run Step 2 to get updated state.
 
 ---
