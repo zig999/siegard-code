@@ -325,9 +325,14 @@ references:
 
 > **Version source:** read from the `version:` field in each spec file's frontmatter or YAML header. If absent, use git short hash at planning time, or `"unknown"` as fallback — never omit the field.
 
-> **Improve mode — spec updated (`spec_change_status: completed`):** set `references` to the files listed in `improve_scope.affected_specs`, loading only the sections specified. Do not scan `{SPECS_DIR}` globally.
+> **Evolution mode (`handoff_type` is `fast_track` or `major_evolution`):** Read the `Changed files` list from the activation prompt (sourced from `handoff-manifest.yaml → change_summary.changed_files`). Set `references` to only those files, with the specific sections changed. Do not scan `{SPECS_DIR}` globally.
+>
+> Also honour `dev_impact` from the activation prompt:
+> - `no_action` — no TCs required; output an empty backlog and emit `task_completed`.
+> - `reevaluate_task_contracts` — update existing TCs that reference the changed files.
+> - `stop_domain_task_contracts` — emit `task_failed(retryable: false, reason: "dev_impact:stop_domain_task_contracts")` so the orchestrator can escalate.
 
-> **Improve mode — divergence accepted (`spec_change_status: divergence_accepted`) or no approved spec for the affected area:** set `references: [{path: codebase, section: "Developer discovers via inspection — scope: {affected_specs paths}"}]`
+> **Evolution mode — `changed_files` empty or spec not available for affected area:** set `references: [{path: codebase, section: "Developer discovers via inspection — scope: <changed_files paths>"}]`
 
 ### input.known_context
 
