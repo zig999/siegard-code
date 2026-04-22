@@ -25,6 +25,7 @@ def tmp_orch(tmp_path, monkeypatch):
     monkeypatch.setattr(orch_core, "AUDIT_DIR", orch_dir / "audit")
     monkeypatch.setattr(orch_core, "METRICS_DIR", orch_dir / "metrics")
     monkeypatch.setattr(orch_core, "BLOBS_DIR", orch_dir / "blobs")
+    monkeypatch.setattr(orch_core, "WORKERS_DIR", orch_dir / "workers")
     monkeypatch.setattr(orch_core, "CONFIG_PATH", orch_dir / "config.json")
 
     orch_core.ensure_dirs()

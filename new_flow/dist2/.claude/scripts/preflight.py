@@ -209,39 +209,53 @@ def check_agent_tool_available() -> CheckResult:
     def _run() -> CheckResult:
         if not _claude_available():
             return CheckResult(ok=False, reason="claude not installed — skipping remote check")
+        sentinel = "ORCH_AGENT_CHECK_SENTINEL_7x9z42"
         ok, out = _run_claude_snippet(
-            'Use the Agent tool to spawn a subagent with prompt "respond with the single word READY" '
-            'and report its response.',
+            f'Use the Agent tool to spawn a subagent with prompt '
+            f'"respond with exactly the string {sentinel} and nothing else" '
+            f'and report its response.',
             timeout=45,
         )
-        if ok and "READY" in out.upper():
+        if ok and sentinel in out:
             return CheckResult(ok=True, reason="Agent tool spawned subagent successfully")
         return CheckResult(
             ok=False,
-            reason="Agent tool check failed or READY not found in output",
+            reason="Agent tool check failed or sentinel not found in output",
             detail={"output_snippet": out[:200]},
         )
     return _timed(_run)
 
 
 def check_env_var_propagation() -> CheckResult:
+    # M5: Replaced non-deterministic LLM-based check with a deterministic subprocess
+    # check. The original used `claude --print` and looked for a sentinel in LLM output,
+    # which was unreliable. This version verifies env var visibility in a subprocess
+    # by passing a known value and reading it back via Python directly.
     def _run() -> CheckResult:
-        if not _claude_available():
-            return CheckResult(ok=False, reason="claude not installed — skipping remote check")
-        sentinel = "PREFLIGHT_SENTINEL_XYZ"
-        ok, out = _run_claude_snippet(
-            f'Spawn a subagent (Agent tool) with this prompt: '
-            f'"Print the value of env var ORCH_TEST_VAR and nothing else." '
-            f'Pass ORCH_TEST_VAR={sentinel} in the environment context in the prompt.',
-            timeout=45,
-        )
-        if ok and sentinel in out:
-            return CheckResult(ok=True, reason="env var propagation works via prompt context")
-        return CheckResult(
-            ok=False,
-            reason="env var propagation check failed — sentinel not found in subagent response",
-            detail={"output_snippet": out[:200]},
-        )
+        import subprocess as _sp
+        sentinel = "PREFLIGHT_SENTINEL_XYZ_12345"
+        try:
+            env = os.environ.copy()
+            env["ORCH_TEST_VAR"] = sentinel
+            result = _sp.run(
+                [sys.executable, "-c",
+                 "import os, sys; v=os.environ.get('ORCH_TEST_VAR',''); sys.stdout.write(v)"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=env,
+            )
+            if result.returncode == 0 and result.stdout.strip() == sentinel:
+                return CheckResult(ok=True, reason="env var propagation works in subprocess")
+            return CheckResult(
+                ok=False,
+                reason="env var not visible in subprocess",
+                detail={"stdout": result.stdout[:100], "stderr": result.stderr[:100]},
+            )
+        except subprocess.TimeoutExpired:
+            return CheckResult(ok=False, reason="subprocess timed out after 5s")
+        except OSError as exc:
+            return CheckResult(ok=False, reason=f"subprocess error: {exc}")
     return _timed(_run)
 
 

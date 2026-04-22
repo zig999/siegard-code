@@ -11,13 +11,14 @@ import pytest
 
 LIB = Path(__file__).parents[1] / ".claude" / "lib"
 HOOKS_DIR = Path(__file__).parents[1] / ".claude" / "hooks"
+SCRIPTS_DIR = Path(__file__).parents[1] / ".claude" / "scripts"
 SKILLS_DIR = Path(__file__).parents[1] / ".claude" / "skills"
 APPEND = str(SKILLS_DIR / "orch-log" / "scripts" / "append.py")
 EMIT = str(SKILLS_DIR / "orch-report" / "scripts" / "emit.py")
-TRIAGE = str(HOOKS_DIR / "dlq_triage.py")
+TRIAGE = str(SCRIPTS_DIR / "dlq_triage.py")
 
 sys.path.insert(0, str(LIB))
-sys.path.insert(0, str(HOOKS_DIR))
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 from orch_core import (
     OrchState,

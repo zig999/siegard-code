@@ -6,15 +6,17 @@ Invariant enforced: every orchestrated worker invocation ends with exactly one
 terminal event (task_completed or task_failed). If the worker stops silently
 (crash, timeout, context overflow), this hook emits the missing terminal.
 
-Reads (from environment, set by orchestrator before spawning):
-  ORCH_TASK_ID   — task being worked on
-  ORCH_ATTEMPT   — attempt number (integer)
-  ORCH_WORKER_ID — worker identifier (used as agent in synthesized event)
+C1/C7 fix: reads worker context from .orch/workers/<worker_id>.json registry
+instead of env vars. This works correctly under parallel dispatch (multiple
+workers running simultaneously) and regardless of the hook's CWD.
 
-If any of these vars is absent: no-op (not an orchestrated worker context).
-If a terminal event already exists for (task_id, attempt): no-op.
-Otherwise: synthesizes task_failed(retryable=true).
+The orchestrator writes a registry entry (via register_worker()) before
+spawning each Agent, and removes it (via unregister_worker()) after Step 6.4
+confirms a terminal event.
+
+If the registry is empty or absent: no-op (not an orchestrated worker context).
 """
+import json
 import os
 import sys
 from pathlib import Path
@@ -22,78 +24,108 @@ from pathlib import Path
 _LIB = Path(__file__).resolve().parents[1] / "lib"
 sys.path.insert(0, str(_LIB))
 
-from orch_core import EventType, append_event, read_events_filtered
+from orch_core import (
+    EventType,
+    TaskStatus,
+    append_event,
+    get_active_workers,
+    reduce_all,
+    unregister_worker,
+    ORCH_DIR,
+)
 
 
-def _task_phase(task_id: str) -> str:
-    """Returns the phase of a task from its task_created event, or '' if not found."""
-    try:
-        events = read_events_filtered(
-            task_id=task_id,
-            event_type=EventType.TASK_CREATED.value,
-        )
-        if events:
-            return events[0].data.get("phase", "")
-    except Exception:  # noqa: BLE001
-        pass
-    return ""
-
-
-def _has_terminal(task_id: str, attempt: int) -> bool:
-    """Returns True if a terminal event exists for (task_id, attempt)."""
-    try:
-        events = read_events_filtered(task_id=task_id)
-        for event in events:
-            if (
-                event.attempt == attempt
-                and EventType.is_terminal_for_attempt(event.event_type)
-            ):
-                return True
-    except Exception:  # noqa: BLE001
-        pass
+def _has_terminal(task_id: str, attempt: int, state) -> bool:
+    """Returns True if a terminal event exists for (task_id, attempt) in derived state."""
+    task = state.tasks.get(task_id)
+    if task is None:
+        return False
+    # Terminal for attempt: task is completed/dlq (final) OR task has moved past this attempt
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.DLQ):
+        return True
+    # If attempts counter exceeds this attempt, a terminal was emitted for it
+    if task.attempts > attempt:
+        return True
+    # Status is FAILED, SCHEDULED, or RUNNING with a matching attempt means
+    # task_failed was emitted (FAILED/SCHEDULED) or it's still running (RUNNING)
+    if task.status in (TaskStatus.FAILED, TaskStatus.SCHEDULED) and task.attempts == attempt:
+        return True
     return False
 
 
+def _get_task_phase(task_id: str, state) -> str:
+    """Returns phase for task_id from derived state, or empty string."""
+    task = state.tasks.get(task_id)
+    return task.phase if task else ""
+
+
 def main() -> int:
-    # Consume stdin — Claude Code hooks receive JSON via stdin; we don't use it.
+    # Consume stdin — Claude Code passes SubagentStop JSON via stdin; not used here.
     try:
         sys.stdin.read()
     except Exception:  # noqa: BLE001
         pass
 
-    task_id = os.environ.get("ORCH_TASK_ID")
-    attempt_str = os.environ.get("ORCH_ATTEMPT")
-    worker_id = os.environ.get("ORCH_WORKER_ID")
+    log_file = ORCH_DIR / "log.jsonl"
+    if not log_file.exists():
+        return 0  # no orchestrated workflow in progress
 
-    if not all([task_id, attempt_str, worker_id]):
-        return 0  # not an orchestrated worker context
+    workers = get_active_workers()
+    if not workers:
+        return 0  # no registered workers — not an orchestrated context
 
     try:
-        attempt = int(attempt_str)
-    except (ValueError, TypeError):
+        state = reduce_all()
+    except Exception:  # noqa: BLE001
+        # If state derivation fails, we cannot make safe decisions — exit cleanly.
         return 0
 
-    if _has_terminal(task_id, attempt):
-        return 0  # terminal already emitted — nothing to do
+    for entry in workers:
+        task_id = entry.get("task_id")
+        attempt = entry.get("attempt")
+        worker_id = entry.get("worker_id")
 
-    phase = _task_phase(task_id)
+        if not all([task_id, attempt is not None, worker_id]):
+            continue
 
-    try:
-        append_event(
-            agent=worker_id,
-            event_type=EventType.TASK_FAILED.value,
-            task_id=task_id,
-            attempt=attempt,
-            data={
-                "phase": phase,
-                "reason": "worker_stopped_without_terminal_event",
-                "retryable": True,
-                "synthesized_by": worker_id,
-            },
-        )
-    except Exception:  # noqa: BLE001
-        # Best-effort: don't crash the hook even if append fails.
-        pass
+        if _has_terminal(task_id, attempt, state):
+            # Terminal already emitted — clean up registry entry if still present.
+            unregister_worker(worker_id)
+            continue
+
+        phase = _get_task_phase(task_id, state)
+
+        try:
+            append_event(
+                agent=worker_id,
+                event_type=EventType.TASK_FAILED.value,
+                task_id=task_id,
+                attempt=attempt,
+                data={
+                    "phase": phase,
+                    "reason": "worker_stopped_without_terminal_event",
+                    "retryable": True,
+                    "synthesized_by": worker_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Log to stderr so the failure is visible in Claude Code hook output.
+            # Do not crash — the hook must always exit cleanly.
+            import json as _json
+            print(
+                _json.dumps({
+                    "hook": "on_subagent_stop",
+                    "error": "append_failed",
+                    "worker_id": worker_id,
+                    "task_id": task_id,
+                    "attempt": attempt,
+                    "detail": str(exc),
+                }),
+                file=sys.stderr,
+            )
+
+        # Leave registry entry in place — orchestrator Step 6.4 will clean up
+        # after verifying the synthesized terminal is in state.
 
     return 0
 

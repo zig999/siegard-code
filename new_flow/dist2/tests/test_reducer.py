@@ -199,8 +199,9 @@ class TestIllegalTransitions:
             apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="t_001",
                                     data={"phase": "dev", "worker_type": "impl", "worker_id": "w2"}))
 
-    def test_completed_task_cannot_fail(self):
-        """Scenario 3.7: completed → failed raises."""
+    def test_completed_task_failed_is_noop(self):
+        """Scenario 3.7 (C2 fix): task_failed on COMPLETED task is a no-op, not an error.
+        This prevents log corruption when on_subagent_stop hook races with Step 6.4."""
         state = fresh()
         apply_event(state, _evt(EventType.TASK_CREATED, task_id="t_001",
                                 data=_task_data(deps=[])))
@@ -209,9 +210,10 @@ class TestIllegalTransitions:
         apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="t_001",
                                 data={"phase": "dev", "artifacts": [], "summary": "done"}))
 
-        with pytest.raises(IllegalTransition):
-            apply_event(state, _evt(EventType.TASK_FAILED, task_id="t_001",
-                                    data={"phase": "dev", "reason": "x", "retryable": False}))
+        # Must NOT raise — idempotent no-op
+        apply_event(state, _evt(EventType.TASK_FAILED, task_id="t_001",
+                                data={"phase": "dev", "reason": "x", "retryable": False}))
+        assert state.tasks["t_001"].status == TaskStatus.COMPLETED
 
 
 # ---------------------------------------------------------------------------
@@ -382,12 +384,45 @@ def _append_dev_workflow(n: int):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3.14: duplicate task_completed → escalation / IllegalTransition
+# Scenario 3.14: duplicate terminal events → idempotent no-op (C2 fix)
 # ---------------------------------------------------------------------------
 
-class TestDuplicateCompleted:
-    def test_duplicate_completed_raises(self):
-        """Scenario 3.14."""
+class TestDuplicateTerminals:
+    def test_duplicate_completed_is_noop(self):
+        """C2: duplicate task_completed is idempotent — no exception, state unchanged."""
+        state = fresh()
+        apply_event(state, _evt(EventType.TASK_CREATED, task_id="t_001", data=_task_data(deps=[])))
+        apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="t_001", attempt=1,
+                                data={"phase": "dev", "worker_type": "impl", "worker_id": "w"}))
+        apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="t_001", attempt=1,
+                                data={"phase": "dev", "artifacts": ["a.out"], "summary": "done"}))
+
+        # Second task_completed must be a no-op (not raise)
+        apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="t_001", attempt=1,
+                                data={"phase": "dev", "artifacts": [], "summary": "dup"}))
+
+        assert state.tasks["t_001"].status == TaskStatus.COMPLETED
+        # Artifacts from the FIRST completed must be preserved (no-op = no mutation)
+        assert "a.out" in state.tasks["t_001"].artifacts
+
+    def test_duplicate_failed_is_noop(self):
+        """C2: duplicate task_failed on already-FAILED task is idempotent."""
+        state = fresh()
+        apply_event(state, _evt(EventType.TASK_CREATED, task_id="t_001", data=_task_data(deps=[])))
+        apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="t_001", attempt=1,
+                                data={"phase": "dev", "worker_type": "impl", "worker_id": "w"}))
+        apply_event(state, _evt(EventType.TASK_FAILED, task_id="t_001", attempt=1,
+                                data={"phase": "dev", "reason": "first_fail", "retryable": True}))
+
+        apply_event(state, _evt(EventType.TASK_FAILED, task_id="t_001", attempt=1,
+                                data={"phase": "dev", "reason": "dup_fail", "retryable": False}))
+
+        assert state.tasks["t_001"].status == TaskStatus.FAILED
+        # Reason from FIRST failure preserved (no-op = no mutation)
+        assert state.tasks["t_001"].last_failure_reason == "first_fail"
+
+    def test_failed_on_completed_is_noop(self):
+        """C2: task_failed on COMPLETED task (orchestrator/hook race) is idempotent."""
         state = fresh()
         apply_event(state, _evt(EventType.TASK_CREATED, task_id="t_001", data=_task_data(deps=[])))
         apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="t_001", attempt=1,
@@ -395,9 +430,70 @@ class TestDuplicateCompleted:
         apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="t_001", attempt=1,
                                 data={"phase": "dev", "artifacts": [], "summary": "done"}))
 
-        with pytest.raises(IllegalTransition):
-            apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="t_001", attempt=1,
-                                    data={"phase": "dev", "artifacts": [], "summary": "dup"}))
+        # Hook synthesizes task_failed after orchestrator already completed it — must be no-op
+        apply_event(state, _evt(EventType.TASK_FAILED, task_id="t_001", attempt=1,
+                                data={"phase": "dev", "reason": "hook_race", "retryable": True}))
+
+        assert state.tasks["t_001"].status == TaskStatus.COMPLETED
+
+
+# ---------------------------------------------------------------------------
+# C8: phase_entered without prior phase_transitioned raises IllegalTransition
+# ---------------------------------------------------------------------------
+
+class TestPhaseEnteredError:
+    def test_phase_entered_undeclared_phase_raises(self):
+        """C8: phase_entered for undeclared phase raises IllegalTransition."""
+        state = OrchState()
+        apply_event(state, _evt(EventType.PHASE_DECLARED, data={
+            "workflow_id": "wf",
+            "phases": [{"name": "sdd", "order": 1, "required": True}],
+        }))
+        # "dev" was never declared
+        with pytest.raises(IllegalTransition, match="not declared"):
+            apply_event(state, _evt(EventType.PHASE_ENTERED, data={"phase": "dev", "order": 1}))
+
+    def test_phase_entered_while_another_active_raises(self):
+        """C8: second phase_entered while a phase is already active raises IllegalTransition."""
+        state = OrchState()
+        apply_event(state, _evt(EventType.PHASE_DECLARED, data={
+            "workflow_id": "wf",
+            "phases": [
+                {"name": "sdd", "order": 1, "required": True},
+                {"name": "dev", "order": 2, "required": True},
+            ],
+        }))
+        apply_event(state, _evt(EventType.PHASE_ENTERED, data={"phase": "sdd", "order": 1}))
+
+        # Attempt to enter dev without first closing sdd via phase_transitioned
+        with pytest.raises(IllegalTransition, match="already active"):
+            apply_event(state, _evt(EventType.PHASE_ENTERED, data={"phase": "dev", "order": 2}))
+
+        # State must be unchanged after the failed transition
+        assert state.phases["sdd"].status == PhaseStatus.ACTIVE
+        assert state.current_phase == "sdd"
+
+    def test_phase_entered_after_transitioned_succeeds(self):
+        """C8: phase_entered for next phase after proper phase_transitioned succeeds."""
+        state = OrchState()
+        apply_event(state, _evt(EventType.PHASE_DECLARED, data={
+            "workflow_id": "wf",
+            "phases": [
+                {"name": "sdd", "order": 1, "required": True},
+                {"name": "dev", "order": 2, "required": True},
+            ],
+        }))
+        apply_event(state, _evt(EventType.PHASE_ENTERED, data={"phase": "sdd", "order": 1}))
+        apply_event(state, _evt(EventType.PHASE_EXIT_APPROVED, data={
+            "phase": "sdd", "criteria_met": ["done"], "next_phase": "dev",
+        }))
+        apply_event(state, _evt(EventType.PHASE_TRANSITIONED, data={
+            "from_phase": "sdd", "to_phase": "dev", "evidence_seq": 2,
+        }))
+        # Now phase_entered for dev must succeed
+        apply_event(state, _evt(EventType.PHASE_ENTERED, data={"phase": "dev", "order": 2}))
+        assert state.phases["dev"].status == PhaseStatus.ACTIVE
+        assert state.current_phase == "dev"
 
 
 # ---------------------------------------------------------------------------

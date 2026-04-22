@@ -26,6 +26,18 @@ ORCH_WORKER_ID=<worker-id> python3 .claude/skills/orch-report/scripts/emit.py \
   [--data '<json-object>']
 ```
 
+### Environment variables (set by orchestrator in spawn prompt)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ORCH_WORKER_ID` | Yes | Worker identity — used as `agent` field in every emitted event |
+| `ORCH_TASK_ID` | Yes | Task assigned to this worker invocation |
+| `ORCH_ATTEMPT` | Yes | Current attempt number (1-based) |
+| `ORCH_PROJECT_DIR` | Yes | Absolute path to project root — used to resolve artifact paths |
+| `SPECS_DIR` | Phase-specific | Relative path to specs directory (set by sdd/dev/review orchestrators) |
+
+Workers **must** export all five variables as shell env vars before calling `emit.py`.
+
 ### Parameters
 
 | Parameter | Required | Description |
@@ -43,6 +55,38 @@ ORCH_WORKER_ID=<worker-id> python3 .claude/skills/orch-report/scripts/emit.py \
 | `progress` | `task_progress` |
 | `completed` | `task_completed` |
 | `failed` | `task_failed` |
+
+### `--data` schema by kind
+
+**`progress`** — intermediate status update:
+```json
+{
+  "message": "<human-readable status string>"
+}
+```
+
+**`completed`** — terminal success:
+```json
+{
+  "phase":     "<phase name — required>",
+  "artifacts": ["<relative path to output file>"],
+  "summary":   "<one-line outcome — optional>"
+}
+```
+`artifacts` paths are relative to `ORCH_PROJECT_DIR`. Exit criteria scripts read these paths to evaluate phase completion. Use the conventions below:
+- Dev workers: `<session_dir>/delivery/<task_id>-delivery.md`
+- QA workers: `<specs_dir>/qa/<task_id>-qa.md`
+- Planning workers: `<session_dir>/backlog/backlog.json`
+
+**`failed`** — terminal failure:
+```json
+{
+  "phase":     "<phase name — required>",
+  "reason":    "<error code or short description — required>",
+  "retryable": true
+}
+```
+Set `retryable: false` only for permanent failures (spec ambiguity, missing input, permission). Leave `true` for transient errors (tool failure, timeout, context overflow).
 
 ### Output
 

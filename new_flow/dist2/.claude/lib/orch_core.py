@@ -64,7 +64,10 @@ class ConfigError(OrchError):
 # Constants and paths
 # ---------------------------------------------------------------------------
 
-ORCH_DIR: Path = Path(".orch")
+# C7: Resolve project root from env var so hooks work regardless of CWD.
+_orch_root: Path = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
+
+ORCH_DIR: Path = _orch_root / ".orch"
 LOG_PATH: Path = ORCH_DIR / "log.jsonl"
 LOCK_PATH: Path = ORCH_DIR / "log.jsonl.lock"
 STATE_DIR: Path = ORCH_DIR / "state"
@@ -72,6 +75,7 @@ DLQ_DIR: Path = ORCH_DIR / "dlq"
 AUDIT_DIR: Path = ORCH_DIR / "audit"
 METRICS_DIR: Path = ORCH_DIR / "metrics"
 BLOBS_DIR: Path = ORCH_DIR / "blobs"
+WORKERS_DIR: Path = ORCH_DIR / "workers"
 CONFIG_PATH: Path = ORCH_DIR / "config.json"
 
 MAX_INLINE_PAYLOAD: int = 3500
@@ -82,7 +86,7 @@ SNAPSHOT_EVERY_N_EVENTS: int = 100
 
 def ensure_dirs() -> None:
     """Creates all .orch/ subdirectories if missing. Idempotent."""
-    for d in (ORCH_DIR, STATE_DIR, DLQ_DIR, AUDIT_DIR, METRICS_DIR, BLOBS_DIR):
+    for d in (ORCH_DIR, STATE_DIR, DLQ_DIR, AUDIT_DIR, METRICS_DIR, BLOBS_DIR, WORKERS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -153,6 +157,14 @@ def now_iso() -> str:
 def parse_iso(ts: str) -> datetime:
     """Parses ISO 8601 UTC timestamp string to datetime."""
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def _safe_parse_iso(ts: str) -> datetime | None:
+    """Parses ISO 8601 timestamp; returns None on any parse failure (never raises)."""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError, TypeError):
+        return None
 
 
 def sha256_hex(data: bytes) -> str:
@@ -694,7 +706,7 @@ def verify_and_recover(
         last_good_seq = from_seq - 1
 
         # Write the corrupt portion to a timestamped file
-        ts_tag = now_iso().replace(":", "-").replace("+", "Z").rstrip("Z")[:19].replace("T", "T")
+        ts_tag = now_iso().replace(":", "-").replace(".", "-").rstrip("Z")[:23]
         corrupt_filename = f"log.jsonl.corrupt.{ts_tag}"
         corrupt_rel_path = f".orch/{corrupt_filename}"
         corrupt_path = ORCH_DIR / corrupt_filename
@@ -724,7 +736,7 @@ def verify_and_recover(
         recovery_data: dict[str, Any] = {
             "seq_truncated_from": from_seq,
             "seq_truncated_to": last_good_seq,
-            "events_removed": max(events_removed, 1),
+            "events_removed": events_removed,
             "operator": operator,
             "corrupt_file_path": corrupt_rel_path,
             "hash_before_truncation": last_good_hash,
@@ -903,7 +915,7 @@ class TaskState:
     """Derived state for a single task."""
     task_id: str
     phase: str
-    status: str
+    status: "TaskStatus"
     deps: list[str]
     tier: str
     task_type: str
@@ -946,10 +958,17 @@ class TaskState:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "TaskState":
+        raw_status = d["status"]
+        try:
+            status = TaskStatus(raw_status)
+        except ValueError as exc:
+            raise ValueError(
+                f"unknown task status {raw_status!r} for task {d.get('task_id')!r}"
+            ) from exc
         return cls(
             task_id=d["task_id"],
             phase=d["phase"],
-            status=d["status"],
+            status=status,
             deps=d.get("deps", []),
             tier=d["tier"],
             task_type=d["task_type"],
@@ -1039,6 +1058,8 @@ class OrchState:
             "circuit_breaker": self.circuit_breaker,
             "last_seq": self.last_seq,
             "last_snapshot_seq": self.last_snapshot_seq,
+            # C3: expose failure_timestamps so orchestrator can evaluate circuit breaker
+            "failure_timestamps": self.failure_timestamps,
         }
 
     @classmethod
@@ -1054,6 +1075,7 @@ class OrchState:
         )
         obj.tasks = {k: TaskState.from_dict(v) for k, v in d.get("tasks", {}).items()}
         obj.phases = {k: PhaseState.from_dict(v) for k, v in d.get("phases", {}).items()}
+        obj.failure_timestamps = list(d.get("failure_timestamps", []))
         return obj
 
     def tasks_by_status(self, status: str) -> list["TaskState"]:
@@ -1071,12 +1093,24 @@ class OrchState:
 # ---------------------------------------------------------------------------
 
 def _deps_complete(task: TaskState, state: OrchState) -> bool:
-    """Returns True if all deps of task are completed."""
+    """Returns True if all deps are completed. Returns False for missing or non-terminal deps."""
     return all(
         state.tasks.get(dep_id) is not None
         and state.tasks[dep_id].status == TaskStatus.COMPLETED
         for dep_id in task.deps
     )
+
+
+def get_orphaned_dep_ids(task: TaskState, state: OrchState) -> list[str]:
+    """
+    Returns dep IDs that are referenced by task but absent from state.
+
+    Orphaned deps occur when crash recovery truncates task_created events for
+    dependency tasks, leaving the child task permanently blocked. The caller
+    (orchestrator dispatch loop) should cascade DLQ to the child task when this
+    returns a non-empty list.
+    """
+    return [dep_id for dep_id in task.deps if dep_id not in state.tasks]
 
 
 def _phase_is_active(phase_name: str, state: OrchState) -> bool:
@@ -1219,11 +1253,10 @@ def _handle_task_completed(state: OrchState, event: Event) -> None:
     if task_id is None or task_id not in state.tasks:
         return
     task = state.tasks[task_id]
-    if task.status == TaskStatus.COMPLETED:
-        # Duplicate terminal event — raise without mutating state further.
-        raise IllegalTransition(
-            f"task_completed: task {task_id!r} already completed (attempt {event.attempt})"
-        )
+    # C2: Idempotency — if already terminal, no-op. Prevents TOCTOU duplicate from
+    # on_subagent_stop hook and orchestrator Step 6.4 racing on the same task.
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.DLQ):
+        return
     if task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
             f"task_completed: task {task_id!r} is {task.status!r}, expected running"
@@ -1242,6 +1275,10 @@ def _handle_task_failed(state: OrchState, event: Event) -> None:
     if task_id is None or task_id not in state.tasks:
         return
     task = state.tasks[task_id]
+    # C2: Idempotency — already terminal or failed → no-op. Prevents TOCTOU duplicate
+    # from on_subagent_stop hook and orchestrator Step 6.4 racing on the same task.
+    if task.status in (TaskStatus.FAILED, TaskStatus.COMPLETED, TaskStatus.DLQ):
+        return
     if task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
             f"task_failed: task {task_id!r} is {task.status!r}, expected running"
@@ -1295,11 +1332,12 @@ def _handle_task_dlq(state: OrchState, event: Event) -> None:
     if task_id is None or task_id not in state.tasks:
         return
     task = state.tasks[task_id]
-    # PENDING is allowed for cascade-from-dep: dep went to DLQ, so dependent
-    # can never run and goes directly to DLQ without transitioning through FAILED.
-    if task.status not in (TaskStatus.FAILED, TaskStatus.RUNNING, TaskStatus.PENDING):
+    # PENDING/SCHEDULED allowed for cascade-from-dep: dep went to DLQ, so dependent
+    # can never run and goes directly to DLQ. SCHEDULED added for C5: a task waiting
+    # for retry whose dep entered DLQ should be cascaded immediately, not left scheduled.
+    if task.status not in (TaskStatus.FAILED, TaskStatus.RUNNING, TaskStatus.PENDING, TaskStatus.SCHEDULED):
         raise IllegalTransition(
-            f"task_dlq: task {task_id!r} is {task.status!r}, expected failed, running, or pending"
+            f"task_dlq: task {task_id!r} is {task.status!r}, expected failed, running, pending, or scheduled"
         )
     task.status = TaskStatus.DLQ
     task.last_event_at = event.ts
@@ -1618,7 +1656,9 @@ def tasks_ready_for_retry(state: OrchState, now: str) -> list[TaskState]:
         if task.next_retry_at is None:
             result.append(task)
             continue
-        if parse_iso(task.next_retry_at) <= now_dt:
+        retry_dt = _safe_parse_iso(task.next_retry_at)
+        if retry_dt is None or retry_dt <= now_dt:
+            # Malformed timestamp treated as overdue — retry immediately.
             result.append(task)
     return result
 
@@ -1676,7 +1716,7 @@ def evaluate_circuit_state(
 
     failure_count = sum(
         1 for ts in state.failure_timestamps
-        if parse_iso(ts) >= window_start_dt
+        if (dt := _safe_parse_iso(ts)) is not None and dt >= window_start_dt
     )
 
     should_trip = (not already_tripped) and (failure_count >= threshold)
@@ -1793,6 +1833,131 @@ def detect_critical_dlq(state: OrchState) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Worker registry — C1/C7: robust context for on_subagent_stop hook
+# ---------------------------------------------------------------------------
+
+def register_worker(worker_id: str, task_id: str, attempt: int) -> None:
+    """
+    Writes a worker registry entry before the orchestrator spawns the agent.
+
+    The on_subagent_stop hook reads these entries to identify which task each
+    subagent was handling, without relying on shell env vars (which are
+    unreliable under parallel dispatch).
+    """
+    ensure_dirs()
+    entry = {
+        "worker_id": worker_id,
+        "task_id": task_id,
+        "attempt": attempt,
+        "registered_at": now_iso(),
+    }
+    (WORKERS_DIR / f"{worker_id}.json").write_text(
+        json.dumps(entry, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+
+def unregister_worker(worker_id: str) -> None:
+    """Removes a worker registry entry after the task reaches a terminal state."""
+    path = WORKERS_DIR / f"{worker_id}.json"
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def get_active_workers() -> list[dict[str, Any]]:
+    """
+    Returns all registry entries from .orch/workers/.
+
+    Used by on_subagent_stop to find orphaned workers when env vars are absent.
+    """
+    if not WORKERS_DIR.exists():
+        return []
+    result: list[dict[str, Any]] = []
+    for p in WORKERS_DIR.glob("*.json"):
+        try:
+            result.append(json.loads(p.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator report validation — C9
+# ---------------------------------------------------------------------------
+
+_REPORT_REQUIRED_FIELDS: dict[str, type] = {
+    "status": str,
+    "workflow_id": (str, type(None)),  # type: ignore[assignment]
+    "current_phase": (str, type(None)),  # type: ignore[assignment]
+    "last_seq": int,
+    "tasks": dict,
+    "dispatched": list,
+    "next_actions": list,
+    "issues": list,
+}
+
+_VALID_STATUSES = {"empty", "ready", "running", "blocked", "completed", "escalated", "error"}
+_VALID_SEVERITIES = {"critical", "warning", "info"}
+
+
+def validate_orchestrator_report(report: dict[str, Any]) -> list[str]:
+    """
+    Validates the structured report emitted by the orchestrator in Step 8.
+
+    Returns a list of validation errors. Empty list means report is valid.
+
+    Checks:
+      - All required top-level fields present
+      - Field types correct
+      - status is a known value
+      - tasks dict contains by_status sub-dict
+      - Each issue has code, severity, detail fields
+      - Each dispatched entry has task_id, worker_id, result fields
+    """
+    errors: list[str] = []
+
+    for field, expected_type in _REPORT_REQUIRED_FIELDS.items():
+        if field not in report:
+            errors.append(f"missing field: {field!r}")
+            continue
+        if not isinstance(report[field], expected_type):
+            errors.append(
+                f"field {field!r}: expected {expected_type}, got {type(report[field]).__name__}"
+            )
+
+    status = report.get("status")
+    if isinstance(status, str) and status not in _VALID_STATUSES:
+        errors.append(f"status {status!r} not in {sorted(_VALID_STATUSES)}")
+
+    tasks = report.get("tasks")
+    if isinstance(tasks, dict) and "by_status" not in tasks:
+        errors.append("tasks dict missing 'by_status' sub-key")
+
+    for i, issue in enumerate(report.get("issues", [])):
+        if not isinstance(issue, dict):
+            errors.append(f"issues[{i}] is not a dict")
+            continue
+        for k in ("code", "severity", "detail"):
+            if k not in issue:
+                errors.append(f"issues[{i}] missing field {k!r}")
+        sev = issue.get("severity")
+        if isinstance(sev, str) and sev not in _VALID_SEVERITIES:
+            errors.append(f"issues[{i}].severity {sev!r} not in {sorted(_VALID_SEVERITIES)}")
+
+    for i, entry in enumerate(report.get("dispatched", [])):
+        if not isinstance(entry, dict):
+            errors.append(f"dispatched[{i}] is not a dict")
+            continue
+        for k in ("task_id", "worker_id", "result"):
+            if k not in entry:
+                errors.append(f"dispatched[{i}] missing field {k!r}")
+
+    return errors
+
+
+# ---------------------------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------------------------
 
@@ -1809,7 +1974,7 @@ __all__ = [
     "ConfigError",
     # Paths and constants
     "ORCH_DIR", "LOG_PATH", "LOCK_PATH", "STATE_DIR", "DLQ_DIR",
-    "AUDIT_DIR", "METRICS_DIR", "BLOBS_DIR", "CONFIG_PATH",
+    "AUDIT_DIR", "METRICS_DIR", "BLOBS_DIR", "WORKERS_DIR", "CONFIG_PATH",
     "MAX_INLINE_PAYLOAD", "LOCK_TIMEOUT_S", "SNAPSHOT_EVERY_N_EVENTS",
     # Helpers
     "ensure_dirs",
@@ -1858,8 +2023,16 @@ __all__ = [
     "evaluate_circuit_state",
     # Recovery
     "verify_and_recover",
+    # Dependency helpers
+    "get_orphaned_dep_ids",
     # Escalation detection
     "detect_dependency_cycle",
     "detect_deadlock",
     "detect_critical_dlq",
+    # Worker registry
+    "register_worker",
+    "unregister_worker",
+    "get_active_workers",
+    # Report validation
+    "validate_orchestrator_report",
 ]

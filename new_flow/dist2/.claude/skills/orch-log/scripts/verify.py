@@ -59,7 +59,7 @@ def _run_recovery(args: argparse.Namespace) -> int:
         }), file=sys.stderr)
         return 2
 
-    if not args.from_seq:
+    if args.from_seq is None:
         print(json.dumps({
             "ok": False,
             "error": "from_seq_required",
@@ -91,8 +91,11 @@ def _run_recovery(args: argparse.Namespace) -> int:
             "operator": evt.data["operator"],
         }))
         return 0
-    except (ValueError, FileNotFoundError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
+    except FileNotFoundError as exc:
+        print(json.dumps({"ok": False, "error": "log_not_found", "detail": str(exc)}), file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "error": "invalid_argument", "detail": str(exc)}), file=sys.stderr)
         return 1
     except Exception as exc:
         print(json.dumps({"ok": False, "error": f"unexpected: {exc}"}), file=sys.stderr)

@@ -26,12 +26,11 @@ def main() -> int:
     phase = state.current_phase
     phase_state = state.phases.get(phase) if phase else None
 
-    output: dict = {"current_phase": phase}
-    if phase_state is not None:
-        output["status"] = phase_state.status
-        output["order"] = phase_state.order
-    else:
-        output["status"] = None
+    output: dict = {
+        "current_phase": phase,
+        "status": phase_state.status if phase_state is not None else None,
+        "order": phase_state.order if phase_state is not None else None,
+    }
 
     print(json.dumps(output))
     return 0

@@ -18,7 +18,7 @@ sys.path.insert(0, str(_LIB))
 
 from orch_core import (
     reduce_all, TaskStatus, PhaseStatus, ORCH_DIR, METRICS_DIR,
-    ensure_dirs, now_iso,
+    ensure_dirs, now_iso, parse_iso,
 )
 
 
@@ -38,7 +38,6 @@ def _compute_metrics() -> dict:
     phase_durations: dict[str, float | None] = {}
     for name, p in state.phases.items():
         if p.entered_at and p.completed_at:
-            from orch_core import parse_iso
             entered = parse_iso(p.entered_at)
             completed = parse_iso(p.completed_at)
             phase_durations[name] = (completed - entered).total_seconds()
