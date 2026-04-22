@@ -61,7 +61,8 @@ Workers **must** export all five variables as shell env vars before calling `emi
 **`progress`** — intermediate status update:
 ```json
 {
-  "message": "<human-readable status string>"
+  "phase": "<phase name — required>",
+  "note":  "<human-readable status string>"
 }
 ```
 
@@ -108,7 +109,7 @@ Error reason codes:
 ```bash
 # Report progress
 ORCH_WORKER_ID=worker-42 python3 .claude/skills/orch-report/scripts/emit.py \
-  --kind progress --task-id t_001 --data '{"message":"running tests"}'
+  --kind progress --task-id t_001 --data '{"phase":"dev","note":"running tests"}'
 
 # Report success
 ORCH_WORKER_ID=worker-42 python3 .claude/skills/orch-report/scripts/emit.py \

@@ -47,7 +47,7 @@ Report progress (optional, any number of times)
     python3 .claude/skills/orch-report/scripts/emit.py \
       --kind progress \
       --task-id $ORCH_TASK_ID \
-      --data '{"message": "Writing auth service..."}'
+      --data '{"phase": "<phase>", "note": "Writing auth service..."}'
     │
     ▼
 Do the work
@@ -78,7 +78,7 @@ python3 .claude/skills/orch-report/scripts/emit.py \
   --kind progress \
   --task-id "$ORCH_TASK_ID" \
   --attempt "$ORCH_ATTEMPT" \
-  --data '{"message": "Running tests — 8/12 passing"}'
+  --data '{"phase": "<phase>", "note": "Running tests — 8/12 passing"}'
 ```
 
 ### Emit success
