@@ -122,9 +122,19 @@ For **Minor** issues, the Reviewer may fix directly:
 
 ## Blocked State
 
-When required input files are absent (e.g., `openapi.yaml` or `.spec.md` not yet produced by the Spec Writer), do not attempt a partial review. Return a structured blocked report using the template at `.claude/skills/u-shared-templates/blocked-report.schema.yaml`.
+When required input files are absent (e.g., `openapi.yaml` or `.spec.md` not yet produced by the Spec Writer), do not attempt a partial review.
 
-Never assume or invent missing content — always return blocked.
+Emit a non-retryable failure with the list of missing files so the orchestrator can surface an actionable escalation:
+
+```bash
+python3 .claude/skills/orch-report/scripts/emit.py \
+  --kind failed \
+  --task-id "<task_id>" \
+  --attempt <attempt> \
+  --data '{"phase": "sdd", "reason": "missing_input_spec_files", "retryable": false, "missing_files": ["<path1>", "<path2>"]}'
+```
+
+Never assume or invent missing content. Never emit `retryable: true` for missing input files — the orchestrator will escalate so a human can create the missing files before re-invoking.
 
 ---
 
@@ -150,7 +160,6 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-spec-reviewer"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
@@ -161,7 +170,6 @@ python3 .claude/skills/orch-report/scripts/emit.py \
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-spec-reviewer"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

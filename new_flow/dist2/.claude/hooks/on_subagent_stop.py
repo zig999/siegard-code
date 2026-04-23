@@ -93,7 +93,9 @@ def main() -> int:
             unregister_worker(worker_id)
             continue
 
-        phase = _get_task_phase(task_id, state)
+        # Prefer phase from registry (written at claim time) to avoid a full log
+        # replay. Fall back to state derivation for entries written by older code.
+        phase = entry.get("phase") or _get_task_phase(task_id, state)
 
         try:
             append_event(

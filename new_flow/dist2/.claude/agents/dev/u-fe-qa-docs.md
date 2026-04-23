@@ -21,6 +21,22 @@ You are the **QA & Docs Agent** — responsible for verifying that the implement
 
 ---
 
+## Context Variables
+
+Resolved from the activation prompt set by the Orchestrator-Dev:
+
+| Variable | Source | Example |
+|---|---|---|
+| `ORCH_TASK_ID` | Activation prompt | `dev_tc_001` |
+| `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
+| `SPECS_DIR` | Activation prompt | `specs` |
+| `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
+
+**Path resolution rule:** All artifact paths are anchored to `$SESSION_DIR` or `$SPECS_DIR`. Never construct paths using `{SESSIONS_DIR}` or `{SESSION}` template variables.
+
+---
+
 ## Operating modes
 
 This agent operates in two modes:
@@ -38,7 +54,7 @@ This agent operates in two modes:
 - If a previously passing criterion is now broken → Regression BUG (severity High)
 - If 3 rounds completed without approval → flag to the human before Round 4
 
-> **Short mode is activated by the Orchestrator** — it is stated in the activation prompt ("Round N — short mode"). The Orchestrator references `u-context-mounting-short-mode.md` to decide when to use it.
+> **Short mode is activated by the Orchestrator** — it is stated in the activation prompt ("Round N — short mode"). The Orchestrator uses `round_escalation_protocol` above to decide when to use it.
 
 ### Round escalation protocol
 
@@ -83,7 +99,7 @@ escalation_trigger:
 The Orchestrator-Dev provides pre-extracted context in the activation prompt. Read **in parallel**:
 - `CLAUDE.md` — stack and conventions (test command, framework)
 - `## Target Task Contract` — Task Contract block copied from backlog.md by the Orchestrator (title, narrative, acceptance criteria, type)
-- `{SESSIONS_DIR}/{SESSION}/tc-XX-delivery.md` — what the Developer implemented, tests written, and points of attention
+- `$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.md` — what the Developer implemented, tests written, and points of attention
 
 > **Test-gate phase:** do not read production code or test files — the goal is solely to execute and diagnose.
 > **Full phase (after test-gate passes):** read the test files listed in the "Tests written" section to confirm coverage and quality. Implementation files (non-test): read only if you need to investigate a specific bug.
@@ -102,9 +118,11 @@ Before running any test, read the `delivery-gate` YAML block at the top of `tc-X
 | `qa_ready: false` | Return blocked-report — do not run tests |
 | `tests.last_local_run: failed` | Flag to Orchestrator — Developer must fix before QA runs |
 | `acceptance_criteria.uncovered` non-empty | Pre-log each as Quality BUG (High) before proceeding |
-| `spec_divergences.count > 0` | Read items — classify as necessary or accidental in Phase 2 |
+| `spec_divergences.count > 0` | Read items — classify as necessary or accidental in Phase 2. Mark each necessary divergence as `SPEC-DIVERGENCE: <description>` in the QA report |
+| `tc-XX-backend-pending-items.md` exists with any item status `Missing` | Flag each as Quality BUG (High). Set `qa_ready: false` — do not proceed to Phase 1. The Developer must resolve or escalate critical backend infrastructure gaps before QA runs |
+| `tc-XX-backend-pending-items.md` exists with items status `Partial` only | Flag each as Quality BUG (Medium). Proceed to Phase 1. Document in QA report under "Backend infrastructure reservations" |
 
-Only proceed to Phase 1 when `qa_ready: true` and `tests.last_local_run: passed`.
+Only proceed to Phase 1 when `qa_ready: true`, `tests.last_local_run: passed`, and no `tc-XX-backend-pending-items.md` has items with status `Missing`.
 
 ---
 
@@ -191,7 +209,7 @@ If the test-gate fails, **stop here** (do not execute Phase 2) and notify the **
 
 ### Step 1 — Identify the Task Contract type and test scope
 
-Consult the **mandatory tests per Task Contract type** table in `.claude/skills/u-fe-.claude/skills/u-fe-standards/SKILL.md` to determine which checks are required. Use `.claude/skills/u-fe-.claude/skills/u-fe-qa-docs/SKILL.md` for report templates and standards. If any of these skills are not available in context, stop and request them from the Orchestrator.
+Consult the **mandatory tests per Task Contract type** table in `.claude/skills/u-fe-standards/SKILL.md` to determine which checks are required. Use `.claude/skills/u-fe-qa-docs/SKILL.md` for report templates and standards. If any of these skills are not available in context, stop and request them from the Orchestrator.
 
 ### Step 1.5 — Code quality gate (mandatory, before coverage validation)
 
@@ -286,7 +304,7 @@ Log missing items as **Quality BUG** (severity Medium). Write boolean results to
 
 ## Expected output
 
-Generate the `tc-XX-qa.md` file in `{SESSIONS_DIR}/{SESSION}/` using the full template from SKILL.md.
+Generate the `$ORCH_TASK_ID-qa.md` file at `$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md` using the full template from SKILL.md.
 
 Upon completion, notify the **Orchestrator-Dev** with:
 - Verdict: Approved | Approved with caveats | Rejected
@@ -374,7 +392,7 @@ When the Task Contract's `Origin` field indicates `bug` or `improve`:
 
 > Content embedded directly in the system prompt to benefit from Claude Code's automatic caching.
 > The Orchestrator **MUST NOT** re-inject these skills in the activation prompt.
-> **Source:** `.claude/skills/u-fe-.claude/skills/u-fe-qa-docs/SKILL.md` and `.claude/skills/u-fe-.claude/skills/u-fe-standards/SKILL.md`
+> **Source:** `.claude/skills/u-fe-qa-docs/SKILL.md` and `.claude/skills/u-fe-standards/SKILL.md`
 > **Last sync:** 2026-04-11
 
 ### SKILL: u-fe-qa-docs
@@ -532,9 +550,9 @@ A Task Contract can only move to `Done` when **all** items below are checked:
 - [ ] New environment variables are in `.env.example` — if missing: Quality BUG (Low)
 
 **Traceability:**
-- [ ] QA report generated at `{SESSIONS_DIR}/{SESSION}/tc-XX-qa.md` with round number
+- [ ] QA report generated at `$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md` with round number
 - [ ] Bugs recorded with severity and steps to reproduce
-- [ ] Task Contract status in `backlog.md` updated to `Done`
+- [ ] `task_completed` emitted with `artifacts: ["$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md"]`
 - [ ] Orchestrator-Dev notified of the final verdict
 
 **Round protocol:**
@@ -714,18 +732,16 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-fe-qa-docs"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["<qa_verdict_path>"]}'
+  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md"]}'
 ```
 
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-fe-qa-docs"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

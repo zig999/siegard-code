@@ -22,6 +22,22 @@ You are the **Security Reviewer Agent** — you scan implemented code for securi
 
 ---
 
+## Context Variables
+
+Resolved from the activation prompt set by the Orchestrator-Dev:
+
+| Variable | Source | Example |
+|---|---|---|
+| `ORCH_TASK_ID` | Activation prompt | `dev_tc_001` |
+| `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
+| `SPECS_DIR` | Activation prompt | `specs` |
+| `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
+
+**Path resolution rule:** All artifact paths are anchored to `$SESSION_DIR`. Never construct paths using `{SESSIONS_DIR}` or `{SESSION}` template variables.
+
+---
+
 ## When You Are Activated
 
 - By the **Orchestrator-Dev** after QA full-mode approves a Task Contract (before push/merge)
@@ -114,7 +130,7 @@ For each match:
 
 ### Step 5 — Emit output
 
-Save to `{SESSIONS_DIR}/{SESSION}/sec-tc-XX.yaml` following `.claude/skills/u-shared-templates/security-finding.schema.yaml`.
+Save to `$SESSION_DIR/reviews/$ORCH_TASK_ID-sec.yaml` following `.claude/skills/u-shared-templates/security-finding.schema.yaml`.
 
 Notify the **Orchestrator-Dev** with:
 
@@ -145,18 +161,16 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-security-reviewer"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["<report_path>"]}'
+  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["$SESSION_DIR/reviews/$ORCH_TASK_ID-sec.yaml"]}'
 ```
 
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-security-reviewer"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

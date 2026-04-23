@@ -38,6 +38,13 @@ ORCH_WORKER_ID=<worker-id> python3 .claude/skills/orch-report/scripts/emit.py \
 
 Workers **must** export all five variables as shell env vars before calling `emit.py`.
 
+### Why `phase` is required in every event
+
+All three event types (`task_progress`, `task_completed`, `task_failed`) require `phase` in their `data` payload. This is intentional, not redundant:
+
+- The `on_subagent_stop` hook synthesizes `task_failed` when a worker stops silently. It needs `phase` to build a valid payload without replaying the log (which may be unavailable or slow).
+- `task_claimed` also carries `phase` for the same reason — the registry entry written by `register_worker()` stores it for hook recovery.
+
 ### Parameters
 
 | Parameter | Required | Description |
@@ -70,11 +77,11 @@ Workers **must** export all five variables as shell env vars before calling `emi
 ```json
 {
   "phase":     "<phase name — required>",
-  "artifacts": ["<relative path to output file>"],
+  "artifacts": ["<relative path to output file — required, may be empty list>"],
   "summary":   "<one-line outcome — optional>"
 }
 ```
-`artifacts` paths are relative to `ORCH_PROJECT_DIR`. Exit criteria scripts read these paths to evaluate phase completion. Use the conventions below:
+`artifacts` paths are relative to `ORCH_PROJECT_DIR` — **absolute paths and `..` traversals are rejected by `emit.py`**. Exit criteria scripts read these paths to evaluate phase completion. Use the conventions below:
 - Dev workers: `<session_dir>/delivery/<task_id>-delivery.md`
 - QA workers: `<specs_dir>/qa/<task_id>-qa.md`
 - Planning workers: `<session_dir>/backlog/backlog.json`
@@ -84,10 +91,11 @@ Workers **must** export all five variables as shell env vars before calling `emi
 {
   "phase":     "<phase name — required>",
   "reason":    "<error code or short description — required>",
-  "retryable": true
+  "retryable": true,
+  "error":     "<optional detailed error message>"
 }
 ```
-Set `retryable: false` only for permanent failures (spec ambiguity, missing input, permission). Leave `true` for transient errors (tool failure, timeout, context overflow).
+Set `retryable: false` only for permanent failures (spec ambiguity, missing input, permission). Leave `true` for transient errors (tool failure, timeout, context overflow). The `error` field is optional but recommended — the reducer stores it in `task.last_error` for diagnostics and DLQ triage.
 
 ### Output
 

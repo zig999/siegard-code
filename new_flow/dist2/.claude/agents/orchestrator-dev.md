@@ -129,6 +129,8 @@ Hold the full `OrchState` in memory. Extract:
 ```bash
 export ORCH_PROJECT_DIR="$(pwd)"
 export SPECS_DIR="${SPECS_DIR:-specs}"
+export SESSION_DIR="$ORCH_PROJECT_DIR/.orch/sessions/$workflow_id"
+mkdir -p "$SESSION_DIR/backlog" "$SESSION_DIR/delivery" "$SESSION_DIR/pending" "$SESSION_DIR/cr" "$SESSION_DIR/reviews" "$SESSION_DIR/gates"
 ```
 
 Run the criterion checker directly to validate the manifest:
@@ -147,28 +149,16 @@ Stop.
 
 ```bash
 python3 -c "
-import os, re, json
+import os, json, sys
+sys.path.insert(0, '.claude/lib')
+from orch_core import parse_manifest_fields
 from pathlib import Path
 specs_dir = Path(os.environ.get('SPECS_DIR', 'specs'))
 content = (specs_dir / 'handoff-manifest.yaml').read_text(encoding='utf-8')
-
-m_stack = re.search(r'^\s*stack\s*:\s*(\S+)', content, re.MULTILINE | re.IGNORECASE)
-stack = m_stack.group(1).lower() if m_stack else 'be'
-if stack not in {'be', 'fe', 'fullstack'}:
-    stack = 'be'
-
-m_type = re.search(r'^\s*type\s*:\s*(\S+)', content, re.MULTILINE)
-handoff_type = m_type.group(1).lower() if m_type else 'new_domain'
-
-m_impact = re.search(r'^\s*dev_impact\s*:\s*(\S+)', content, re.MULTILINE)
-dev_impact = m_impact.group(1).lower() if m_impact else ''
-
-changed = re.findall(r'^\s*-\s+(.+)$',
-    re.search(r'changed_files\s*:(.*?)(?=\n\s*\w|\Z)', content, re.DOTALL).group(1)
-    if re.search(r'changed_files\s*:', content) else '', re.MULTILINE)
-
-print(json.dumps({'stack': stack, 'handoff_type': handoff_type,
-                  'dev_impact': dev_impact, 'changed_files': changed}))
+result = parse_manifest_fields(content)
+# rename 'type' key to 'handoff_type' for local use
+result['handoff_type'] = result.pop('type')
+print(json.dumps(result))
 "
 ```
 
@@ -220,7 +210,7 @@ Register and spawn:
 python3 -c "
 import sys; sys.path.insert(0,'.claude/lib')
 from orch_core import register_worker
-register_worker('<worker_id>', 'dev_planning', 1)
+register_worker('<worker_id>', 'dev_planning', 1, phase='dev', stack='<stack>', task_type='planning')
 "
 ```
 
@@ -235,12 +225,16 @@ Spawn via Agent tool:
     ORCH_WORKER_ID=<worker_id>
     SPECS_DIR=<specs_dir>
     ORCH_PROJECT_DIR=<project_dir>
+    SESSION_DIR=<session_dir>
   Set these as shell env vars before any emit.py call.
   Handoff manifest: <specs_dir>/handoff-manifest.yaml
   Handoff type: <handoff_type>   (new_domain | fast_track | major_evolution | reverse_eng)
   Changed files: <changed_files> (JSON array — empty for new_domain/reverse_eng)
   Dev impact: <dev_impact>       (no_action | reevaluate_task_contracts | stop_domain_task_contracts | "")
-  Emit task_completed with artifacts: [<backlog_path>] when done.
+  Write backlog.json to: <session_dir>/backlog/backlog.json
+  Write backlog.md  to: <session_dir>/backlog/backlog.md
+  Write individual TC files to: <session_dir>/backlog/tc-NNN.md
+  Emit task_completed with artifacts: [<session_dir>/backlog/backlog.json] when done.
   ```
 
 Wait for the planner to return. Re-read state.
@@ -280,7 +274,7 @@ Parse the backlog. Each task contract must provide:
 | Field | Source |
 |-------|--------|
 | `task_id` | `dev_tc_{n}` where n is zero-padded (001, 002, ...) |
-| `spec` | path to task contract file (e.g. `specs/backlog/tc-001.md`) |
+| `spec` | path to task contract file (e.g. `<session_dir>/backlog/tc-001.md`) |
 | `deps` | list of `dev_tc_{n}` IDs this task depends on (from backlog dependency graph) |
 | `tier` | `standard` unless explicitly marked `critical` in backlog |
 
@@ -384,7 +378,7 @@ Register worker:
 python3 -c "
 import sys; sys.path.insert(0,'.claude/lib')
 from orch_core import register_worker
-register_worker('<worker_id>', '<task_id>', <attempt>)
+register_worker('<worker_id>', '<task_id>', <attempt>, phase='dev', stack='<stack>', task_type='<task.task_type>')
 "
 ```
 
@@ -403,9 +397,12 @@ For each claimed task:
     ORCH_WORKER_ID=<worker_id>
     SPECS_DIR=<specs_dir>
     ORCH_PROJECT_DIR=<project_dir>
+    SESSION_DIR=<session_dir>
   Set these as shell env vars before any emit.py call.
   Task spec: <task.spec>
-  Emit task_completed with artifacts: [<delivery_md_path>] when done.
+  Delivery path:   <session_dir>/delivery/<task_id>-delivery.md
+  QA verdict path: <specs_dir>/qa/<task_id>-qa.md
+  Emit task_completed with artifacts: [<session_dir>/delivery/<task_id>-delivery.md] when done.
   Emit task_failed with retryable: true|false on failure.
   ```
 
@@ -441,7 +438,12 @@ For each task in batch:
 
 Re-read state. For each task with `status == "failed"`:
 
-Apply `should_retry(task, policy)` using `default_config()`.
+```python
+import sys; sys.path.insert(0, '.claude/lib')
+from orch_core import load_retry_policy, should_retry
+policy = load_retry_policy(task.tier, task.task_type)
+result = should_retry(task, policy)
+```
 
 **If True:**
 ```bash
@@ -549,6 +551,8 @@ Re-read state. Determine:
 ---
 
 ## Escalation codes
+
+> Full cross-orchestrator reference: `.claude/ESCALATION_CODES.md`
 
 | Code | Severity | Condition |
 |------|----------|-----------|

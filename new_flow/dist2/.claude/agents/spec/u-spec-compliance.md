@@ -155,7 +155,6 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-spec-compliance"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
@@ -166,7 +165,6 @@ python3 .claude/skills/orch-report/scripts/emit.py \
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-spec-compliance"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

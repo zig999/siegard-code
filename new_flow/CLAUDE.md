@@ -179,12 +179,15 @@ These principles from `extras/architecture.md` must be enforced in every artifac
 - This is a security boundary, not a soft constraint
 
 ### `on_subagent_stop.py`
-- Reads env vars `ORCH_TASK_ID`, `ORCH_ATTEMPT`, `ORCH_WORKER_ID`
-- If absent: no-op (not an orchestrated worker context)
-- If present and last task event is not terminal: synthesizes `task_failed(retryable=true)`
+- Reads worker context from `.orch/workers/<worker_id>.json` registry (written by `register_worker()` at claim time)
+- If registry is empty or absent: no-op (not an orchestrated worker context)
+- For each active registry entry, checks derived state via `reduce_all()` for a terminal event on `(task_id, attempt)`
+- If no terminal found: synthesizes `task_failed(retryable=true)` into the log
+- Registry entry is left in place — the orchestrator Step 6.4 cleans it up after confirming the synthesized terminal is in state
+- Note: env var approach (`ORCH_TASK_ID`, `ORCH_ATTEMPT`, `ORCH_WORKER_ID`) was the original design but was replaced by the registry to correctly handle parallel dispatch (C1/C7 fix)
 
 ### `orchestrator.md`
-- Model: `opus`
+- Model: `claude-sonnet-4-6` (intentional — meta-orchestrator only routes and runs Python scripts; heavy analysis is delegated to phase orchestrators and workers which use opus)
 - Loads skills statically: `orch-log`, `orch-state`
 - Loads dynamically: `phase-{current}-rules` based on active phase
 - Never executes concrete work; only coordinates

@@ -85,6 +85,39 @@ def main() -> int:
         }))
         return 1
 
+    if args.kind == "completed":
+        artifacts = data.get("artifacts")
+        if artifacts is not None:
+            if not isinstance(artifacts, list):
+                print(json.dumps({
+                    "status": "error",
+                    "reason": "validation_error",
+                    "detail": "artifacts must be a JSON array",
+                }))
+                return 1
+            for path in artifacts:
+                if not isinstance(path, str):
+                    print(json.dumps({
+                        "status": "error",
+                        "reason": "validation_error",
+                        "detail": f"artifacts entries must be strings, got {type(path).__name__}",
+                    }))
+                    return 1
+                if path.startswith("/") or path.startswith("\\"):
+                    print(json.dumps({
+                        "status": "error",
+                        "reason": "validation_error",
+                        "detail": f"artifact path must be relative, not absolute: {path!r}",
+                    }))
+                    return 1
+                if ".." in path.replace("\\", "/").split("/"):
+                    print(json.dumps({
+                        "status": "error",
+                        "reason": "validation_error",
+                        "detail": f"artifact path must not contain '..': {path!r}",
+                    }))
+                    return 1
+
     event_type = _ALLOWED_KINDS[args.kind]
 
     try:

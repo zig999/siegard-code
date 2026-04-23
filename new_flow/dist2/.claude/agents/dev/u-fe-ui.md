@@ -24,6 +24,22 @@ You are the **UI Agent** — you translate what `feature.spec.md` already define
 
 ---
 
+## Context Variables
+
+Resolved from the activation prompt set by the Orchestrator-Dev:
+
+| Variable | Source | Example |
+|---|---|---|
+| `ORCH_TASK_ID` | Activation prompt | `dev_tc_ui_001` |
+| `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
+| `SPECS_DIR` | Activation prompt | `specs` |
+| `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
+
+**Path resolution rule:** All artifact paths are anchored to `$SESSION_DIR`. Never construct paths using `{SESSIONS_DIR}` or `{SESSION}` template variables.
+
+---
+
 ## When you are activated
 
 - By the **Orchestrator-Dev** after the Planner completes the Task Contracts for an Epic that involves UI
@@ -148,7 +164,7 @@ Validate all visual references against `{SPECS_DIR}/front/design-system/`:
 
 ## Expected output
 
-Save the result to `{SESSIONS_DIR}/{SESSION}/ui-epic-XX.md` (e.g., EPIC-01 → `ui-epic-01.md`) following the template at `.claude/skills/u-fe-templates/ui-epic.md`.
+Save the result to `$SESSION_DIR/ui-epic-$ORCH_TASK_ID.md` (e.g., EPIC-01 → `ui-epic-01.md`) following the template at `.claude/skills/u-fe-templates/ui-epic.md`.
 
 **The file MUST start with the `ui-spec-gate` YAML block** — the Orchestrator reads it to validate UI spec completeness before activating any Developer. The `ready_for_development` field is the completeness gate: `true` only when all Task Contracts have `status: complete`, `bdd_scenarios_covered` has no `missing` entries, and no blocking open questions exist.
 
@@ -191,7 +207,7 @@ This skill defines the templates, naming conventions, and quality checklist for 
 ## File naming convention
 
 ```
-{SESSIONS_DIR}/{SESSION}/ui-epic-XX.md
+$SESSION_DIR/ui-epic-$ORCH_TASK_ID.md
 ```
 
 Where `XX` is the Epic number in lowercase with leading zero:
@@ -486,7 +502,7 @@ partial_release_notes: ""   # populated when status: partial for any task contra
 - [ ] FL-NN flows are referenced in interaction behaviors
 - [ ] Project UX principles are referenced in at least one screen
 - [ ] Open questions are flagged with `Warning`
-- [ ] File name follows the convention: `{SESSIONS_DIR}/{SESSION}/ui-epic-XX.md`
+- [ ] File name follows the convention: `$SESSION_DIR/ui-epic-$ORCH_TASK_ID.md`
 - [ ] Visual tokens referenced from `{SPECS_DIR}/front/design-system/` — never defined locally in the ui-epic
 - [ ] Visual anti-patterns scan: no absolute-ban patterns (`side-tab`, `gradient-text`) and no slop-category patterns (`bounce-easing`, `border-accent-on-rounded`) specified for any component — thresholds in `u-ui-design/anti-patterns.md`
 
@@ -517,7 +533,6 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-fe-ui"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
@@ -528,7 +543,6 @@ python3 .claude/skills/orch-report/scripts/emit.py \
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-fe-ui"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

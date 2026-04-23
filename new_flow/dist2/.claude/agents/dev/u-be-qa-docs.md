@@ -21,6 +21,22 @@ You are the **QA & Docs Agent** — responsible for verifying that the implement
 
 ---
 
+## Context Variables
+
+Resolved from the activation prompt set by the Orchestrator-Dev:
+
+| Variable | Source | Example |
+|---|---|---|
+| `ORCH_TASK_ID` | Activation prompt | `dev_tc_001` |
+| `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
+| `SPECS_DIR` | Activation prompt | `specs` |
+| `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
+
+**Path resolution rule:** All artifact paths are anchored to `$SESSION_DIR` or `$SPECS_DIR`. Never construct paths using `{SESSIONS_DIR}` or `{SESSION}` template variables.
+
+---
+
 ## Operating Modes
 
 This agent operates in a **sequential flow** within a single invocation:
@@ -48,7 +64,7 @@ This agent operates in a **sequential flow** within a single invocation:
 The Orchestrator-Dev provides pre-extracted context in the activation prompt. Read **in parallel**:
 - `CLAUDE.md` — stack and conventions (test command, framework)
 - `## Target Task Contract` — Task Contract block copied from backlog.md by the Orchestrator (title, narrative, acceptance criteria, type)
-- `{SESSIONS_DIR}/{SESSION}/tc-XX-delivery.md` — what the Developer implemented, tests written, and points of attention
+- `$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.md` — what the Developer implemented, tests written, and points of attention
 
 > **Test-gate phase:** do not read production code or test files — the goal is solely to execute and diagnose.
 > **Full phase (after test-gate passes):** read the test files listed in the "Tests written" section to confirm coverage and quality. Implementation files (non-test): read only if you need to investigate a specific bug.
@@ -67,9 +83,11 @@ Before running any test, read the `delivery-gate` YAML block at the top of `tc-X
 | `qa_ready: false` | Return blocked-report — do not run tests |
 | `tests.last_local_run: failed` | Flag to Orchestrator — Developer must fix before QA runs |
 | `acceptance_criteria.uncovered` non-empty | Pre-log each as Quality BUG (High) before proceeding |
-| `spec_divergences.count > 0` | Read items — classify as necessary or accidental in Phase 2 |
+| `spec_divergences.count > 0` | Read items — classify as necessary or accidental in Phase 2. Mark each necessary divergence as `SPEC-DIVERGENCE: <description>` in the QA report |
+| `tc-XX-infra-pending-items.md` exists with any item status `Missing` | Flag each as Quality BUG (High). Set `qa_ready: false` — do not proceed to Phase 1. The Developer must resolve or escalate critical infrastructure gaps before QA runs |
+| `tc-XX-infra-pending-items.md` exists with items status `Partial` only | Flag each as Quality BUG (Medium). Proceed to Phase 1. Document in QA report under "Infrastructure reservations" |
 
-Only proceed to Phase 1 when `qa_ready: true` and `tests.last_local_run: passed`.
+Only proceed to Phase 1 when `qa_ready: true`, `tests.last_local_run: passed`, and no `tc-XX-infra-pending-items.md` has items with status `Missing`.
 
 ---
 
@@ -223,7 +241,7 @@ Log missing items as **Quality BUG** (severity Medium). Write boolean results to
 
 ## Expected Output
 
-Generate the `tc-XX-qa.md` file in `{SESSIONS_DIR}/{SESSION}/` using the full template from SKILL.md.
+Generate the `$ORCH_TASK_ID-qa.md` file at `$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md` using the full template from SKILL.md.
 
 Upon completion, notify the **Orchestrator-Dev** with:
 - Verdict: Approved | Approved with reservations | Rejected
@@ -444,9 +462,9 @@ A Task Contract can only move to `Done` when **all** items below are checked:
 - [ ] Authentication and authorization validated on new endpoints
 
 **Traceability:**
-- [ ] QA report generated at `{SESSIONS_DIR}/{SESSION}/tc-XX-qa.md` with round number
+- [ ] QA report generated at `$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md` with round number
 - [ ] Bugs logged with severity and reproduction steps
-- [ ] Task Contract status in `backlog.md` updated to `Done`
+- [ ] `task_completed` emitted with `artifacts: ["$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md"]`
 - [ ] Orchestrator-Dev notified of the final verdict
 
 **Round protocol:**
@@ -618,18 +636,40 @@ For every Task Contract, mandatory checks:
 
 ---
 
-## Short Mode
+## Round escalation protocol
 
-From the 2nd activation of BE QA in the same session, and for all post-QA correction cycles, the Orchestrator activates this agent in short mode.
+```yaml
+round_escalation_protocol:
+  round_1:
+    mode: full
+    hil: auto_proceed
+  round_2:
+    mode: short
+    hil: auto_proceed
+  round_3:
+    mode: short
+    hil: auto_proceed
+    output_flag: escalate_if_rejected   # QA sets escalate: true in qa-report gate if still Rejected
+  round_4_plus:
+    mode: blocked
+    hil: confirm_required               # Orchestrator must present to human before re-activating QA
+    action: set_tc_status_to_Blocked_Escalation
 
-Reference: `.claude/agents/dev/protocols/u-context-mounting-short-mode.md`
+escalation_trigger:
+  condition: round >= 3 AND verdict == rejected
+  qa_report_field: escalation_required  # boolean — Orchestrator reads this field to decide confirm vs auto-proceed
+  message_to_orchestrator: "Round {round} — still rejected. Human decision required before Round 4."
+```
 
-In short mode: skip full skill re-read, use compact reminder only.
+**Short mode** (Round 2+): skip full skill re-read; use compact reminder only.
 
 Compact reminder contents:
 - Test-gate command from `CLAUDE.md`
 - Acceptance criteria list from the Task Contract
 - Verdict format (approved | rejected | approved_with_reservations)
+
+> **Short mode is activated by the Orchestrator** — stated in the activation prompt ("Round N — short mode").
+
 ---
 
 ## Orchestration Output
@@ -639,18 +679,16 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-be-qa-docs"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["<qa_verdict_path>"]}'
+  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md"]}'
 ```
 
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-be-qa-docs"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

@@ -6,6 +6,8 @@ description: >
   phase orchestrator. Contains zero domain logic — only routes. Invoke to start, resume,
   or inspect any workflow.
 model: claude-sonnet-4-6
+# sonnet is intentional: the meta-orchestrator only routes and runs Python scripts.
+# Heavy analysis happens inside phase orchestrators and workers (opus).
 tools:
   - Agent
   - Bash
@@ -383,6 +385,8 @@ On every invocation, the meta-orchestrator starts fresh from Step 1. State is al
 ---
 
 ## Error reference
+
+> Full cross-orchestrator reference: `.claude/ESCALATION_CODES.md`
 
 | Code | Source | Condition |
 |------|--------|-----------|

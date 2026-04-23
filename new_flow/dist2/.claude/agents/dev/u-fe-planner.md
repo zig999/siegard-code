@@ -22,6 +22,22 @@ You are the **Planner Agent** — responsible for transforming business context 
 
 ---
 
+## Context Variables
+
+Resolved from the activation prompt set by the Orchestrator-Dev:
+
+| Variable | Source | Example |
+|---|---|---|
+| `ORCH_TASK_ID` | Activation prompt | `dev_planning` |
+| `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
+| `SPECS_DIR` | Activation prompt | `specs` |
+| `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
+
+**Path resolution rule:** All artifact paths are anchored to `$SESSION_DIR` or `$SPECS_DIR`. Never construct paths using `{SESSIONS_DIR}` or `{SESSION}` template variables.
+
+---
+
 ## When you are activated
 - When the **Orchestrator-Dev** detects that the backlog is missing or incomplete
 - At the start of a new feature, module, or product
@@ -36,7 +52,7 @@ You are the **Planner Agent** — responsible for transforming business context 
 
 Before starting, locate and read:
 - `CLAUDE.md` — architecture, stack, project domain
-- `{SESSIONS_DIR}/{SESSION}/backlog.md` — if it exists, to avoid duplicates and respect already-mapped dependencies
+- `$SESSION_DIR/backlog/backlog.md` — if it exists, to avoid duplicates and respect already-mapped dependencies
 
 **Spec-first mode (when {SPECS_DIR} exists with approved domains):**
 - `{SPECS_DIR}/domains/{domain}/{domain}.spec.md` — Use Cases as the basis for Task Contracts. Each Task Contract must reference `UC-NN` in the `origin` field
@@ -172,13 +188,20 @@ execution_contract:
 
 3. Update the dependency map: every Task Contract that consumes the component depends on the Spec Task Contract
 4. **P0-blocking rule:** if the component is needed by a P0 Task Contract, flag to the Orchestrator before proceeding — the Orchestrator decides whether to pause or accept implementation-before-spec as a risk
-5. **Emit the gate report:** after Step 4B, always emit a structured gate report following `.claude/skills/u-shared-templates/component-spec-gate-report.schema.yaml`. Save to `{SESSIONS_DIR}/{SESSION}/component-spec-gate-EPIC-XX.yaml`. Set `proceed: false` if any `p0_gaps` exist. The Orchestrator reads this file to decide whether to halt or continue.
+5. **Emit the gate report:** after Step 4B, always emit a structured gate report following `.claude/skills/u-shared-templates/component-spec-gate-report.schema.yaml`. Save to `$SESSION_DIR/gates/component-spec-gate.yaml`. Set `proceed: false` if any `p0_gaps` exist. The Orchestrator reads this file to decide whether to halt or continue.
 
 ---
 
 ## Expected output
 
-Save the result to `{SESSIONS_DIR}/{SESSION}/backlog.md` at the project root, following the final structure defined in `planning/SKILL.md`.
+Save the result to:
+- `$SESSION_DIR/backlog/backlog.md` — Markdown backlog (human-readable, full content)
+- `$SESSION_DIR/backlog/backlog.json` — JSON index for the orchestrator (schema: `backlog.schema.yaml`)
+- `$SESSION_DIR/backlog/tc-NNN.md` — individual Task Contract files (one per TC, zero-padded)
+
+The `backlog.json` must list every Task Contract with fields: `task_id` (`dev_tc_001`, `dev_tc_002`, …), `spec` (relative path to the TC file from `$ORCH_PROJECT_DIR`), `deps` (array of `dev_tc_NNN` IDs), `tier` (`standard` or `critical`), `type` (`impl`), `stack` (`fe`), and `title`.
+
+Emit `task_completed` with `artifacts: ["$SESSION_DIR/backlog/backlog.json"]`.
 
 When finished, inform the **Orchestrator-Dev** that the backlog is ready.
 
@@ -390,7 +413,7 @@ references:
     version: "1.0.0"
 ```
 
-> **Version source:** read from the `version:` field in each spec file's frontmatter or YAML header. If absent, use git short hash at planning time, or `"unknown"` as fallback — never omit the field.
+> **Version source:** read from the `version:` field in each spec file's frontmatter or YAML header. If absent, derive the version from git: `git log -1 --format=%h -- {path}` (short hash of the file's last commit). If git is unavailable, use the file's last-modified timestamp in ISO format (`stat -c %Y {path}` → convert to ISO 8601). For `design-system/tokens.md`, `design-system/composition.md`, and any design-system file, `"unknown"` is **never acceptable** — traceability of design tokens is mandatory. Never omit the field.
 
 > **Evolution mode (`handoff_type` is `fast_track` or `major_evolution`):** Read the `Changed files` list from the activation prompt (sourced from `handoff-manifest.yaml → change_summary.changed_files`). Set `references` to only those files, with the specific sections changed. Do not scan `{SPECS_DIR}` globally.
 >
@@ -592,18 +615,16 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-fe-planner"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "dev", "summary": "<one-line summary of output>", "artifacts": ["<backlog_json_path>"]}'
+  --data '{"phase": "dev", "summary": "<one-line summary of output>", "artifacts": ["$SESSION_DIR/backlog/backlog.json"]}'
 ```
 
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-fe-planner"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

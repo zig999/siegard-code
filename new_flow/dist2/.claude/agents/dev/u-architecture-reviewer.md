@@ -22,6 +22,22 @@ You are the **Architecture Reviewer Agent** — you scan the code delivered acro
 
 ---
 
+## Context Variables
+
+Resolved from the activation prompt set by the Orchestrator-Dev:
+
+| Variable | Source | Example |
+|---|---|---|
+| `ORCH_TASK_ID` | Activation prompt | `dev_tc_arch_001` |
+| `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
+| `SPECS_DIR` | Activation prompt | `specs` |
+| `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
+
+**Path resolution rule:** All artifact paths are anchored to `$SESSION_DIR`. Never construct paths using `{SESSIONS_DIR}` or `{SESSION}` template variables.
+
+---
+
 ## When You Are Activated
 
 - By the **Orchestrator-Dev** immediately after Epic integration QA approves
@@ -33,7 +49,7 @@ You are the **Architecture Reviewer Agent** — you scan the code delivered acro
 ## Expected Inputs
 
 - `CLAUDE.md` — architecture layer definitions, framework, module conventions
-- For each TC in the Epic: `{SESSIONS_DIR}/{SESSION}/tc-XX-delivery.md` (`files_created` and `files_modified` sections)
+- For each TC in the Epic: `$SESSION_DIR/delivery/<task_id>-delivery.md` (`files_created` and `files_modified` sections)
 - The actual delivered files listed in those delivery reports
 
 ---
@@ -171,11 +187,11 @@ For each finding, write the objective following the rules above.
 
 ### Step 6 — Build `summary.tcs_to_create`
 
-For each finding with `action = create_refactoring_tc` or `create_tech_debt_tc`, add a ready-to-create TC entry to `summary.tcs_to_create`. The orchestrator appends these to `backlog.md` without transformation.
+For each finding with `action = create_refactoring_tc` or `create_tech_debt_tc`, add a ready-to-create TC entry to `summary.tcs_to_create`. The orchestrator appends these to `$SESSION_DIR/backlog/backlog.json` without transformation.
 
 ### Step 7 — Emit output
 
-Save to `{SESSIONS_DIR}/{SESSION}/arch-epic-XX.yaml` following `.claude/skills/u-shared-templates/architecture-finding.schema.yaml`.
+Save to `$SESSION_DIR/reviews/$ORCH_TASK_ID-arch.yaml` following `.claude/skills/u-shared-templates/architecture-finding.schema.yaml`.
 
 Notify the **Orchestrator-Dev** with:
 
@@ -205,18 +221,16 @@ After completing all work, emit a terminal event using the `task_id` and `attemp
 **On success:**
 
 ```bash
-export ORCH_WORKER_ID="u-architecture-reviewer"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["<report_path>"]}'
+  --data '{"phase": "review", "summary": "<one-line summary of output>", "artifacts": ["$SESSION_DIR/reviews/$ORCH_TASK_ID-arch.yaml"]}'
 ```
 
 **On failure or unresolvable block:**
 
 ```bash
-export ORCH_WORKER_ID="u-architecture-reviewer"
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \

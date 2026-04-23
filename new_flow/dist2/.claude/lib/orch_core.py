@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -366,7 +367,7 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.TASK_CREATED.value:              {"phase", "tier", "type", "spec", "deps"},
     EventType.TASK_CLAIMED.value:              {"phase", "worker_type", "worker_id"},
     EventType.TASK_PROGRESS.value:             {"phase", "note"},
-    EventType.TASK_COMPLETED.value:            {"phase", "artifacts", "summary"},
+    EventType.TASK_COMPLETED.value:            {"phase", "artifacts"},
     EventType.TASK_FAILED.value:               {"phase", "reason", "retryable"},
     EventType.TASK_SCHEDULED_RETRY.value:      {"phase", "next_retry_at", "backoff_seconds", "previous_failure_seq"},
     EventType.TASK_RETRIED.value:              {"phase", "previous_attempt", "scheduled_retry_seq"},
@@ -385,6 +386,9 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
 }
 
 
+_VALID_TIERS: frozenset[str] = frozenset(t.value for t in Tier)
+
+
 def _validate_event_data(event_type: str, data: dict[str, Any]) -> None:
     """Validates required fields in event data. Raises EventValidationError."""
     required = _REQUIRED_DATA_FIELDS.get(event_type)
@@ -395,6 +399,12 @@ def _validate_event_data(event_type: str, data: dict[str, Any]) -> None:
         raise EventValidationError(
             f"{event_type}: missing required data fields: {sorted(missing)}"
         )
+    if event_type == EventType.TASK_CREATED.value:
+        tier = data.get("tier")
+        if tier is not None and tier not in _VALID_TIERS:
+            raise EventValidationError(
+                f"task_created: tier {tier!r} must be one of {sorted(_VALID_TIERS)}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -923,6 +933,7 @@ class TaskState:
     attempts: int = 0
     max_attempts: int = 3
     worker_id: str | None = None
+    stack: str | None = None
     artifacts: list[str] = field(default_factory=list)
     last_error: str | None = None
     last_failure_reason: str | None = None
@@ -945,6 +956,7 @@ class TaskState:
             "attempts": self.attempts,
             "max_attempts": self.max_attempts,
             "worker_id": self.worker_id,
+            "stack": self.stack,
             "artifacts": self.artifacts,
             "last_error": self.last_error,
             "last_failure_reason": self.last_failure_reason,
@@ -976,6 +988,7 @@ class TaskState:
             attempts=d.get("attempts", 0),
             max_attempts=d.get("max_attempts", 3),
             worker_id=d.get("worker_id"),
+            stack=d.get("stack"),
             artifacts=d.get("artifacts", []),
             last_error=d.get("last_error"),
             last_failure_reason=d.get("last_failure_reason"),
@@ -1224,6 +1237,7 @@ def _handle_task_created(state: OrchState, event: Event) -> None:
         tier=data.get("tier", Tier.STANDARD.value),
         task_type=data.get("type", ""),
         spec=data.get("spec", ""),
+        stack=data.get("stack"),
         max_attempts=Tier(data.get("tier", Tier.STANDARD.value)).default_max_attempts,
         last_event_at=event.ts,
     )
@@ -1637,6 +1651,69 @@ def should_retry(task: TaskState, policy: RetryPolicy) -> bool:
     return True
 
 
+def parse_manifest_fields(content: str) -> dict[str, Any]:
+    """
+    Parses a subset of fields from a handoff-manifest.yaml string without
+    external dependencies. Supports unquoted, single-quoted, and double-quoted
+    scalar values, and inline comments.
+
+    Extracted fields:
+        stack        — one of "be", "fe", "fullstack" (default: "be")
+        type         — handoff type string (default: "new_domain")
+        dev_impact   — dev impact string (default: "")
+        changed_files — list of strings from the changed_files block (default: [])
+
+    Returns:
+        dict with keys: stack, type, dev_impact, changed_files
+    """
+    def _extract_scalar(key: str, text: str, default: str = "") -> str:
+        # Matches: key: value  or  key: "value"  or  key: 'value'
+        # Strips inline comments (# ...) from unquoted values.
+        pattern = (
+            r'^\s*' + re.escape(key) + r'\s*:\s*'
+            r'(?:"([^"]*)"'        # double-quoted
+            r"|'([^']*)'"          # single-quoted
+            r'|([^#\n\r]*))'       # unquoted (stops before comment)
+        )
+        m = re.search(pattern, text, re.MULTILINE)
+        if not m:
+            return default
+        value = (m.group(1) or m.group(2) or m.group(3) or "").strip()
+        return value if value else default
+
+    def _extract_list(key: str, text: str) -> list[str]:
+        # Finds the block under `key:` and extracts `- item` entries.
+        block_pattern = re.search(
+            r'^\s*' + re.escape(key) + r'\s*:(.*?)(?=\n\s*\w|\Z)',
+            text, re.DOTALL | re.MULTILINE,
+        )
+        if not block_pattern:
+            return []
+        block = block_pattern.group(1)
+        items = re.findall(r'^\s*-\s+(.+)$', block, re.MULTILINE)
+        return [i.strip().strip('"\'') for i in items if i.strip()]
+
+    stack = _extract_scalar("stack", content, "be").lower()
+    if stack not in {"be", "fe", "fullstack"}:
+        stack = "be"
+
+    # Extract `type` from the `handoff:` block specifically to avoid matching
+    # a `type:` key in a sibling block (e.g., change_summary.type).
+    handoff_block_m = re.search(r'^handoff\s*:(.*?)(?=^\S|\Z)', content, re.DOTALL | re.MULTILINE)
+    handoff_block = handoff_block_m.group(1) if handoff_block_m else content
+    handoff_type = _extract_scalar("type", handoff_block, "new_domain").lower()
+
+    dev_impact = _extract_scalar("dev_impact", content, "").lower()
+    changed_files = _extract_list("changed_files", content)
+
+    return {
+        "stack": stack,
+        "type": handoff_type,
+        "dev_impact": dev_impact,
+        "changed_files": changed_files,
+    }
+
+
 def tasks_ready_for_retry(state: OrchState, now: str) -> list[TaskState]:
     """
     Returns scheduled tasks whose next_retry_at has passed.
@@ -1836,21 +1913,39 @@ def detect_critical_dlq(state: OrchState) -> list[str]:
 # Worker registry — C1/C7: robust context for on_subagent_stop hook
 # ---------------------------------------------------------------------------
 
-def register_worker(worker_id: str, task_id: str, attempt: int) -> None:
+def register_worker(
+    worker_id: str,
+    task_id: str,
+    attempt: int,
+    *,
+    phase: str | None = None,
+    stack: str | None = None,
+    task_type: str | None = None,
+) -> None:
     """
     Writes a worker registry entry before the orchestrator spawns the agent.
 
     The on_subagent_stop hook reads these entries to identify which task each
     subagent was handling, without relying on shell env vars (which are
     unreliable under parallel dispatch).
+
+    Optional fields (phase, stack, task_type) are stored when provided so that
+    the hook can synthesize task_failed without replaying the full log. The
+    orchestrator should always pass these when available.
     """
     ensure_dirs()
-    entry = {
+    entry: dict[str, Any] = {
         "worker_id": worker_id,
         "task_id": task_id,
         "attempt": attempt,
         "registered_at": now_iso(),
     }
+    if phase is not None:
+        entry["phase"] = phase
+    if stack is not None:
+        entry["stack"] = stack
+    if task_type is not None:
+        entry["task_type"] = task_type
     (WORKERS_DIR / f"{worker_id}.json").write_text(
         json.dumps(entry, separators=(",", ":")),
         encoding="utf-8",
