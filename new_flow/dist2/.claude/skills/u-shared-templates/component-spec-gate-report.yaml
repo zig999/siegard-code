@@ -1,0 +1,24 @@
+# Template: component-spec-gate-report
+# Schema: .claude/skills/u-shared-templates/component-spec-gate-report.schema.yaml
+# Producer: u-fe-planner (Step 4B — after backlog generation)
+# Consumer: u-fe-orchestrator-core (decides halt vs continue based on p0_gaps)
+
+gate:
+  id: CSG-<YYYYMMDD-HHMMSS>
+  reported_by: u-fe-planner
+  epic: EPIC-XX
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: semi-permanent
+
+p0_gaps: []
+
+p1_p2_gaps:
+  - component: ComponentName
+    priority: P1
+    reason: "component.spec.md not found — Developer will flag at delivery."
+    affected_task_contracts:
+      - TC-XX
+
+spec_task_contracts_generated: []
+
+proceed: true

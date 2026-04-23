@@ -1,0 +1,25 @@
+# Template: design-system-gate-report
+# Schema: .claude/skills/u-shared-templates/design-system-gate-report.schema.yaml
+# Producer: u-fe-ui agent (when design system is absent or incomplete)
+# Consumer: u-fe-orchestrator-core (escalates to human as blocking dependency)
+
+gate:
+  id: DSG-<YYYYMMDD-HHMMSS>
+  reported_by: u-fe-ui
+  epic: EPIC-XX
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: semi-permanent
+
+status: blocked
+
+reason: "Design system directory {SPECS_DIR}/front/design-system/ does not exist — UI Agent cannot define tokens or validate component usage."
+
+missing_elements:
+  - type: directory
+    identifier: "{SPECS_DIR}/front/design-system/"
+    blocking: true
+    affected_screens: []
+
+resolution:
+  required_action: "Run /u-spec to generate the design system specification before activating the UI Agent."
+  escalate_to: human

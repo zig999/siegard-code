@@ -1,0 +1,42 @@
+# Template: architecture-finding
+# Schema: .claude/skills/u-shared-templates/architecture-finding.schema.yaml
+# Producer: u-architecture-reviewer
+# Consumer: u-be-orchestrator-core | u-fe-orchestrator-core (after Epic integration QA)
+# Save to: $SESSION_DIR/reviews/$ORCH_TASK_ID-arch.yaml
+
+scan:
+  id: ARCH-<YYYYMMDD-HHMMSS>
+  reviewed_by: u-architecture-reviewer
+  epic: EPIC-XX
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: semi-permanent
+  deliveries_scanned:
+    - TC-01
+    - TC-02
+    - TC-03
+
+findings:
+  - id: AFND-001
+    pattern: god_service
+    severity: P1
+    locations:
+      - file: src/services/user.service.ts
+        symbol: UserService
+        line_range: "1-312"
+    detection_evidence: "UserService has 19 public methods spanning authentication, profile management, and notification dispatch — 3 distinct domain areas."
+    action: create_refactoring_tc
+    suggested_tc_objective: "Extract notification dispatch logic from UserService into a dedicated NotificationService with explicit interface contract."
+    suggested_priority: P1
+
+summary:
+  total_findings: 1
+  by_action:
+    create_refactoring_tc: 1
+    create_tech_debt_tc: 0
+    escalate_to_human: 0
+  tcs_to_create:
+    - type: refactoring
+      priority: P1
+      scope: backend
+      objective: "Extract notification dispatch logic from UserService into a dedicated NotificationService with explicit interface contract."
+      origin_finding: AFND-001

@@ -1,0 +1,27 @@
+{
+  "phase": "dev",
+  "version": "1.0",
+  "criteria": [
+    {
+      "id": "all_impl_tasks_terminal",
+      "description": "All dev-phase tasks have reached a terminal status (completed or dlq)",
+      "script": "scripts/check_all_impl_tasks_terminal.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "all_deliveries_qa_ready",
+      "description": "Every delivery.md artifact from completed dev tasks contains qa_ready: true",
+      "script": "scripts/check_all_deliveries_qa_ready.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "no_open_prohibitions",
+      "description": "No delivery.md artifact contains a non-empty prohibition_violations list",
+      "script": "scripts/check_no_open_prohibitions.py",
+      "required": true,
+      "blocking": true
+    }
+  ]
+}

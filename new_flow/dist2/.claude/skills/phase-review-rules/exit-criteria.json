@@ -1,0 +1,27 @@
+{
+  "phase": "review",
+  "version": "1.0",
+  "criteria": [
+    {
+      "id": "all_qa_verdicts_approved",
+      "description": "Every QA verdict artifact from completed review tasks has verdict: approved or approved_with_reservations",
+      "script": "scripts/check_all_qa_verdicts_approved.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "no_open_critical_findings",
+      "description": "No QA verdict artifact contains a finding with severity: critical",
+      "script": "scripts/check_no_open_critical_findings.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "documentation_verified",
+      "description": "At least one QA verdict artifact contains documentation_verified: true, and none contains documentation_verified: false",
+      "script": "scripts/check_documentation_verified.py",
+      "required": true,
+      "blocking": true
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# Template: security-finding
+# Schema: .claude/skills/u-shared-templates/security-finding.schema.yaml
+# Producer: u-security-reviewer
+# Consumer: u-be-orchestrator-core | u-fe-orchestrator-core
+# Save to: $SESSION_DIR/reviews/$ORCH_TASK_ID-sec.yaml
+
+scan:
+  id: SEC-<YYYYMMDD-HHMMSS>
+  reviewed_by: u-security-reviewer
+  task_contract: TC-XX
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: semi-permanent
+  files_scanned:
+    - src/controllers/resource.controller.ts
+    - src/services/resource.service.ts
+
+findings:
+  - id: SFND-001
+    type: missing_input_validation
+    severity: high
+    location:
+      file: src/controllers/resource.controller.ts
+      line_range: "42-47"
+      symbol: createResource
+    evidence: "req.body.name passed directly to service without sanitization or length check"
+    action: block_tc
+    cwe_id: CWE-20
+    suggested_tc_objective: "Add input validation middleware to POST /api/resource — sanitize req.body fields and enforce maxLength constraints before reaching service layer."
+
+verdict: blocked

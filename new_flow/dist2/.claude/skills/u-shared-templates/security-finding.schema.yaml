@@ -1,0 +1,105 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/security-finding.schema.yaml"
+title: security-finding
+description: >
+  Structured output of u-security-reviewer.
+  Each finding maps to a deterministic action — no narrative interpretation required.
+  action=block_tc halts the Task Contract immediately.
+  action=create_remediation_tc generates a new TC of type=bugfix scoped to the fix.
+  action=log_warning registers in the QA report as low-severity advisory.
+type: object
+required:
+  - scan
+  - findings
+  - verdict
+additionalProperties: false
+properties:
+
+  scan:
+    type: object
+    required: [id, reviewed_by, task_contract, timestamp, layer, files_scanned]
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        pattern: "^SEC-[0-9]{8}-[0-9]{6}$"
+        description: "Format: SEC-YYYYMMDD-HHMMSS"
+      reviewed_by:
+        type: string
+        const: "u-security-reviewer"
+      task_contract:
+        type: string
+        pattern: "^TC-[0-9]+$"
+      timestamp:
+        type: string
+        pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+      layer:
+        type: string
+        const: "semi-permanent"
+      files_scanned:
+        type: array
+        items:
+          type: string
+        minItems: 1
+
+  findings:
+    type: array
+    items:
+      type: object
+      required: [id, type, severity, location, evidence, action, cwe_id]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^SFND-[0-9]{3}$"
+        type:
+          type: string
+          enum:
+            - injection
+            - broken_access_control
+            - sensitive_data_exposure
+            - missing_auth_check
+            - insecure_direct_object_ref
+            - missing_rate_limit
+            - hardcoded_secret
+            - missing_input_validation
+            - insecure_deserialization
+            - dependency_vulnerability
+            - missing_security_header
+            - mass_assignment
+          description: "OWASP-aligned finding type."
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        location:
+          type: object
+          required: [file, line_range, symbol]
+          additionalProperties: false
+          properties:
+            file:
+              type: string
+            line_range:
+              type: string
+              description: "e.g. 42-47 or 55"
+            symbol:
+              type: string
+              description: "Function, class, or endpoint identifier."
+        evidence:
+          type: string
+          description: "Exact code pattern or configuration that triggered this finding. Must be a direct quote or path reference — not an interpretation."
+        action:
+          type: string
+          enum: [block_tc, create_remediation_tc, log_warning]
+          description: "block_tc: critical/high — TC cannot be approved. create_remediation_tc: medium — new TC generated. log_warning: low — advisory only."
+        cwe_id:
+          type: string
+          pattern: "^CWE-[0-9]+$"
+          description: "CWE identifier for this finding type."
+        suggested_tc_objective:
+          type: string
+          description: "Single sentence. Populated when action=create_remediation_tc. Ready to use as TC objective without modification."
+
+  verdict:
+    type: string
+    enum: [approved, approved_with_remediations, blocked]
+    description: "approved: no findings or only log_warning. approved_with_remediations: medium findings only — new TCs created. blocked: any critical or high finding."

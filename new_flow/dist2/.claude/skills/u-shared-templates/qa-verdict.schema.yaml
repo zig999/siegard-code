@@ -1,0 +1,98 @@
+# qa-verdict.md schema
+# Artifact produced by QA workers (u-be-qa-docs, u-fe-qa-docs) and consumed by:
+#   - check_all_qa_verdicts_approved.py   (exit criterion: all_qa_verdicts_approved)
+#   - check_no_open_critical_findings.py  (exit criterion: no_open_critical_findings)
+#   - check_documentation_verified.py     (exit criterion: documentation_verified)
+#   - orchestrator-review Step 5          (verdict summary for human approval gate)
+#
+# File format: Markdown with YAML frontmatter.
+# Naming convention: <specs_dir>/qa/<task_id>-qa.md
+
+schema:
+  type: markdown_with_frontmatter
+
+frontmatter:
+  required:
+    task_id:
+      type: string
+      description: Task Contract ID under review (e.g. dev_tc_001)
+
+    verdict:
+      type: string
+      enum: [approved, approved_with_reservations, rejected]
+      description: >
+        Overall QA verdict for this task.
+        - approved: all acceptance criteria met, no blocking issues
+        - approved_with_reservations: minor issues noted but does not block delivery
+        - rejected: blocking issues found; task must be reworked
+        Checked by regex: ^\s*verdict\s*:\s*(\S+)
+        Values checked against: {approved, approved_with_reservations}
+
+    documentation_verified:
+      type: boolean
+      description: >
+        Set to true when the implementation includes adequate documentation
+        (API docs, inline docs, README updates as applicable).
+        At least one qa-verdict.md with documentation_verified: true must exist
+        for the review phase to pass exit criterion documentation_verified.
+
+  optional:
+    findings:
+      type: array
+      description: List of issues found during review.
+      items:
+        required:
+          id:
+            type: string
+            description: Finding identifier (e.g. QA-001)
+          severity:
+            type: string
+            enum: [critical, high, medium, low]
+            description: >
+              Finding severity. "critical" findings block exit criterion
+              no_open_critical_findings. Checked by check_no_open_critical_findings.py.
+          description:
+            type: string
+            description: Clear description of the issue.
+        optional:
+          file:
+            type: string
+            description: File path where the issue was found.
+          suggestion:
+            type: string
+            description: Recommended fix.
+
+    test_coverage:
+      type: object
+      description: Summary of test coverage observed.
+      properties:
+        unit: { type: boolean }
+        integration: { type: boolean }
+        e2e: { type: boolean }
+
+example: |
+  ---
+  task_id: dev_tc_001
+  verdict: approved
+  documentation_verified: true
+  findings:
+    - id: QA-001
+      severity: low
+      description: "Missing JSDoc on authService.generateToken()"
+      file: src/services/auth_service.ts
+      suggestion: "Add @param and @returns annotations"
+  test_coverage:
+    unit: true
+    integration: true
+    e2e: false
+  ---
+
+  ## QA Review — dev_tc_001
+
+  Implementation matches spec §3 (POST /auth/login) and §5 (JWT issuance).
+  Token expiry matches BR-007 (15 minutes for access, 7 days for refresh).
+
+  ### Acceptance criteria
+  - [x] 401 on invalid credentials
+  - [x] 200 with {access_token, refresh_token} on success
+  - [x] Rate limiting applied (5 attempts / minute)

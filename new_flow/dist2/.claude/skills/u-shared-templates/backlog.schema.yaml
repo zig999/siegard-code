@@ -1,0 +1,84 @@
+# backlog.json schema
+# Artifact produced by planning workers (u-be-planner, u-fe-planner) and consumed by:
+#   - orchestrator-dev Step 4 (impl task creation from backlog)
+#
+# File format: JSON array of Task Contract objects.
+# Naming convention: <session_dir>/backlog/backlog.json
+
+schema:
+  type: json_array
+  items:
+    $ref: "#/task_contract"
+
+task_contract:
+  required:
+    task_id:
+      type: string
+      pattern: "dev_tc_[0-9]{3,}"
+      description: >
+        Unique identifier. Format: dev_tc_{n} where n is zero-padded (001, 002, ...).
+        Used as the task_id in task_created events.
+
+    spec:
+      type: string
+      description: >
+        Relative path (from ORCH_PROJECT_DIR) to the Task Contract file (.md).
+        The Task Contract file contains the full implementation spec for this task.
+        Example: sessions/2026-04-21/backlog/tc-001.md
+
+    deps:
+      type: array
+      items:
+        type: string
+        pattern: "dev_tc_[0-9]{3,}"
+      description: >
+        List of task_ids that must be completed before this task can start.
+        Empty array for tasks with no dependencies.
+
+    tier:
+      type: string
+      enum: [standard, critical]
+      description: >
+        Priority tier. Use "critical" only for tasks that block all others if they fail
+        (e.g., database migrations, auth foundation). Defaults to "standard".
+
+  optional:
+    type:
+      type: string
+      description: >
+        Task type hint. Orchestrator uses this to select the correct worker.
+        Planning workers: "planning". Impl workers: "impl".
+        Default: "impl".
+
+    stack:
+      type: string
+      enum: [be, fe, fullstack]
+      description: >
+        Stack target. Orchestrator uses this with task type to select worker
+        via phase-dev-rules/select_worker.py.
+
+    title:
+      type: string
+      description: Human-readable title (max 80 chars). Used in progress panels.
+
+example: |
+  [
+    {
+      "task_id": "dev_tc_001",
+      "spec": "sessions/2026-04-21/backlog/tc-001.md",
+      "deps": [],
+      "tier": "critical",
+      "type": "impl",
+      "stack": "be",
+      "title": "POST /auth/login with JWT issuance"
+    },
+    {
+      "task_id": "dev_tc_002",
+      "spec": "sessions/2026-04-21/backlog/tc-002.md",
+      "deps": ["dev_tc_001"],
+      "tier": "standard",
+      "type": "impl",
+      "stack": "fe",
+      "title": "Login screen — form and error states"
+    }
+  ]

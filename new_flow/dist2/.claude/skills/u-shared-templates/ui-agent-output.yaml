@@ -1,0 +1,51 @@
+# Template: ui-agent-output
+# Schema: .claude/skills/u-shared-templates/ui-agent-output.schema.yaml
+# Producer: u-fe-ui agent
+# Consumers: u-fe-orchestrator-core (UI spec completeness gate), u-fe-developer
+
+epic: EPIC-XX
+layer: semi-permanent
+produced_by: u-fe-ui
+timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+
+tasks_covered:
+  - id: TC-XX
+    screens:
+      - ScreenName1
+      - ScreenName2
+    status: complete
+  - id: TC-YY
+    screens:
+      - ScreenName3
+    status: partial
+
+ui_nn_covered:
+  - feature: feature-name
+    source: "{SPECS_DIR}/front/features/feature-name.feature.spec.md"
+    states:
+      - UI-01
+      - UI-02
+      - UI-03
+      - UI-04
+    all_states_covered: true
+
+bdd_scenarios_covered:
+  - scenario_id: S-01
+    screen: ScreenName1
+    states:
+      - UI-01
+      - UI-03
+    coverage: full
+  - scenario_id: S-02
+    screen: ScreenName2
+    states:
+      - UI-04
+    coverage: full
+
+design_system:
+  source: "{SPECS_DIR}/front/design-system/"
+  rules_applied: true
+
+open_questions_count: 0
+ready_for_development: true
+partial_release_notes: ""

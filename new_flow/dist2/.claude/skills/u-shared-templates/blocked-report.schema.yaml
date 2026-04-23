@@ -1,0 +1,89 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/blocked-report.schema.yaml"
+title: blocked-report
+description: >
+  Standard structured format for reporting blocked or failed agent execution.
+  Used when an agent cannot proceed due to missing inputs, unresolvable conflicts,
+  or structural precondition failures.
+  Rule: missing_inputs used when status=blocked; conflicts used when status=failed.
+type: object
+required:
+  - blocked
+  - status
+  - reason
+  - resolution
+additionalProperties: false
+properties:
+  blocked:
+    type: object
+    required: [id, reported_by, artifact, timestamp, layer]
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        pattern: "^BLK-[0-9]{8}-[0-9]{6}$"
+        description: "Format: BLK-YYYYMMDD-HHMMSS"
+      reported_by:
+        type: string
+        description: "e.g. u-spec-validator | u-spec-reviewer | u-fe-qa-docs"
+      artifact:
+        type: string
+        description: "e.g. domains/auth/openapi.yaml | TC-12"
+      timestamp:
+        type: string
+        pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        description: "ISO-8601: YYYY-MM-DDTHH:MM:SSZ"
+      layer:
+        type: string
+        enum: [permanent, semi-permanent]
+  status:
+    type: string
+    enum: [blocked, failed]
+    description: "blocked = required inputs absent; failed = execution started but unrecoverable"
+  reason:
+    type: string
+    enum: [missing_input, dependency, infeasibility]
+    description: "Category of blocking condition. missing_input: required field or file absent. dependency: upstream dependency not satisfied. infeasibility: precondition cannot be met as specified."
+  reason_detail:
+    type: string
+    description: "Optional single objective sentence expanding on the reason — no narrative"
+  missing_inputs:
+    type: array
+    description: "Populated when status=blocked. Mutually exclusive with conflicts."
+    items:
+      type: object
+      required: [field, expected, source]
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+        expected:
+          type: string
+        source:
+          type: string
+  conflicts:
+    type: array
+    description: "Populated when status=failed. Mutually exclusive with missing_inputs."
+    items:
+      type: object
+      required: [id, description, location]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^CONFLICT-[0-9]{3}$"
+        description:
+          type: string
+        location:
+          type: string
+  resolution:
+    type: object
+    required: [required_action, escalate_to]
+    additionalProperties: false
+    properties:
+      required_action:
+        type: string
+        description: "Concrete action needed to unblock"
+      escalate_to:
+        type: string
+        enum: [orchestrator, human]

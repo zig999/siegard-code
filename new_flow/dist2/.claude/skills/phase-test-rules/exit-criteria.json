@@ -1,0 +1,23 @@
+{
+  "phase": "test",
+  "criteria": [
+    {
+      "id": "all_test_tasks_terminal",
+      "script": "scripts/check_all_test_tasks_terminal.py",
+      "description": "All test tasks are in completed or dlq status",
+      "required": true
+    },
+    {
+      "id": "all_tests_passed",
+      "script": "scripts/check_all_tests_passed.py",
+      "description": "Every test report artifact has result: passed",
+      "required": true
+    },
+    {
+      "id": "no_critical_failures",
+      "script": "scripts/check_no_critical_failures.py",
+      "description": "No test report artifact contains severity: critical failures",
+      "required": true
+    }
+  ]
+}

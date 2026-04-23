@@ -1,0 +1,30 @@
+# Template: compliance-finding
+# Schema: .claude/skills/u-shared-templates/compliance-finding.schema.yaml
+# Producer: u-spec-compliance
+# Consumer: u-spec-orchestrator (pre-handoff gate)
+# Save to: {SPECS_DIR}/_validation/{domain}-compliance.yaml
+
+scan:
+  id: CMP-<YYYYMMDD-HHMMSS>
+  reviewed_by: u-spec-compliance
+  domain: auth
+  spec_version: 1.0.0
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: permanent
+  regulations_checked:
+    - gdpr
+    - lgpd
+
+findings:
+  - id: CFND-001
+    regulation: gdpr
+    article_or_control: "GDPR Art.5(1)(e)"
+    type: missing_data_retention_policy
+    location:
+      file: "specs/auth/auth.spec.md"
+      section: "§3 Business Rules"
+    gap_description: "No data retention period defined for user session tokens stored in the database."
+    action: block_handoff
+    required_spec_change: "Add BR-NN: session tokens must be purged after N days of inactivity as defined by the data retention policy."
+
+verdict: non_compliant

@@ -1,0 +1,27 @@
+{
+  "phase": "sdd",
+  "version": "1.0",
+  "criteria": [
+    {
+      "id": "handoff_manifest_approved",
+      "description": "handoff-manifest.yaml exists in SPECS_DIR and contains Status: approved",
+      "script": "scripts/check_handoff_manifest_approved.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "all_domains_validated",
+      "description": "No INVALID status in any file under SPECS_DIR/_validation/",
+      "script": "scripts/check_all_domains_validated.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "error_codes_synced",
+      "description": "All error.code values found in spec files are registered in SPECS_DIR/error-codes.md",
+      "script": "scripts/check_error_codes_synced.py",
+      "required": true,
+      "blocking": true
+    }
+  ]
+}

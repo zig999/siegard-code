@@ -1,0 +1,156 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/architecture-finding.schema.yaml"
+title: architecture-finding
+description: >
+  Structured output of u-architecture-reviewer.
+  Produced after Epic integration QA approves. Scans all delivery files in the Epic.
+  Detection is pattern-based (enumerable taxonomy), not interpretive.
+  Each finding maps to a deterministic action — the orchestrator creates TCs directly
+  from suggested_tc_objective without interpretation.
+  action=create_refactoring_tc: Orchestrator generates TC of type=refactoring, priority from finding.
+  action=create_tech_debt_tc: Orchestrator generates TC of type=tech_debt, logged in tech-debt backlog.
+  action=escalate_to_human: structural issue requiring architectural decision before TC creation.
+type: object
+required:
+  - scan
+  - findings
+  - summary
+additionalProperties: false
+properties:
+
+  scan:
+    type: object
+    required: [id, reviewed_by, epic, timestamp, layer, deliveries_scanned]
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        pattern: "^ARCH-[0-9]{8}-[0-9]{6}$"
+        description: "Format: ARCH-YYYYMMDD-HHMMSS"
+      reviewed_by:
+        type: string
+        const: "u-architecture-reviewer"
+      epic:
+        type: string
+        pattern: "^EPIC-[0-9]+$"
+      timestamp:
+        type: string
+        pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+      layer:
+        type: string
+        const: "semi-permanent"
+      deliveries_scanned:
+        type: array
+        items:
+          type: string
+          pattern: "^TC-[0-9]+$"
+        minItems: 1
+
+  findings:
+    type: array
+    items:
+      type: object
+      required: [id, pattern, severity, locations, detection_evidence, action, suggested_tc_objective]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^AFND-[0-9]{3}$"
+        pattern:
+          type: string
+          enum:
+            - god_service
+            - duplicate_abstraction
+            - missing_abstraction
+            - cross_layer_violation
+            - circular_dependency
+            - responsibility_boundary_violation
+            - implicit_shared_state
+            - undeclared_tech_debt
+          description: >
+            god_service: class/service with methods spanning >2 domain areas or >15 public methods.
+            duplicate_abstraction: two modules with identical public interface handling same concern.
+            missing_abstraction: identical logic block (>8 lines) repeated in >2 files without shared function.
+            cross_layer_violation: controller/handler accessing repository/DB directly, bypassing service layer.
+            circular_dependency: module A imports B which imports A (any depth).
+            responsibility_boundary_violation: infrastructure code (HTTP, DB client) inside domain layer.
+            implicit_shared_state: multiple services read/write same global var or file without explicit contract.
+            undeclared_tech_debt: TODO/FIXME/HACK comments in delivered files not registered in tc-XX-delivery.md tech_debt section.
+        severity:
+          type: string
+          enum: [P0, P1, P2]
+          description: "P0: blocks architectural integrity (circular_dependency, god_service >25 methods). P1: degrades maintainability. P2: advisory."
+        locations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [file, symbol]
+            additionalProperties: false
+            properties:
+              file:
+                type: string
+              symbol:
+                type: string
+                description: "Class, function, or module name."
+              line_range:
+                type: string
+        detection_evidence:
+          type: string
+          description: "The specific code signature, import path, or comment text that triggered this pattern. Direct quote or count — not interpretation."
+        action:
+          type: string
+          enum: [create_refactoring_tc, create_tech_debt_tc, escalate_to_human]
+        suggested_tc_objective:
+          type: string
+          description: "Single sentence. Used verbatim as the new TC objective field. No modification required by the orchestrator."
+        suggested_priority:
+          type: string
+          enum: [P0, P1, P2]
+          description: "Priority for the generated TC. Matches finding severity unless cross-Epic impact justifies elevation."
+
+  summary:
+    type: object
+    required: [total_findings, by_action, tcs_to_create]
+    additionalProperties: false
+    properties:
+      total_findings:
+        type: integer
+        minimum: 0
+      by_action:
+        type: object
+        required: [create_refactoring_tc, create_tech_debt_tc, escalate_to_human]
+        additionalProperties: false
+        properties:
+          create_refactoring_tc:
+            type: integer
+            minimum: 0
+          create_tech_debt_tc:
+            type: integer
+            minimum: 0
+          escalate_to_human:
+            type: integer
+            minimum: 0
+      tcs_to_create:
+        type: array
+        description: "Ready-to-create TC list. Orchestrator appends these to backlog.md without transformation."
+        items:
+          type: object
+          required: [type, priority, scope, objective, origin_finding]
+          additionalProperties: false
+          properties:
+            type:
+              type: string
+              enum: [refactoring, tech_debt]
+            priority:
+              type: string
+              enum: [P0, P1, P2]
+            scope:
+              type: string
+              enum: [frontend, backend]
+            objective:
+              type: string
+              description: "Verbatim from finding.suggested_tc_objective."
+            origin_finding:
+              type: string
+              pattern: "^AFND-[0-9]{3}$"

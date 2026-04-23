@@ -1,0 +1,13 @@
+{
+  "phase": "{name}",
+  "version": "1.0",
+  "criteria": [
+    {
+      "id": "{criterion_name}",
+      "description": "{Human-readable description of what this criterion checks}",
+      "script": "scripts/check_{criterion_name}.py",
+      "required": true,
+      "blocking": true
+    }
+  ]
+}

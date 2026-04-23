@@ -1,0 +1,40 @@
+# Template: fe-validate-report
+# Schema: .claude/skills/u-shared-templates/fe-validate-report.schema.yaml
+# Producer: /u-fe-validate command
+# Consumer: human review, CI gates, orchestrator-dev (optional pre-TC gate)
+# Layer: ephemeral — stored at {OUTPUT_DIR}/fe-validate-{run_id}.yaml
+
+meta:
+  run_id: FV-<YYYYMMDD-HHMMSS>
+  target: <path or glob pattern>
+  files_scanned: <int>
+  validated_by: u-fe-validate
+  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
+  rules_applied:
+    - code_quality        # u-fe-standards §2
+    - visual_design       # u-fe-standards §3
+  specs_dir_used: <path to design-system/ or null>
+
+status: passed | failed
+
+verdict: approved | approved_with_caveats | rejected
+# approved             → zero findings
+# approved_with_caveats → only medium/low findings
+# rejected             → at least one critical or high finding
+
+summary:
+  total: <int>
+  critical: <int>
+  high: <int>
+  medium: <int>
+  low: <int>
+
+findings:
+  - id: FINDING-001
+    rule_set: code_quality | visual_design
+    rule: <rule-slug>        # e.g. inline-css | design-token | gradient-text | line-height
+    file: <relative path>
+    line: <int or null>
+    severity: critical | high | medium | low
+    description: <single objective sentence — what was found>
+    suggested_fix: <concrete action>
