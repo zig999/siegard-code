@@ -76,7 +76,7 @@ To override, place a `workflow.json` file in `$ORCH_DIR` (`.orch/workflow.json`)
 
 ## Operation cycle
 
-Execute these steps in order on every invocation.
+Execute these steps in order on every invocation. Steps 3–7 may loop internally (up to 20 cycles, guarded by I5) to advance through consecutive phase transitions without requiring a new user invocation. Each new user invocation starts at Step 1.
 
 ---
 
@@ -118,27 +118,28 @@ Extract from the combined output:
 
 | Variable | Source | Description |
 |----------|--------|-------------|
+| `workflow_id` | `reduce.py` → `workflow_id` | Workflow UUID, or `null` if not initialized |
 | `current_phase` | `current_phase.py` → `current_phase` | Active phase name, or `null` |
 | `phase_status` | `current_phase.py` → `status` | `"active"` \| `"null"` |
 | `last_seq` | `reduce.py` → `last_seq` | Last event seq in log |
 | `phases` | `reduce.py` → `phases` | Map of phase name → PhaseState |
-| `escalation` | `reduce.py` → `escalation` | Present if escalation is unresolved |
-| `phase_declared_count` | `reduce.py` → `phase_declared_count` | Number of `phase_declared` events in log |
-| `run_status` | Derived below | Workflow-level status |
+| `escalation` | `reduce.py` → `escalation` | Escalation object, or `null` if none active |
+| `raw_run_status` | `reduce.py` → `run_status` | `"active"` \| `"escalated"` (reducer-computed) |
+| `run_status` | Derived below | Final workflow-level status |
 
-**Derive `run_status` from script outputs (no interpretation — use exact field comparisons):**
+**Derive `run_status` from script outputs (no interpretation — exact field comparisons only):**
 
 ```
-escalation_seq        = escalation.seq if escalation key is present in reduce output, else null
-human_response_after  = true if any event with type="human_response" and seq > escalation_seq exists
-                        in reduce output events list; false otherwise
-required_phases       = [p for p in phases.values() if p.required == true]
-all_completed         = all(p.status == "completed" for p in required_phases) AND len(required_phases) > 0
+# raw_run_status from reduce.py is "active" or "escalated".
+# Augment with "completed" and "pending" using phases map.
 
-if escalation_seq != null AND NOT human_response_after → run_status = "escalated"
-elif all_completed                                      → run_status = "completed"
-elif current_phase != null                              → run_status = "active"
-else                                                    → run_status = "pending"
+required_phases = [p for p in phases.values() if p.required == true]
+all_completed   = len(required_phases) > 0 AND all(p.status == "completed" for p in required_phases)
+
+if raw_run_status == "escalated"  → run_status = "escalated"
+elif all_completed                 → run_status = "completed"
+elif len(phases) == 0              → run_status = "pending"
+else                               → run_status = "active"
 ```
 
 ---
@@ -146,6 +147,8 @@ else                                                    → run_status = "pendin
 ### Step 3 — Terminal state check
 
 If `run_status == "completed"`:
+
+Compute `phases_completed` as the sorted list of phase names (by `order`) where `status == "completed"`.
 
 Emit final completion report to the user:
 
@@ -156,32 +159,31 @@ Workflow ID: {workflow_id}
 Last seq:    {last_seq}
 
 Phases completed:
-  ✓ sdd    (seq {sdd_entered_seq} → {sdd_transitioned_seq})
-  ✓ dev    (seq {dev_entered_seq} → {dev_transitioned_seq})
-  ✓ review (seq {review_entered_seq} → {review_transitioned_seq})
-  ✓ test   (seq {test_entered_seq} → {test_transitioned_seq})
+{for each phase in phases_completed, sorted by order:}
+  ✓ {phase.name}  entered: {phase.entered_at}  completed: {phase.completed_at}
 ```
 
 Output:
 ```json
-{"status": "completed", "workflow_id": "<id>", "last_seq": <n>, "phases_completed": ["sdd","dev","review","test"]}
+{"status": "completed", "workflow_id": "<workflow_id>", "last_seq": <n>, "phases_completed": ["<phase1>", "<phase2>", ...]}
 ```
 
 Stop.
 
 If `run_status == "escalated"`:
 
-Emit escalation report to the user, quoting the escalation event's `reason` and `suggested_actions`:
+Emit escalation report to the user, quoting the escalation event's `reason` and `options`:
 
 ```
 Workflow Escalated
 ==================
 Code:    {escalation.code}
 Reason:  {escalation.reason}
-Seq:     {escalation_seq}
+Seq:     {last_seq}
 
-Suggested actions:
-{escalation.suggested_actions}
+Options:
+{for each option in escalation.options, one per line:}
+  - {option}
 
 To resume: emit human_response event and invoke orchestrator again.
 ```
@@ -197,9 +199,11 @@ Stop.
 
 ### Step 4 — First-run initialization
 
-Check `phase_declared_count` from Step 2 state.
+Check `workflow_id` from Step 2 state.
 
-If `phase_declared_count == 0` (no `phase_declared` yet):
+If `workflow_id != null`: workflow already initialized. Skip to Step 5.
+
+If `workflow_id == null` (first run):
 
 Generate `workflow_id`:
 
@@ -241,8 +245,6 @@ python3 .claude/skills/orch-log/scripts/append.py \
 ```
 
 Re-read state (re-run Step 2).
-
-If `phase_declared_count > 0`: derive `workflow_id` from the existing `phase_declared` event in the log (`reduce.py` → `workflow_id`). Skip initialization.
 
 ---
 
@@ -352,7 +354,7 @@ If `status == "blocked"` (circuit tripped):
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator \
   --event-type escalation \
-  --data '{"code":"E10_phase_orchestrator_error","severity":"critical","reason":"Phase orchestrator for <current_phase> returned error and circuit breaker is tripped. Summary: <summary>","evidence":[<last_seq>],"suggested_actions":["inspect log for phase <current_phase>","run circuit_breaker.py reset after resolving failures"]}'
+  --data '{"code":"E10_phase_orchestrator_error","severity":"critical","reason":"Phase orchestrator for <current_phase> returned error and circuit breaker is tripped. Summary: <summary>","evidence":[<last_seq>],"options":["inspect log for phase <current_phase>","run circuit_breaker.py reset after resolving failures"]}'
 ```
 
 Output:
@@ -362,16 +364,8 @@ Output:
 
 Stop.
 
-If circuit is open (not tripped): emit a diagnostic event before stopping.
+If circuit is open (not tripped): present error report and stop.
 
-```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator \
-  --event-type task_progress \
-  --data '{"note":"phase_orchestrator_error_circuit_open","phase":"<current_phase>","summary":"<summary>","last_seq":<n>}'
-```
-
-Output:
 ```json
 {"status": "error", "phase": "<current_phase>", "summary": "<summary>", "last_seq": <n>}
 ```
@@ -394,11 +388,11 @@ All other human interaction (confirmation gates, verdict approval) is handled in
 
 ## Resumption behavior
 
-On every invocation, the meta-orchestrator starts fresh from Step 1. State is always derived from the log. This means:
+On every **user invocation**, the meta-orchestrator starts fresh from Step 1. Within a single invocation, Steps 3–7 may loop to handle consecutive phase transitions automatically (e.g., sdd completes → dev starts → dev completes → review starts, all in one run). The cycle counter (I5) bounds this loop.
 
 - After a human responds to an escalation: invoke orchestrator again — it will detect the response and route to the correct phase orchestrator
 - After a crash mid-phase: invoke orchestrator again — the phase orchestrator derives its state from the log and resumes from where it left off
-- After `review` returns tasks to `dev`: current_phase becomes `dev` — the meta-orchestrator spawns `orchestrator-dev` on the next invocation
+- After `review` returns tasks to `dev`: `current_phase` becomes `dev` — the meta-orchestrator spawns `orchestrator-dev` on the next loop cycle or invocation
 
 ---
 

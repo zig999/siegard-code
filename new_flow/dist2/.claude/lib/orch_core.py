@@ -1363,6 +1363,14 @@ def _handle_circuit_breaker_tripped(state: OrchState, event: Event) -> None:
 
 
 def _handle_human_response(state: OrchState, event: Event) -> None:
+    # Any human_response resolves the active escalation, regardless of action.
+    # Clearing run_status and escalation here is required so that the meta-orchestrator
+    # can correctly derive run_status as "active" on the next invocation instead of
+    # re-entering the escalated terminal check (P2 invariant).
+    state.escalation = None
+    if state.run_status == "escalated":
+        state.run_status = "active"
+
     action = event.data.get("action")
     if action == "reset_circuit_breaker":
         state.circuit_breaker = None
