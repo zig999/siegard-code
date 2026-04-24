@@ -1,5 +1,5 @@
 ---
-description: Receives an improvement task, classifies its spec impact, persists scope to the session log (write-before-confirm), and auto-invokes the spec pipeline when needed. Usage: /u-improve [SESSION] ["improvement task"] (e.g., /u-improve fix-kpi-card "tighten error states on KPI card")
+description: Receives an improvement task, classifies its spec impact, persists scope to the session log (write-before-confirm), and auto-invokes the spec pipeline when needed. Usage: /u-improve [workflow_id] ["improvement task"] (e.g., /u-improve fix-kpi-card "tighten error states on KPI card")
 ---
 
 Read the following file:
@@ -9,7 +9,7 @@ Read the following file:
 
 Extract from `$ARGUMENTS`:
 - **Quoted string** = `IMPROVEMENT_TASK` (optional — natural-language description of the improvement)
-- **Last non-quoted argument** = `SESSION`
+- **Last non-quoted argument** = `workflow_id` (human-readable identifier for this workflow; must not contain `/` or `\`)
 
 **Resolving `SPECS_DIR` (priority):**
 1. `specs_dir:` field in `CLAUDE.md` (project root) → use *(canonical source)*
@@ -18,9 +18,9 @@ Extract from `$ARGUMENTS`:
 **Resolving `ORCH_PROJECT_DIR`:**
 Derive from `pwd` at command invocation (absolute path to project root).
 
-**Resolving `SESSION` (= `workflow_id`):**
+**Resolving `workflow_id`:**
 1. Last non-quoted argument (string without `/` or `\`)
-2. If not provided: list existing sessions in `$ORCH_PROJECT_DIR/.orch/sessions/`, then ask: "Which session? (existing or new name)"
+2. If not provided: list existing workflows in `$ORCH_PROJECT_DIR/.orch/sessions/`, then ask: "Which workflow? (existing or new name)"
 
 > Session directory: `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>/` — created automatically by the orchestrator. No manual directory creation needed.
 

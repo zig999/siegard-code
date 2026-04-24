@@ -1,23 +1,23 @@
 ---
-description: Starts the Dev Team for a development session. Usage: /u-dev [SPECS_DIR] {SESSION} (e.g., /u-dev docs/specs fix-error-states)
+description: Starts the Dev Team for a development session. Usage: /u-dev [SPECS_DIR] {workflow_id} (e.g., /u-dev docs/specs fix-error-states)
 ---
 
 ## Variable Resolution
 
 Extract from `$ARGUMENTS`:
 - **First argument** = `SPECS_DIR` (optional if `specs_dir:` is set in `CLAUDE.md`)
-- **Last argument** = `SESSION` (development session name — maps to `workflow_id`)
+- **Last argument** = `workflow_id` (human-readable identifier for this workflow — e.g., `fix-error-states`, `people-card-height`; must not contain `/` or `\`)
 
 **Resolving `SPECS_DIR` (priority):**
 1. `specs_dir:` field in `CLAUDE.md` (project root) -> use *(canonical source — preferred)*
 2. First argument containing `/` or `\` -> use as `SPECS_DIR` *(fallback — warn the human: "specs_dir is not configured in CLAUDE.md. Recommended to add it for consistency across sessions.")*
-3. None -> **stop** and request: "Configure `specs_dir:` in CLAUDE.md or provide it as an argument: `/u-dev [specs_dir] [session]`"
+3. None -> **stop** and request: "Configure `specs_dir:` in CLAUDE.md or provide it as an argument: `/u-dev [specs_dir] [workflow_id]`"
 
-**Resolving `SESSION`:**
+**Resolving `workflow_id`:**
 1. Last argument (string without `/` or `\`)
-2. If not provided: check for existing sessions in `$ORCH_PROJECT_DIR/.orch/sessions/`:
-   - If found, list and ask: "Existing sessions: {list}. Resume one or create new?"
-   - If none found, ask: "Provide the session name (e.g., fix-error-states, feature-xyz):"
+2. If not provided: check for existing workflows in `$ORCH_PROJECT_DIR/.orch/sessions/`:
+   - If found, list and ask: "Existing workflows: {list}. Resume one or create new?"
+   - If none found, ask: "Provide the workflow name (e.g., fix-error-states, feature-xyz):"
 
 > Session directory is created automatically by the orchestrator at `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>/`. No manual directory creation needed.
 
@@ -28,7 +28,7 @@ This command delegates to the meta-orchestrator (`.claude/agents/orchestrator.md
 Pass the following environment context when invoking the orchestrator:
 - `ORCH_PROJECT_DIR` = absolute path to the project root
 - `SPECS_DIR` = resolved specs directory
-- `workflow_id` = `SESSION` value (used to scope the session directory)
+- `workflow_id` = value resolved above (scopes the session directory)
 
 ## Domain Routing
 
@@ -41,6 +41,22 @@ Read the `domain:` field in `CLAUDE.md` (project root). Pass it as context to th
 1. `CLAUDE.md` (project root)
 2. `.claude/agents/orchestrator.md` — meta-orchestrator entry point
 3. `.orch/state/snapshot.json` (if exists — session resumption via `orch-state`)
+
+## Phase Resumption
+
+If `.orch/log.jsonl` exists, read the current workflow state before proceeding:
+
+```bash
+python3 .claude/skills/orch-state/scripts/reduce.py 2>/dev/null
+```
+
+| `dev` phase status | Action |
+|--------------------|--------|
+| `completed` | Skip spec detection and estimate. Invoke meta-orchestrator directly (see §Instruction to the Orchestrator). It will advance to the next pending phase. |
+| `active` or `pending` | Continue with normal flow below. |
+| Log absent / empty | Continue with normal flow below. |
+
+**Rule:** Never suggest commands that are not listed under `.claude/commands/`. If the correct next step is unclear, invoke the meta-orchestrator — it derives the action from the log.
 
 ### Spec Detection
 If `{SPECS_DIR}/` exists:
@@ -77,14 +93,14 @@ If `{SPECS_DIR}`, improve_scope block in log, and `backlog.md` do not exist:
 2. Otherwise, guide:
    - `/u-spec [SPECS_DIR]` — generate technical specifications
    - `/u-reverse-spec [SPECS_DIR]` — generate specs from existing code
-   - `/u-improve [SPECS_DIR] {SESSION}` — register any intentional change (bug fix, tweak, or enhancement) in the session
+   - `/u-improve [SPECS_DIR] {workflow_id}` — register any intentional change (bug fix, tweak, or enhancement) in the session
 
 ## Pre-execution Estimate
 
 Before initializing, present an estimate to the human:
 
 ```
-## Estimate — /u-dev [SPECS_DIR] {SESSION}
+## Estimate — /u-dev [SPECS_DIR] {workflow_id}
 
 Mode: {detected mode} | Domain: {frontend|backend}
 Input: {improve_scope: N TCs estimated | {SPECS_DIR}: N domains}
@@ -120,7 +136,7 @@ Proceed? [Y / N]
 Invoke `.claude/agents/orchestrator.md` (meta-orchestrator) with:
 - `ORCH_PROJECT_DIR` = absolute path to the project root (resolved from `pwd`)
 - `SPECS_DIR` = resolved specs directory
-- `workflow_id` = `SESSION` value — scopes the session directory to `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>`
+- `workflow_id` = value resolved above — scopes the session directory to `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>`
 - `domain` = value from `CLAUDE.md`
 
 The orchestrator reads specs from `$SPECS_DIR/` and writes session artifacts under `$ORCH_PROJECT_DIR/.orch/sessions/$workflow_id/`.

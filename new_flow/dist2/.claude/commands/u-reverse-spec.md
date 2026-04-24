@@ -87,7 +87,7 @@ Status: All artifacts with DRAFT status
 Next steps:
   - To review and approve generated specs: /u-spec [SPECS_DIR]
   - To re-analyze after code changes: /u-reverse-spec [CODE_DIR]
-  - To implement improvements on the documented base: /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION]
+  - To implement improvements on the documented base: /u-dev [SPECS_DIR] [workflow_id]
 ```
 
 ## Available Agents (invoked by the Orchestrator via Agent tool)
@@ -101,6 +101,3 @@ Next steps:
 - `.claude/skills/u-spec-templates/` — templates for all spec types
 - `.claude/skills/u-spec-writing/SKILL.md` — OpenAPI quality
 
-## Available Protocols (loaded on demand by the Orchestrator)
-- `.claude/agents/reverse-spec/protocols/u-reverse-spec-detection.md` — stack auto-detection
-- `.claude/agents/reverse-spec/protocols/u-reverse-spec-merge.md` — merge with existing specs

@@ -1,24 +1,24 @@
 ---
-description: Select and fix spec validation errors incrementally. Displays persisted reports and allows choosing which inconsistencies to resolve. Usage: /u-spec-triage [SPECS_DIR] [SESSION] (e.g., /u-spec-triage docs/specs fix-error-states)
+description: Select and fix spec validation errors incrementally. Displays persisted reports and allows choosing which inconsistencies to resolve. Usage: /u-spec-triage [SPECS_DIR] [workflow_id] (e.g., /u-spec-triage docs/specs fix-error-states)
 ---
 
 ## Variable Resolution
 
 Extract from `$ARGUMENTS`:
 - **First argument** = `SPECS_DIR` (optional if `specs_dir:` is set in `CLAUDE.md`)
-- **Last argument** = `SESSION` (optional — string without `/` or `\`)
+- **Last argument** = `workflow_id` (optional — human-readable identifier for this workflow; must not contain `/` or `\`)
 
 **Resolving `SPECS_DIR` (priority):**
 1. `specs_dir:` field in `CLAUDE.md` (project root) -> use *(canonical source — preferred)*
-2. First argument containing `/` or `\` -> use as `SPECS_DIR` *(fallback — warn the human: "specs_dir is not configured in CLAUDE.md. Recommended to add it for consistency across sessions.")*
+2. First argument containing `/` or `\` -> use as `SPECS_DIR` *(fallback — warn the human: "specs_dir is not configured in CLAUDE.md. Recommended to add it for consistency.")*
 3. None -> **stop** and request: "Configure `specs_dir:` in CLAUDE.md or provide it as an argument: `/u-spec-triage [specs_dir]`"
 
 **Resolving `ORCH_PROJECT_DIR`:**
 1. Derive from `pwd` at command invocation (absolute path to project root)
 
-If `SESSION` is provided, the session directory is `$ORCH_PROJECT_DIR/.orch/sessions/<SESSION>/`.
+If `workflow_id` is provided, the session directory is `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>/`.
 
-If `SESSION` is not provided, triage runs normally but when writing the improve_scope block (Step 5), it will ask the human which session to save to.
+If `workflow_id` is not provided, triage runs normally but when writing the improve_scope block (Step 5), it will ask the human which session to save to.
 
 ## Initial Validation
 
@@ -72,12 +72,26 @@ Continue anyway? [Y / N]
    - `.claude/skills/u-spec-globals/conventions.md`
    - `.claude/skills/u-spec-globals/error-codes.md`
 
-3. Load the orchestrator agent with triage mode instruction:
-   - `.claude/agents/spec/u-spec-orchestrator.md`
-   - `.claude/agents/spec/u-spec-orchestrator-protocols.md`
-   - Instruction: "Triage mode. Validation reports found in `{SPECS_DIR}/_validation/`. Follow the protocol `protocols/u-spec-validation-triage.md` to present errors, collect human selection, route fixes to agents, and revalidate."
+3. Invoke the meta-orchestrator via Agent tool:
 
-4. The Orchestrator takes control following the triage protocol.
+   ```yaml
+   subagent_type: orchestrator
+   description: "Resume SDD workflow in triage mode"
+   prompt: |
+     Resume SDD workflow in triage mode.
+     workflow_id: {workflow_id}
+     ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
+     SPECS_DIR: {SPECS_DIR}
+     triage_mode: true
+     triage_context:
+       validation_dir: {SPECS_DIR}/_validation/
+       pending_reports: {list of INVALID report paths collected above}
+       instruction: >
+         Fix only the validation errors in the listed reports.
+         Present each error to the human, wait for selection, route the fix
+         to the appropriate spec agent (u-spec-writer, u-spec-back, u-spec-front,
+         or u-spec-validator), then re-validate. Do not rewrite entire spec files.
+   ```
 
 ## Completion
 
@@ -94,19 +108,14 @@ Result:
 improve_scope block emitted to: $ORCH_PROJECT_DIR/.orch/log.jsonl (event: session_scope_set)
 
 Next steps:
-  - Implement the fixes: /u-dev [SPECS_DIR] [SESSIONS_DIR] [SESSION]
-  - If errors remain: /u-spec-triage [SPECS_DIR] [SESSION] (new cycle)
+  - Implement the fixes: /u-dev [SPECS_DIR] [workflow_idS_DIR] [workflow_id]
+  - If errors remain: /u-spec-triage [SPECS_DIR] [workflow_id] (new cycle)
   - To fully revalidate: /u-spec [SPECS_DIR]
 
 Note: `domain:` was validated at session start.
 ```
 
-## Available Protocols (load on demand)
-- `.claude/agents/spec/protocols/u-spec-validation-triage.md` — triage protocol
-- `.claude/agents/spec/protocols/u-spec-context-mounting.md` — minimal context per agent
-- `.claude/agents/spec/protocols/u-spec-versioning.md` — versioning rules
-
-## Available Agents (invoked by the Orchestrator via Agent tool)
+## Available Agents (invoked by orchestrator-sdd via Agent tool)
 - `.claude/agents/spec/u-spec-writer.md`
 - `.claude/agents/spec/u-spec-back.md`
 - `.claude/agents/spec/u-spec-front.md`

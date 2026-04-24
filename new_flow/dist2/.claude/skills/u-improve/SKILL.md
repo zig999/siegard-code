@@ -26,7 +26,7 @@ Constraints:
 | Input | Source |
 |-------|--------|
 | `SPECS_DIR` | Resolved by command |
-| `SESSION` | Resolved by command (= `workflow_id`; session directory: `.orch/sessions/{SESSION}/`) |
+| `workflow_id` | Resolved by command (human-readable identifier; session directory: `.orch/sessions/{workflow_id}/`) |
 | `IMPROVEMENT_TASK` | Resolved by command (inline quoted text) — collected in Step 1 if absent |
 
 ---
@@ -217,13 +217,13 @@ regression_test_required: false
 
 Create the session directory and write the scope as a JSON file. This is a direct file write — NOT an event. The file is the artifact consumed by `orchestrator-sdd` in fast-track mode.
 
-Session directory: `$ORCH_PROJECT_DIR/.orch/sessions/{SESSION}/`
+Session directory: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/`
 
-Write to: `$ORCH_PROJECT_DIR/.orch/sessions/{SESSION}/improve-scope.json`
+Write to: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/improve-scope.json`
 
 ```json
 {
-  "workflow_id": "{SESSION}",
+  "workflow_id": "{workflow_id}",
   "improvement_task": "{improvement_task}",
   "type": "{spec_change_required | implementation_only}",
   "spec_change_status": "{pending_spec | not_required}",
@@ -278,7 +278,7 @@ mkdir -p "$ORCH_PROJECT_DIR/.orch"
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent u-improve \
   --event-type phase_declared \
-  --data '{"workflow_id":"{SESSION}","phases":<PHASES_ARRAY>,"workflow_type":"improve"}'
+  --data '{"workflow_id":"{workflow_id}","phases":<PHASES_ARRAY>,"workflow_type":"improve"}'
 ```
 
 Read last_seq after the write:
@@ -341,7 +341,7 @@ subagent_type: orchestrator
 description: "Invoke meta-orchestrator for improve fast-track spec pipeline"
 prompt: |
   Execute the SDD phase for an improve workflow.
-  workflow_id: {SESSION}
+  workflow_id: {workflow_id}
   ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
   SPECS_DIR: {SPECS_DIR}
   log_seq_at_spawn: {last_seq_after_declared}
@@ -382,27 +382,27 @@ Reply with one of: skip-planner | keep-planner | abort
 If `skip-planner`:
 
 ```
-next_command: /u-dev {SESSION}
-note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{SESSION}/
+next_command: /u-dev {workflow_id}
+note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{workflow_id}/
 orchestrator_instruction: skip_planner=true
 scope:
   {list of affected_specs}
 ```
 
 **STOP. Do not implement any code. Do not modify any file. Your role ends here.**
-The user must run `/u-dev {SESSION}` to proceed with implementation.
+The user must run `/u-dev {workflow_id}` to proceed with implementation.
 
 If `keep-planner`:
 
 ```
-next_command: /u-dev {SESSION}
-note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{SESSION}/
+next_command: /u-dev {workflow_id}
+note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{workflow_id}/
 planner_scope:
   {list of affected_specs}
 ```
 
 **STOP. Do not implement any code. Do not modify any file. Your role ends here.**
-The user must run `/u-dev {SESSION}` to proceed with implementation.
+The user must run `/u-dev {workflow_id}` to proceed with implementation.
 
 If `abort`: stop.
 
@@ -411,14 +411,14 @@ If `abort`: stop.
 Emit:
 
 ```
-next_command: /u-dev {SESSION}
-note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{SESSION}/
+next_command: /u-dev {workflow_id}
+note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{workflow_id}/
 planner_scope:
   {list of affected_specs}
 ```
 
 **STOP. Do not implement any code. Do not modify any file. Your role ends here.**
-The user must run `/u-dev {SESSION}` to proceed with implementation.
+The user must run `/u-dev {workflow_id}` to proceed with implementation.
 
 ---
 
@@ -433,7 +433,7 @@ The user must run `/u-dev {SESSION}` to proceed with implementation.
 | affected_spec_not_found | Set type: implementation_only — do not block |
 | all_outputs | Structured — no free-form text outside defined templates |
 | scope_block_persistence | write-before-confirm — Step 3a (improve-scope.json) and 3b (phase_declared) run BEFORE Step 3c human prompt. Step 3b always emits phase_declared (for all types), with phase set derived from type + pipeline. |
-| state_persistence_path | `$ORCH_PROJECT_DIR/.orch/sessions/{SESSION}/improve-scope.json` — NEVER write to docs/ or any other path |
+| state_persistence_path | `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/improve-scope.json` — NEVER write to docs/ or any other path |
 | event_log_tool | Use `append.py` (orch-log) for orchestrator-level events — NEVER use emit.py (worker-only guard-rail) |
 | spec_invocation | agent_tool_direct — invoke `orchestrator` (meta) via Agent tool; never print shell commands for paste |
 | confirmation_tokens | confirm \| skip-spec \| skip-planner \| keep-planner \| abort — no synonyms |

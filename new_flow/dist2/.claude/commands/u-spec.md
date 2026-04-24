@@ -1,12 +1,12 @@
 ---
-description: Starts the Spec-Driven Development pipeline. Initializes or resumes the SDD phase for a project. Usage: /u-spec [SPECS_DIR] [SESSION] ["requirement"] (e.g., /u-spec docs/specs my-session "Add payment flow to checkout domain")
+description: Starts the Spec-Driven Development pipeline. Initializes or resumes the SDD phase for a project. Usage: /u-spec [SPECS_DIR] [workflow_id] ["requirement"] (e.g., /u-spec docs/specs my-session "Add payment flow to checkout domain")
 ---
 
 ## Variable Resolution
 
 Extract from `$ARGUMENTS`:
 - **First argument** = `SPECS_DIR` (optional if `specs_dir:` is set in `CLAUDE.md`)
-- **Last non-quoted argument** = `SESSION` (optional — string without `/` or `\`; maps to `workflow_id`)
+- **Last non-quoted argument** = `workflow_id` (optional — human-readable identifier for this workflow; must not contain `/` or `\`)
 - **Remaining quoted text** = `REQUIREMENT` (optional — the requirement to specify)
 - **`INVOCATION_SOURCE`** (optional — set by parent agent, never by human): one of `human | u-improve | spec-triage`. Defaults to `human` when absent.
 
@@ -18,7 +18,7 @@ Extract from `$ARGUMENTS`:
 **Resolving `ORCH_PROJECT_DIR`:**
 Derive from `pwd` at command invocation (absolute path to project root).
 
-**Resolving `SESSION` (= `workflow_id`):**
+**Resolving `workflow_id`:**
 1. Last non-quoted argument (string without `/` or `\`)
 2. If not provided: check `.orch/log.jsonl` for an existing workflow_id — if found, use it. If none, generate one: `spec-<YYYYMMDD>`
 
@@ -130,7 +130,7 @@ If `INVOCATION_SOURCE = u-improve`: suppress the `[Y/N]` prompt — confirmation
    description: "Start SDD phase — new spec run"
    prompt: |
      Start a new SDD workflow.
-     workflow_id: {SESSION}
+     workflow_id: {workflow_id}
      ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
      SPECS_DIR: {SPECS_DIR}
      log_seq_at_spawn: 0
@@ -153,7 +153,7 @@ subagent_type: orchestrator
 description: "Resume SDD workflow"
 prompt: |
   Resume workflow.
-  workflow_id: {SESSION}
+  workflow_id: {workflow_id}
   ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
   SPECS_DIR: {SPECS_DIR}
   log_seq_at_spawn: {last_seq}
@@ -174,7 +174,7 @@ prompt: |
    description: "SDD phase — reverse-engineering review"
    prompt: |
      Start SDD workflow in reverse-engineering review mode.
-     workflow_id: {SESSION}
+     workflow_id: {workflow_id}
      ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
      SPECS_DIR: {SPECS_DIR}
      log_seq_at_spawn: 0
@@ -204,7 +204,7 @@ Files produced in {SPECS_DIR}/:
   - {list of files}
 
 Next steps:
-  - To start implementation: /u-dev {SESSION}
-  - To selectively fix validation errors: /u-spec-triage {SESSION}
+  - To start implementation: /u-dev {workflow_id}
+  - To selectively fix validation errors: /u-spec-triage {workflow_id}
   - To apply a targeted improvement: /u-improve "{description}"
 ```

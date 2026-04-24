@@ -57,8 +57,6 @@ Read the log and identify the last confirmed state:
 
 ### Step 1: Detect stack and context
 
-Load detection protocol: `.claude/agents/reverse-spec/protocols/u-reverse-spec-detection.md`
-
 Execute automatic detection:
 1. Search for configuration files (package.json, requirements.txt, etc.)
 2. Analyze dependencies to identify the framework
@@ -102,7 +100,7 @@ Fullstack project detected. Which side to process first?
 | Yes | No | **Merge** — analyze and compare with existing |
 | Yes | Yes | **Merge resume** — comparison in progress |
 
-**If merge mode:** load protocol `.claude/agents/reverse-spec/protocols/u-reverse-spec-merge.md`
+**If merge mode:** follow the merge procedure in §Step 7 of this file.
 
 ### Step 3: Execute analysis (Phase 1)
 
