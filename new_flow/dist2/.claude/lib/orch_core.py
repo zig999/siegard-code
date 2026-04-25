@@ -1151,7 +1151,7 @@ def _promote_pending_tasks(state: OrchState) -> None:
 
 def _handle_escalation(state: OrchState, event: Event) -> None:
     state.run_status = "escalated"
-    state.escalation = event.data
+    state.escalation = {**event.data, "seq": event.seq}
 
 
 def _handle_phase_declared(state: OrchState, event: Event) -> None:

@@ -185,8 +185,20 @@ Options:
 {for each option in escalation.options, one per line:}
   - {option}
 
-To resume: emit human_response event and invoke orchestrator again.
+To resume, collect the operator's choice and emit `human_response` with the exact fields below, then invoke the orchestrator again.
 ```
+
+Read `escalation_seq` from `state.escalation["seq"]` (injected by the reducer into the escalation dict — always present when `run_status == "escalated"`).
+
+Emit:
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent human \
+  --event-type human_response \
+  --data "{\"escalation_seq\": <state.escalation[\"seq\"]>, \"action\": \"<operator_choice>\", \"operator\": \"user\"}"
+```
+
+Where `<operator_choice>` is one of the options listed above (e.g. `confirm_proceed`, `abort`, `return_to_dev`, `reassign`).
 
 Output:
 ```json
@@ -383,6 +395,14 @@ The meta-orchestrator itself does not present questions to the human during phas
 3. **Completion report** when all phases complete (Step 3 terminal check)
 
 All other human interaction (confirmation gates, verdict approval) is handled inside the phase orchestrators. The meta-orchestrator is transparent to those interactions — it simply re-spawns the phase orchestrator on the next invocation, which will detect the `human_response` event and resume.
+
+### Known escalation codes from pre-pipeline skills
+
+| Code | Emitter | Valid actions | Resume behavior |
+|------|---------|---------------|-----------------|
+| `E14_improve_spec_confirmation` | `u-improve` | `confirm_proceed`, `abort` | `confirm_proceed` → escalation cleared, orchestrator enters `sdd` phase (already declared). `abort` → operator must clean up session manually. |
+
+These escalations are emitted before the first phase orchestrator runs. The meta-orchestrator handles them identically to all other escalations (Step 3 terminal check) — no special routing required.
 
 ---
 

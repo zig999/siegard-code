@@ -33,14 +33,10 @@ Constraints:
 
 ## Controlled vocabulary
 
-All confirmation prompts emitted by this skill MUST use this vocabulary. Do not accept synonyms (`yes`, `y`, `s`, `sim`) — re-prompt if the human responds with anything else.
+This skill does not prompt for human confirmation in chat. Human decisions are captured exclusively via `human_response` events in the event log (escalation protocol). The only token accepted interactively is:
 
 | Token | Meaning |
 |-------|---------|
-| `confirm` | Proceed with the proposed action |
-| `skip-spec` | Accept divergence and skip /u-spec; record `divergence_accepted` |
-| `skip-planner` | Skip Planner activation and route directly to Developer |
-| `keep-planner` | Keep Planner in the pipeline |
 | `abort` | Stop the flow; do not persist additional state |
 
 ---
@@ -319,38 +315,29 @@ execution_policy:
 
 ```
 mode_hint: {fast-track:minor | fast-track:patch | full}
-
-I will invoke /u-spec now via the handoff envelope above.
-Reply with one of: confirm | skip-spec | abort
 ```
 
-Wait for human response. Accept ONLY tokens from the controlled vocabulary.
+Emit escalation event to request operator confirmation:
 
-| Response | Action |
-|----------|--------|
-| `confirm` | Execute Steps 3a and 3b (already done — state already written). Invoke `orchestrator` (meta) via the Agent tool. On agent return, update `spec_change_status` in `improve-scope.json` and proceed to Step 5. |
-| `skip-spec` | Update `spec_change_status` to `divergence_accepted` in `improve-scope.json`. Record reason: "human declined spec pipeline at improve handoff". Proceed to Step 5. |
-| `abort` | Stop. No further state changes. |
-
-Do NOT print a shell command for the human to paste. Use the Agent tool directly.
-
-**Agent tool invocation — exact payload when `confirm` is received:**
-
-```yaml
-subagent_type: orchestrator
-description: "Invoke meta-orchestrator for improve fast-track spec pipeline"
-prompt: |
-  Execute the SDD phase for an improve workflow.
-  workflow_id: {workflow_id}
-  ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
-  SPECS_DIR: {SPECS_DIR}
-  log_seq_at_spawn: {last_seq_after_declared}
-  invocation_source: u-improve
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent u-improve \
+  --event-type escalation \
+  --data '{
+    "code": "E14_improve_spec_confirmation",
+    "severity": "info",
+    "reason": "spec_change_required — operator must confirm to proceed with spec pipeline",
+    "options": ["confirm_proceed", "abort"],
+    "evidence": [<last_seq_after_declared>],
+    "note": "To skip the spec pipeline and accept divergence: manually set spec_change_status=divergence_accepted in improve-scope.json and run /u-dev {workflow_id}"
+  }'
 ```
 
-**On agent return:**
-- `status: phase_complete` → write `spec_change_status: completed` to `improve-scope.json`; proceed to Step 5
-- `status: error | escalated | blocked` → write `spec_change_status: failed` to `improve-scope.json`; report to human and stop
+Stop. Do not wait for response in chat. Do not invoke the orchestrator.
+
+The operator must emit `human_response` via `append.py` (see escalation report from the meta-orchestrator), then run `/u-dev {workflow_id}`. On next invocation, the meta-orchestrator reads `human_response.action`:
+- `confirm_proceed` → escalation cleared; orchestrator enters `sdd` phase (already declared in step 3b)
+- `abort` → escalation cleared; operator must manually clean up session if needed
 
 **If `type: implementation_only`:**
 
@@ -368,54 +355,17 @@ prompt: |
 
 ## Step 5 — Handoff instructions
 
-### If planner_required: false
-
 Emit:
-
-```
-planner_skip_eligible: true
-estimated_task_contracts: 1
-
-Reply with one of: skip-planner | keep-planner | abort
-```
-
-If `skip-planner`:
 
 ```
 next_command: /u-dev {workflow_id}
 note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{workflow_id}/
-orchestrator_instruction: skip_planner=true
+planner_required: {true | false}
 scope:
   {list of affected_specs}
 ```
 
-**STOP. Do not implement any code. Do not modify any file. Your role ends here.**
-The user must run `/u-dev {workflow_id}` to proceed with implementation.
-
-If `keep-planner`:
-
-```
-next_command: /u-dev {workflow_id}
-note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{workflow_id}/
-planner_scope:
-  {list of affected_specs}
-```
-
-**STOP. Do not implement any code. Do not modify any file. Your role ends here.**
-The user must run `/u-dev {workflow_id}` to proceed with implementation.
-
-If `abort`: stop.
-
-### If planner_required: true
-
-Emit:
-
-```
-next_command: /u-dev {workflow_id}
-note: SPECS_DIR is read from CLAUDE.md by /u-dev; session state in .orch/sessions/{workflow_id}/
-planner_scope:
-  {list of affected_specs}
-```
+`planner_required` is authoritative from `improve-scope.json`. `orchestrator-dev` reads and respects it. Do not ask the operator to override it — if the derived value is wrong, the operator edits `improve-scope.json` directly before running `/u-dev`.
 
 **STOP. Do not implement any code. Do not modify any file. Your role ends here.**
 The user must run `/u-dev {workflow_id}` to proceed with implementation.
@@ -432,11 +382,12 @@ The user must run `/u-dev {workflow_id}` to proceed with implementation.
 | new_artifacts | Prohibited — write only to improve-scope.json and .orch/log.jsonl |
 | affected_spec_not_found | Set type: implementation_only — do not block |
 | all_outputs | Structured — no free-form text outside defined templates |
-| scope_block_persistence | write-before-confirm — Step 3a (improve-scope.json) and 3b (phase_declared) run BEFORE Step 3c human prompt. Step 3b always emits phase_declared (for all types), with phase set derived from type + pipeline. |
+| scope_block_persistence | write-before-escalate — Step 3a (improve-scope.json) and 3b (phase_declared) run BEFORE Step 3c escalation emission. Step 3b always emits phase_declared (for all types), with phase set derived from type + pipeline. |
 | state_persistence_path | `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/improve-scope.json` — NEVER write to docs/ or any other path |
 | event_log_tool | Use `append.py` (orch-log) for orchestrator-level events — NEVER use emit.py (worker-only guard-rail) |
-| spec_invocation | agent_tool_direct — invoke `orchestrator` (meta) via Agent tool; never print shell commands for paste |
-| confirmation_tokens | confirm \| skip-spec \| skip-planner \| keep-planner \| abort — no synonyms |
+| spec_invocation | escalation_protocol — for spec_change_required, emit E14_improve_spec_confirmation escalation and stop; the meta-orchestrator handles routing on resume |
+| human_decision_protocol | All operator decisions are captured via `human_response` events in the log — never via free-text chat prompts |
+| planner_required | Authoritative from improve-scope.json; operator edits the file directly if override needed — no interactive gate |
 | spec_change_status | Always resolved before Step 5; pending_spec is non-terminal |
 | execution_policy_derivation | Text-and-specs-based (Step 2.6) — never ask the human to set pipeline or regression_test_required |
 | unified_change_scope | Bug fixes, tweaks, and enhancements all flow through this skill — no separate bug channel |
