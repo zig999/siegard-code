@@ -19,7 +19,7 @@ def main() -> None:
         print(json.dumps({"status": "error", "reason": "log_missing", "detail": log_path}))
         sys.exit(1)
 
-    state = reduce_all(log_path)
+    state = reduce_all()
     test_tasks = [t for t in state.tasks.values() if t.phase == "test"]
 
     if not test_tasks:
