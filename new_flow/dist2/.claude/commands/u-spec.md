@@ -43,24 +43,10 @@ Derive from `pwd` at command invocation (absolute path to project root).
 Check the event log for existing workflow state:
 
 ```bash
-python3 -c "
-import sys, json
-from pathlib import Path
-sys.path.insert(0, '.claude/lib')
-log = Path('.orch/log.jsonl')
-if not log.exists():
-    print(json.dumps({'mode': 'new', 'workflow_id': None}))
-    raise SystemExit(0)
-from orch_core import reduce_all
-state = reduce_all()
-if state.last_seq == 0:
-    print(json.dumps({'mode': 'new', 'workflow_id': None}))
-elif state.current_phase == 'sdd' or (state.phases and 'sdd' in state.phases):
-    print(json.dumps({'mode': 'resume', 'workflow_id': state.workflow_id, 'last_seq': state.last_seq}))
-else:
-    print(json.dumps({'mode': 'new', 'workflow_id': state.workflow_id, 'last_seq': state.last_seq}))
-"
+python3 .claude/skills/orch-state/scripts/detect_mode.py
 ```
+
+Output JSON fields: `mode` (`"new"` | `"resume"`), `workflow_id`, `last_seq`.
 
 Additional checks for reverse-engineering context:
 

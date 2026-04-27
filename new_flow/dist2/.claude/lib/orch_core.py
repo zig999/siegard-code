@@ -870,6 +870,12 @@ def append_event(
     if event_type not in EventType.values():
         raise UnknownEventType(f"Unknown event type: {event_type!r}")
 
+    # For events that require an auditable operator identity, default to the
+    # --agent value so callers don't have to repeat it in --data.
+    _OPERATOR_EVENTS = {EventType.HUMAN_RESPONSE.value, EventType.LOG_RECOVERED.value}
+    if event_type in _OPERATOR_EVENTS and "operator" not in data:
+        data = {**data, "operator": agent}
+
     _validate_event_data(event_type, data)
 
     ensure_dirs()

@@ -333,9 +333,33 @@ python3 .claude/skills/orch-log/scripts/append.py \
   }'
 ```
 
+Capture the seq of the escalation event just emitted:
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0,'.claude/lib')
+from orch_core import last_event
+ev = last_event()
+print(ev.seq if ev else 0)
+"
+```
+
+Store result as `escalation_seq`.
+
 Stop. Do not wait for response in chat. Do not invoke the orchestrator.
 
-The operator must emit `human_response` via `append.py` (see escalation report from the meta-orchestrator), then run `/u-dev {workflow_id}`. On next invocation, the meta-orchestrator reads `human_response.action`:
+To confirm, the operator must emit:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent operator \
+  --event-type human_response \
+  --data '{"escalation_seq":<escalation_seq>,"action":"confirm_proceed","operator":"operator"}'
+```
+
+Replace `<escalation_seq>` with the integer seq captured above. To abort instead, use `"action":"abort"`.
+
+On next invocation, the meta-orchestrator reads `human_response.action`:
 - `confirm_proceed` → escalation cleared; orchestrator enters `sdd` phase (already declared in step 3b)
 - `abort` → escalation cleared; operator must manually clean up session if needed
 
