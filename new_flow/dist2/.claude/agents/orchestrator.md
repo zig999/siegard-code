@@ -78,6 +78,17 @@ To override, place a `workflow.json` file in `$ORCH_DIR` (`.orch/workflow.json`)
 
 Execute these steps in order on every invocation. Steps 3–7 may loop internally (up to 20 cycles, guarded by I5) to advance through consecutive phase transitions without requiring a new user invocation. Each new user invocation starts at Step 1.
 
+**Valid output statuses for the meta-orchestrator (never output `phase_complete`):**
+
+| Status | Meaning |
+|--------|---------|
+| `completed` | All required phases finished |
+| `blocked` | Phase orchestrator cannot proceed |
+| `escalated` | Escalation awaiting human response |
+| `error` | Unrecoverable error |
+
+`phase_complete` is a phase orchestrator status. Receiving it in Step 7 means the loop must continue — it is never the meta-orchestrator's own output.
+
 ---
 
 ### Step 1 — Infrastructure check
@@ -113,6 +124,19 @@ Stop.
 python3 .claude/skills/orch-state/scripts/reduce.py
 python3 .claude/skills/orch-state/scripts/current_phase.py
 ```
+
+**Before extracting variables:** inspect each output for `"status": "error"`. If either script returns an error object:
+
+```json
+{"status": "error", "reason": "<reason>", "detail": "<detail>"}
+```
+
+Output immediately:
+```json
+{"status": "error", "reason": "state_derivation_failed", "detail": "<script>: <detail>", "last_seq": 0}
+```
+
+Stop.
 
 Extract from the combined output:
 
@@ -256,6 +280,14 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"workflow_id":"<workflow_id>","phases":<phases_array>}'
 ```
 
+Inspect the output of `append.py`. If it contains `"status": "error"`:
+
+```json
+{"status": "error", "reason": "phase_declared_failed", "detail": "<detail from append.py>", "last_seq": 0}
+```
+
+Stop. Do not proceed to Step 5 — workflow is not initialized.
+
 Re-read state (re-run Step 2).
 
 ---
@@ -324,13 +356,14 @@ Wait for the phase orchestrator to return.
 ### Step 7 — Evaluate return
 
 Parse the JSON envelope returned by the phase orchestrator.
+If the Agent tool returns no result (Tool result missing due to internal error): treat as `{"status": "error", "summary": "agent-tool-internal-error — phase orchestrator did not return"}`.
 If the output is not valid JSON: treat as `{"status": "error", "summary": "non-json return"}`.
 
 | Returned status | Action |
 |-----------------|--------|
-| `phase_complete` | Re-read state (re-run Step 2). Increment cycle counter. Return to Step 3. |
+| `phase_complete` | Re-read state (re-run Step 2). Increment cycle counter. **Loop back to Step 3 — do not stop, do not output anything.** |
 | `blocked` | Present blocked report to human. Stop (see below). |
-| `escalated` | Re-read state. `run_status` is now `"escalated"`. Go to Step 3 (terminal check will handle it). |
+| `escalated` | Re-read state. `run_status` is now `"escalated"`. Loop back to Step 3 (terminal check will handle it). |
 | `error` | Evaluate circuit breaker (see below). |
 
 **Blocked report:**

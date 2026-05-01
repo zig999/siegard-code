@@ -189,8 +189,16 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 Re-read state. If `planning_task` is now ready, dispatch it immediately (do not wait for Step 5):
 
+Look up planner worker:
 ```bash
-# Claim
+python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
+  --task-type planning --stack <stack>
+```
+
+Store the `worker` field from the output as `planner_worker`. Construct `planner_worker_id = "<planner_worker>-dev_planning"`.
+
+Claim:
+```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type task_claimed \
@@ -199,23 +207,17 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"dev","worker_type":"<planner_worker>","worker_id":"<planner_worker>-dev_planning"}'
 ```
 
-Look up planner worker:
-```bash
-python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
-  --task-type planning --stack <stack>
-```
-
-Register and spawn:
+Register worker:
 ```bash
 python3 -c "
 import sys; sys.path.insert(0,'.claude/lib')
 from orch_core import register_worker
-register_worker('<worker_id>', 'dev_planning', 1, phase='dev', stack='<stack>', task_type='planning')
+register_worker('<planner_worker>-dev_planning', 'dev_planning', 1, phase='dev', stack='<stack>', task_type='planning')
 "
 ```
 
 Spawn via Agent tool:
-- `subagent_type`: planner worker
+- `subagent_type`: `<planner_worker>` (the worker name returned by `select_worker.py` above)
 - `prompt`:
   ```
   Generate the implementation backlog.

@@ -5,11 +5,11 @@ import json
 import sys
 
 ROUTING_TABLE = {
-    ("test-run", "be"):        "u-test-runner",
-    ("test-run", "fe"):        "u-test-runner",
-    ("test-run", "fullstack"): "u-test-runner",
+    ("test-run", "be"):        "u-be-qa-docs",
+    ("test-run", "fe"):        "u-fe-qa-docs",
+    ("test-run", "fullstack"): "u-be-qa-docs",
 }
-DEFAULT_WORKER = "u-test-runner"
+DEFAULT_WORKER = "u-be-qa-docs"
 
 
 def main() -> None:

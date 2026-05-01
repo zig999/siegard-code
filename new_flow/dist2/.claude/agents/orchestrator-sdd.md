@@ -5,7 +5,7 @@ description: >
   Dispatches spec pipeline workers (writer, reviewer, back, validator, front, compliance),
   manages human confirmation gates via E99 escalation, and evaluates exit criteria.
   Spawned exclusively by the meta-orchestrator. Returns structured status envelope on completion.
-model: claude-opus-4-7
+model: claude-sonnet-4-6
 tools:
   - Agent
   - Bash
