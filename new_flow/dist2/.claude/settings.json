@@ -7,7 +7,12 @@
       "Bash(jq *)",
       "Bash(export *)",
       "Bash(mkdir *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(tsc *)",
+      "Bash(pnpm *)",
+      "Bash(yarn *)"
     ]
   },
   "hooks": {
