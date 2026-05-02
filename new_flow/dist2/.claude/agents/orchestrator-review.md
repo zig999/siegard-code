@@ -89,7 +89,11 @@ You return exactly one JSON envelope when done (see §Return contract).
 
 ### Step 0 — Infrastructure check
 
-If `log_seq_at_spawn == 0`:
+```bash
+export ORCH_PROJECT_DIR="$(pwd)"
+```
+
+If `log_seq_at_spawn` is `0` or not a positive integer:
 
 ```bash
 python3 .claude/skills/orch-infra/scripts/run_preflight.py
@@ -103,7 +107,7 @@ If any returns `"status": "blocked"`:
 ```
 Stop.
 
-If `log_seq_at_spawn > 0`: skip.
+If `log_seq_at_spawn` is a positive integer (`> 0`): skip infra script calls.
 
 ---
 
@@ -230,6 +234,10 @@ python3 .claude/skills/phase-review-rules/scripts/select_worker.py \
   --task-type <task.task_type> --stack <stack>
 ```
 
+Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.
+Example: if the output is `{"worker":"u-be-qa-docs","task_type":"qa","stack":"be","phase":"review"}`, then `selected_worker = "u-be-qa-docs"`.
+If the output contains `"status":"error"`, skip this task and emit `task_failed` with `reason: "select_worker_failed", retryable: false`.
+
 #### 4.2 — Claim batch
 
 ```bash
@@ -254,8 +262,8 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='review', stack='<s
 
 Emit all Agent tool calls in a **single response turn**.
 
-- `subagent_type`: worker from `select_worker.py`
-- `prompt`:
+- `subagent_type`: `selected_worker` (the `worker` field extracted from `select_worker.py` JSON output in Step 4.1 — a plain string like `"u-be-qa-docs"`, not the full JSON)
+- `prompt` (substitute ALL `<...>` placeholders with actual values before sending — do not pass literals):
   ```
   Execute your QA review task.
   Environment context:
@@ -263,7 +271,7 @@ Emit all Agent tool calls in a **single response turn**.
     ORCH_ATTEMPT=<attempt>
     ORCH_WORKER_ID=<worker_id>
     SPECS_DIR=<specs_dir>
-    ORCH_PROJECT_DIR=<project_dir>
+    ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
   Set these as shell env vars before any emit.py call.
   Delivery artifact to review: <task.spec>
   Emit task_completed with artifacts: [<qa_verdict_path>] when done.

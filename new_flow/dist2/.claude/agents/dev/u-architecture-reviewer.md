@@ -5,9 +5,11 @@ user-invocable: false
 model: claude-sonnet-4-6
 tools:
   - Read
+  - Write
+  - Edit
+  - Bash
   - Glob
   - Grep
-  - Bash
 skills:
   - orch-report
 ---

@@ -115,7 +115,11 @@ Execute these steps in order on every invocation. Never skip a step.
 
 ### Step 0 — Infrastructure check
 
-If `log_seq_at_spawn == 0` (first invocation of this phase):
+```bash
+export ORCH_PROJECT_DIR="$(pwd)"
+```
+
+If `log_seq_at_spawn` is `0` or not a positive integer (first invocation of this phase):
 
 ```bash
 python3 .claude/skills/orch-infra/scripts/run_preflight.py
@@ -129,13 +133,14 @@ If any script returns `"status": "blocked"`, output:
 ```
 and stop.
 
-If `log_seq_at_spawn > 0`: skip this step (meta-orchestrator already ran infra checks).
+If `log_seq_at_spawn` is a positive integer (`> 0`): skip infra script calls (meta-orchestrator already ran infra checks).
 
 ---
 
 ### Step 0.5 — Detect workflow_type (mode selection)
 
-Read the `phase_declared` event data to determine the operating mode:
+Read the `phase_declared` event data to determine the operating mode.
+Use the `workflow_id` received in the spawn prompt as the authoritative source; the log value is used only to verify `workflow_type`.
 
 ```bash
 python3 -c "
@@ -145,12 +150,13 @@ from orch_core import read_events_filtered, EventType
 events = read_events_filtered(event_type=EventType.PHASE_DECLARED)
 if events:
     wt = events[0].data.get('workflow_type', 'standard')
-    wf = events[0].data.get('workflow_id', '')
-    print(json.dumps({'workflow_type': wt, 'workflow_id': wf}))
 else:
-    print(json.dumps({'workflow_type': 'standard', 'workflow_id': ''}))
+    wt = 'standard'
+print(json.dumps({'workflow_type': wt}))
 "
 ```
+
+Set `workflow_type` from the script output. Keep `workflow_id` from the spawn prompt inputs (already stored above).
 
 | `workflow_type` | Mode | Behavior |
 |-----------------|------|----------|
@@ -390,41 +396,46 @@ Re-run Step 1 after all task_created events to refresh state.
 
 For each entry `i` (1-indexed, zero-padded) in `affected_specs`:
 
-**Determine domain worker type** from `spec.path`:
-- Path contains `front/` or `component` → `spec-front`
-- Path contains `back/` or `.back.md` → `spec-back`
-- Path contains `domains/` and has both `.spec.md` and `openapi.yaml` → `spec-back` then `spec-front`
-- Ambiguous → `spec-front` (default for UI improvements)
+**Determine domain worker type** from `spec.path`.
+The result is the **task `type` string** (one of the valid types in the routing table):
+
+- Path contains `front/` or `component` → task type = `spec-front`
+- Path contains `back/` or `.back.md` → task type = `spec-back`
+- Path contains `domains/` and has both `.spec.md` and `openapi.yaml` → task type = `spec-back` then `spec-front`
+- Ambiguous → task type = `spec-front` (default for UI improvements)
+
+Store the resolved task type as `domain_task_type` (e.g., `"spec-front"` or `"spec-back"`).
+The task ID suffix is derived by stripping the `spec-` prefix from `domain_task_type`: if `domain_task_type = "spec-front"`, the suffix is `front`; if `"spec-back"`, the suffix is `back`.
 
 **Determine task pipeline by `mode_hint`:**
 
 | mode_hint | Tasks created (in order, with deps) |
 |-----------|-------------------------------------|
 | `fast-track:patch` | `sdd_improve_{i:02d}_spec-reviewer` only |
-| `fast-track:minor` | `sdd_improve_{i:02d}_spec-<domain-worker>` → `sdd_improve_{i:02d}_spec-reviewer` |
+| `fast-track:minor` | `sdd_improve_{i:02d}_{domain_task_type}` → `sdd_improve_{i:02d}_spec-reviewer` |
 | `full` | full pipeline: `spec-writer → spec-reviewer → spec-back → spec-validator → spec-front → spec-validator` scoped to the affected domain |
 
-The `spec` field for each task points to `improve-scope.json` (the targeted context artifact):
-```
-{ORCH_PROJECT_DIR}/.orch/sessions/{workflow_id}/improve-scope.json
-```
+The `spec` field for each task points to `improve-scope.json` (the targeted context artifact).
+Substitute `{workflow_id}` and `{ORCH_PROJECT_DIR}` with their actual values before emitting.
 
 **Emit tasks for `fast-track:minor` (most common case):**
 
 ```bash
 # Task 1 — domain worker (spec-front or spec-back)
+# task-id suffix = domain_task_type value (e.g. sdd_improve_01_spec-front)
+# type           = domain_task_type value (e.g. "spec-front")
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_improve_{i:02d}_spec-{domain-worker} \
-  --data '{"phase":"sdd","deps":[],"tier":"standard","type":"spec-{domain-worker}","spec":"{ORCH_PROJECT_DIR}/.orch/sessions/{workflow_id}/improve-scope.json"}'
+  --task-id sdd_improve_<i>_<domain_task_type> \
+  --data '{"phase":"sdd","deps":[],"tier":"standard","type":"<domain_task_type>","spec":"<ORCH_PROJECT_DIR>/.orch/sessions/<workflow_id>/improve-scope.json"}'
 
 # Task 2 — spec-reviewer (depends on domain worker)
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_improve_{i:02d}_spec-reviewer \
-  --data '{"phase":"sdd","deps":["sdd_improve_{i:02d}_spec-{domain-worker}"],"tier":"standard","type":"spec-reviewer","spec":"{ORCH_PROJECT_DIR}/.orch/sessions/{workflow_id}/improve-scope.json"}'
+  --task-id sdd_improve_<i>_spec-reviewer \
+  --data '{"phase":"sdd","deps":["sdd_improve_<i>_<domain_task_type>"],"tier":"standard","type":"spec-reviewer","spec":"<ORCH_PROJECT_DIR>/.orch/sessions/<workflow_id>/improve-scope.json"}'
 ```
 
 **Emit tasks for `fast-track:patch`:**
@@ -434,8 +445,8 @@ python3 .claude/skills/orch-log/scripts/append.py \
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_improve_{i:02d}_spec-reviewer \
-  --data '{"phase":"sdd","deps":[],"tier":"standard","type":"spec-reviewer","spec":"{ORCH_PROJECT_DIR}/.orch/sessions/{workflow_id}/improve-scope.json"}'
+  --task-id sdd_improve_<i>_spec-reviewer \
+  --data '{"phase":"sdd","deps":[],"tier":"standard","type":"spec-reviewer","spec":"<ORCH_PROJECT_DIR>/.orch/sessions/<workflow_id>/improve-scope.json"}'
 ```
 
 No cross-domain compliance task is created in fast-track mode (scope is limited to the patched files only).
@@ -517,6 +528,10 @@ python3 .claude/skills/phase-sdd-rules/scripts/select_worker.py \
   --task-type <task.task_type>
 ```
 
+Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.
+Example: if the output is `{"worker":"u-spec-writer","task_type":"spec-writer","phase":"sdd"}`, then `selected_worker = "u-spec-writer"`.
+If the output contains `"status":"error"`, skip this task and emit `task_failed` with `reason: "select_worker_failed", retryable: false`.
+
 #### 5.2 — Claim batch
 
 For each task, emit `task_claimed` before any spawn:
@@ -544,8 +559,8 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='sdd')
 Emit all Agent tool calls for the batch **in a single response turn**.
 
 For each claimed task:
-- `subagent_type`: worker returned by `select_worker.py`
-- `prompt`:
+- `subagent_type`: `selected_worker` (the `worker` field extracted from `select_worker.py` JSON output in Step 5.1 — a plain string like `"u-spec-writer"`, not the full JSON)
+- `prompt` (substitute ALL `<...>` placeholders with actual values before sending — do not pass literals):
   ```
   Execute your spec pipeline task.
   Environment context:
@@ -553,13 +568,13 @@ For each claimed task:
     ORCH_ATTEMPT=<attempt>
     ORCH_WORKER_ID=<worker_id>
     SPECS_DIR=<specs_dir>
-    ORCH_PROJECT_DIR=<project_dir>
+    ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
   Set these as shell env vars before any emit.py call:
     export ORCH_TASK_ID=<task_id>
     export ORCH_ATTEMPT=<attempt>
     export ORCH_WORKER_ID=<worker_id>
     export SPECS_DIR=<specs_dir>
-    export ORCH_PROJECT_DIR=<project_dir>
+    export ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
   Task spec: <task.spec>
   ```
 

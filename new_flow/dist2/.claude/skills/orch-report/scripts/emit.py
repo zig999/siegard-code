@@ -6,8 +6,10 @@ Guard-rail: only task_progress, task_completed, and task_failed are allowed.
 Any other event type is rejected unconditionally — this is a security boundary,
 not a soft validation.
 
-Agent identity is read exclusively from the ORCH_WORKER_ID environment variable.
-The caller cannot override it.
+Agent identity is resolved in priority order:
+  1. ORCH_WORKER_ID environment variable (set when env is correctly exported)
+  2. Workers registry (.orch/workers/*.json) matched by task_id + attempt
+     (fallback when env var is lost between separate Bash calls)
 """
 import argparse
 import json
@@ -22,6 +24,7 @@ from orch_core import (
     EventType,
     EventValidationError,
     UnknownEventType,
+    WORKERS_DIR,
     append_event,
 )
 
@@ -59,17 +62,43 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _infer_worker_id_from_registry(task_id: str, attempt: int) -> str | None:
+    """
+    Fallback: find worker_id from .orch/workers/ registry when ORCH_WORKER_ID
+    is not set in the environment. Handles the case where env vars are lost
+    between separate Bash tool calls in Claude Code.
+    """
+    if not WORKERS_DIR.exists():
+        return None
+    for f in WORKERS_DIR.glob("*.json"):
+        try:
+            entry = json.loads(f.read_text(encoding="utf-8"))
+            if entry.get("task_id") == task_id and entry.get("attempt") == attempt:
+                wid = entry.get("worker_id")
+                if wid:
+                    return wid
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
 def main() -> int:
-    worker_id = os.environ.get("ORCH_WORKER_ID")
+    args = _parse_args()
+
+    worker_id = os.environ.get("ORCH_WORKER_ID") or _infer_worker_id_from_registry(
+        args.task_id, args.attempt
+    )
     if not worker_id:
         print(json.dumps({
             "status": "error",
-            "reason": "missing_env",
-            "detail": "ORCH_WORKER_ID environment variable is required",
+            "reason": "missing_worker_id",
+            "detail": (
+                "ORCH_WORKER_ID is not set and worker_id could not be inferred from "
+                f"registry. task_id={args.task_id!r} attempt={args.attempt}. "
+                "Export ORCH_WORKER_ID in the same shell call as emit.py."
+            ),
         }))
         return 1
-
-    args = _parse_args()
 
     try:
         data = json.loads(args.data)
@@ -103,13 +132,8 @@ def main() -> int:
                         "detail": f"artifacts entries must be strings, got {type(path).__name__}",
                     }))
                     return 1
-                if path.startswith("/") or path.startswith("\\"):
-                    print(json.dumps({
-                        "status": "error",
-                        "reason": "validation_error",
-                        "detail": f"artifact path must be relative, not absolute: {path!r}",
-                    }))
-                    return 1
+                # Absolute paths are allowed — workers receive SESSION_DIR as absolute.
+                # Only reject path traversal sequences.
                 if ".." in path.replace("\\", "/").split("/"):
                     print(json.dumps({
                         "status": "error",

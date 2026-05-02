@@ -93,7 +93,11 @@ Execute these steps in order on every invocation. Never skip a step.
 
 ### Step 0 — Infrastructure check
 
-If `log_seq_at_spawn == 0`:
+```bash
+export ORCH_PROJECT_DIR="$(pwd)"
+```
+
+If `log_seq_at_spawn` is `0` or not a positive integer:
 
 ```bash
 python3 .claude/skills/orch-infra/scripts/run_preflight.py
@@ -107,7 +111,7 @@ If any returns `"status": "blocked"`:
 ```
 Stop.
 
-If `log_seq_at_spawn > 0`: skip (meta-orchestrator already ran infra checks).
+If `log_seq_at_spawn` is a positive integer (`> 0`): skip infra script calls.
 
 ---
 
@@ -231,6 +235,10 @@ python3 .claude/skills/phase-test-rules/scripts/select_worker.py \
   --task-type <task.task_type> --stack <stack>
 ```
 
+Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.
+Example: if the output is `{"worker":"u-be-qa-docs","task_type":"test-run","stack":"be","phase":"test"}`, then `selected_worker = "u-be-qa-docs"`.
+If the output contains `"status":"error"`, skip this task and emit `task_failed` with `reason: "select_worker_failed", retryable: false`.
+
 #### 4.2 — Claim batch
 
 ```bash
@@ -255,8 +263,8 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='test', stack='<sta
 
 Emit all Agent tool calls in a **single response turn**.
 
-- `subagent_type`: worker from `select_worker.py`
-- `prompt`:
+- `subagent_type`: `selected_worker` (the `worker` field extracted from `select_worker.py` JSON output in Step 4.1 — a plain string like `"u-be-qa-docs"`, not the full JSON)
+- `prompt` (substitute ALL `<...>` placeholders with actual values before sending — do not pass literals):
   ```
   Execute your test suite run task.
   Environment context:
@@ -264,7 +272,7 @@ Emit all Agent tool calls in a **single response turn**.
     ORCH_ATTEMPT=<attempt>
     ORCH_WORKER_ID=<worker_id>
     SPECS_DIR=<specs_dir>
-    ORCH_PROJECT_DIR=<project_dir>
+    ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
     SESSION_DIR=<session_dir>
   Set these as shell env vars before any emit.py call.
   Delivery artifact to test: <task.spec>
