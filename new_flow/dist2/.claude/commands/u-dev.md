@@ -140,3 +140,17 @@ Invoke `.claude/agents/orchestrator.md` (meta-orchestrator) with:
 - `domain` = value from `CLAUDE.md`
 
 The orchestrator reads specs from `$SPECS_DIR/` and writes session artifacts under `$ORCH_PROJECT_DIR/.orch/sessions/$workflow_id/`.
+
+### Re-invocation loop
+
+The orchestrator handles one phase per invocation. After each call, evaluate the returned status:
+
+| Returned status | Action |
+|-----------------|--------|
+| `phase_advanced` | Show a one-line status update to the human (`Phase {completed_phase} complete → entering {next_phase}`), then **re-invoke the orchestrator immediately** with the same parameters. |
+| `escalated` | Surface the escalation to the human. Stop — await human response before re-invoking. |
+| `completed` | Show the completion report. Stop. |
+| `blocked` | Surface the blocked report to the human. Stop. |
+| `error` | Surface the error to the human. Stop. |
+
+**Safety limit:** re-invoke at most 10 times. If the loop reaches 10 iterations without a terminal status, stop and report: `{"status": "error", "reason": "reivocation_limit_reached", "iterations": 10}`.

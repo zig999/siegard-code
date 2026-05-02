@@ -37,7 +37,7 @@ You never:
 | I2 | Only you emit `phase_declared` and `phase_entered`. |
 | I3 | Only phase orchestrators emit `phase_exit_criterion_met`, `phase_exit_approved`, `phase_transitioned`. |
 | I4 | Every `phase_entered` event includes `evidence_seq`: the seq of the event that justified the transition. |
-| I5 | Safety limit: max 20 phase transitions per invocation. Stop and report if exceeded. |
+| I5 | One phase orchestrator per invocation. When a phase orchestrator returns `phase_complete` and the workflow is not yet `completed`, output `phase_advanced` and stop. The caller re-invokes to start the next phase. This bounds context growth per invocation. |
 | I6 | Never spawn more than one phase orchestrator at a time. |
 
 ---
@@ -76,18 +76,19 @@ To override, place a `workflow.json` file in `$ORCH_DIR` (`.orch/workflow.json`)
 
 ## Operation cycle
 
-Execute these steps in order on every invocation. Steps 3–7 may loop internally (up to 20 cycles, guarded by I5) to advance through consecutive phase transitions without requiring a new user invocation. Each new user invocation starts at Step 1.
+Execute these steps in order on every invocation. Each invocation handles exactly one phase orchestrator run (I5). Each new user invocation starts at Step 1.
 
 **Valid output statuses for the meta-orchestrator (never output `phase_complete`):**
 
 | Status | Meaning |
 |--------|---------|
 | `completed` | All required phases finished |
+| `phase_advanced` | One phase completed; next phase ready — caller must re-invoke to continue |
 | `blocked` | Phase orchestrator cannot proceed |
 | `escalated` | Escalation awaiting human response |
 | `error` | Unrecoverable error |
 
-`phase_complete` is a phase orchestrator status. Receiving it in Step 7 means the loop must continue — it is never the meta-orchestrator's own output.
+`phase_complete` is a phase orchestrator status. Receiving it in Step 7 triggers a single terminal check: if all phases are done, output `completed`; otherwise output `phase_advanced` and stop.
 
 ---
 
@@ -319,7 +320,8 @@ Re-read state (re-run Step 2). `current_phase` is now set.
 ### Step 6 — Spawn phase orchestrator
 
 Initialise cycle counter (starts at 0, increments each time Step 6 executes).
-If counter ≥ 20: output `{"status": "error", "reason": "phase_transition_limit_reached", "last_seq": <n>}` and stop.
+If counter ≥ 2: output `{"status": "error", "reason": "phase_transition_limit_reached", "last_seq": <n>}` and stop.
+(Counter should never exceed 1 in normal operation — I5 stops after the first `phase_complete`. Counter ≥ 2 indicates a logic bug.)
 
 Read `last_seq` from state (this becomes `log_seq_at_spawn` for the phase orchestrator).
 
@@ -361,10 +363,31 @@ If the output is not valid JSON: treat as `{"status": "error", "summary": "non-j
 
 | Returned status | Action |
 |-----------------|--------|
-| `phase_complete` | Re-read state (re-run Step 2). Increment cycle counter. **Loop back to Step 3 — do not stop, do not output anything.** |
+| `phase_complete` | Re-read state (re-run Step 2). Increment cycle counter. **If `run_status == "completed"`: loop to Step 3 (completion report handles it). Otherwise: output `phase_advanced` report and stop.** |
 | `blocked` | Present blocked report to human. Stop (see below). |
 | `escalated` | Re-read state. `run_status` is now `"escalated"`. Loop back to Step 3 (terminal check will handle it). |
 | `error` | Evaluate circuit breaker (see below). |
+
+**Phase advanced report:**
+
+Determine `next_phase`: the phase with the lowest `order` whose `PhaseState.status == "pending"` (does not have `phase_entered` yet).
+
+```
+Phase Advanced
+==============
+Workflow:   {workflow_id}
+Completed:  {current_phase}  (last_seq: {last_seq})
+Next phase: {next_phase}     (ready — re-invoke orchestrator to proceed)
+```
+
+Output:
+```json
+{"status": "phase_advanced", "completed_phase": "<current_phase>", "next_phase": "<next_phase>", "workflow_id": "<workflow_id>", "last_seq": <n>}
+```
+
+Stop.
+
+---
 
 **Blocked report:**
 
@@ -392,6 +415,12 @@ Re-read state. Run circuit breaker check:
 ```bash
 python3 .claude/skills/orch-infra/scripts/run_circuit_check.py
 ```
+
+If the script exits with an unexpected error or the output is not valid JSON:
+```json
+{"status": "error", "phase": "<current_phase>", "reason": "circuit_check_failed", "summary": "<phase_orchestrator_summary>", "last_seq": <n>}
+```
+Stop.
 
 If `status == "blocked"` (circuit tripped):
 
@@ -426,6 +455,7 @@ The meta-orchestrator itself does not present questions to the human during phas
 1. **Escalations** that phase orchestrators bubbled up (Step 3 terminal check)
 2. **Blocked states** when a phase orchestrator cannot proceed (Step 7)
 3. **Completion report** when all phases complete (Step 3 terminal check)
+4. **Phase advanced** when one phase completed and the next is ready (Step 7 `phase_complete` handler)
 
 All other human interaction (confirmation gates, verdict approval) is handled inside the phase orchestrators. The meta-orchestrator is transparent to those interactions — it simply re-spawns the phase orchestrator on the next invocation, which will detect the `human_response` event and resume.
 
@@ -441,11 +471,14 @@ These escalations are emitted before the first phase orchestrator runs. The meta
 
 ## Resumption behavior
 
-On every **user invocation**, the meta-orchestrator starts fresh from Step 1. Within a single invocation, Steps 3–7 may loop to handle consecutive phase transitions automatically (e.g., sdd completes → dev starts → dev completes → review starts, all in one run). The cycle counter (I5) bounds this loop.
+On every **user invocation**, the meta-orchestrator starts fresh from Step 1. Each invocation handles exactly one phase orchestrator run (I5).
 
-- After a human responds to an escalation: invoke orchestrator again — it will detect the response and route to the correct phase orchestrator
-- After a crash mid-phase: invoke orchestrator again — the phase orchestrator derives its state from the log and resumes from where it left off
-- After `review` returns tasks to `dev`: `current_phase` becomes `dev` — the meta-orchestrator spawns `orchestrator-dev` on the next loop cycle or invocation
+- After `phase_advanced`: re-invoke the orchestrator — it will enter the next phase and run its orchestrator
+- After a human responds to an escalation: re-invoke — the orchestrator will detect the response and route to the correct phase orchestrator
+- After a crash mid-phase: re-invoke — the phase orchestrator derives its state from the log and resumes from where it left off
+- After `review` returns tasks to `dev`: re-invoke — `current_phase` is `dev`; the meta-orchestrator spawns `orchestrator-dev`
+
+**Design rationale:** Each invocation is bounded to one phase orchestrator run. This prevents context accumulation across phases within a single invocation. The caller (e.g., `/u-dev`) is responsible for looping re-invocations until the workflow reaches a terminal or human-interaction state.
 
 ---
 
