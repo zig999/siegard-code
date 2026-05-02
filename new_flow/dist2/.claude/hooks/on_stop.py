@@ -18,7 +18,7 @@ sys.path.insert(0, str(_LIB))
 
 from orch_core import (
     reduce_all, TaskStatus, PhaseStatus, ORCH_DIR, METRICS_DIR,
-    ensure_dirs, now_iso, parse_iso,
+    ensure_dirs, now_iso, parse_iso, read_events_filtered,
 )
 
 
@@ -78,6 +78,30 @@ def _compute_metrics() -> dict:
     }
 
 
+_ERROR_RUN_STATUSES = frozenset({"escalated", "partial", "completed_with_dlq"})
+_ERROR_EVENT_TYPES = frozenset({
+    "task_failed", "task_dlq", "escalation", "circuit_breaker_tripped", "preflight_failed",
+})
+
+
+def _write_last_error(metrics: dict) -> None:
+    """Writes .orch/last_error.json with the last error-related event from the log."""
+    events = list(read_events_filtered(event_type=None))
+    error_events = [e for e in events if e.event_type in _ERROR_EVENT_TYPES]
+    if not error_events:
+        return
+    last = error_events[-1]
+    payload = {
+        "generated_at": now_iso(),
+        "workflow_id": metrics.get("workflow_id"),
+        "run_status": metrics.get("run_status"),
+        "last_seq": metrics.get("last_seq"),
+        "last_error_event": last.to_dict(),
+    }
+    out_path = ORCH_DIR / "last_error.json"
+    out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     try:
         log_file = ORCH_DIR / "log.jsonl"
@@ -89,6 +113,13 @@ def main() -> None:
 
         out_path = METRICS_DIR / "current.json"
         out_path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+
+        if (
+            metrics.get("run_status") in _ERROR_RUN_STATUSES
+            or metrics.get("circuit_breaker_tripped")
+            or metrics.get("escalations", 0) > 0
+        ):
+            _write_last_error(metrics)
     except Exception:
         pass  # Hook must never block shutdown
 

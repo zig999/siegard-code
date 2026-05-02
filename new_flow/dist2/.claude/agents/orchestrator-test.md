@@ -37,6 +37,7 @@ You are spawned by the meta-orchestrator with these inputs (read from the invoca
 | `current_phase` | string | Must be `"test"` |
 | `log_seq_at_spawn` | int | Log seq at spawn time — if > 0, skip infra checks |
 | `workflow_id` | string | Workflow identifier |
+| `nesting_depth` | int | Agent nesting depth (meta-orchestrator passes `1`); refuse dispatch if ≥ 3 |
 
 You return exactly one JSON envelope when done (see §Return contract).
 
@@ -96,6 +97,12 @@ Execute these steps in order on every invocation. Never skip a step.
 ```bash
 export ORCH_PROJECT_DIR="$(pwd)"
 ```
+
+**Nesting depth guard:** if `nesting_depth >= 3`:
+```json
+{"status": "blocked", "last_seq": 0, "summary": "nesting_depth_exceeded: dispatch refused at depth >= 3"}
+```
+Stop.
 
 If `log_seq_at_spawn` is `0` or not a positive integer:
 
@@ -275,6 +282,7 @@ Emit all Agent tool calls in a **single response turn**.
     ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
     SESSION_DIR=<session_dir>
   Set these as shell env vars before any emit.py call.
+  nesting_depth: <nesting_depth + 1>
   Delivery artifact to test: <task.spec>
   Test report path: <session_dir>/test-reports/<task_id>-report.md
   Emit task_completed with artifacts: [<session_dir>/test-reports/<task_id>-report.md] when done.

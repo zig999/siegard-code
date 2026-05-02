@@ -38,6 +38,7 @@ def _task(
     retryable: bool | None = True,
     next_retry_at: str | None = None,
     task_type: str = "impl",
+    failure_reason: str | None = None,
 ) -> TaskState:
     return TaskState(
         task_id=task_id,
@@ -49,6 +50,7 @@ def _task(
         deps=[],
         attempts=attempts,
         last_failure_retryable=retryable,
+        last_failure_reason=failure_reason,
         next_retry_at=next_retry_at,
     )
 
@@ -228,6 +230,40 @@ class TestShouldRetry:
     def test_exactly_one_attempt_remaining(self):
         t = _task(attempts=2, retryable=True)
         p = RetryPolicy(max_attempts=3, base_delay_s=30.0, cap_s=600.0)
+        assert should_retry(t, p) is True
+
+    # --- structural failure cap (suggestion 7) ---
+
+    def test_structural_reason_first_attempt_allows_retry(self):
+        """First structural failure (attempts=1) still gets 1 retry."""
+        for reason in ("subagent_invalid_response", "worker_exited_without_terminal", "stale_timeout"):
+            t = _task(attempts=1, retryable=True, failure_reason=reason)
+            p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
+            assert should_retry(t, p) is True, f"Expected True for reason={reason} attempts=1"
+
+    def test_structural_reason_at_two_attempts_blocks_retry(self):
+        """Second structural failure (attempts=2) is hard-stopped regardless of policy max."""
+        for reason in ("subagent_invalid_response", "worker_exited_without_terminal", "stale_timeout"):
+            t = _task(attempts=2, retryable=True, failure_reason=reason)
+            p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
+            assert should_retry(t, p) is False, f"Expected False for reason={reason} attempts=2"
+
+    def test_structural_reason_non_retryable_still_blocks(self):
+        """retryable=False takes priority even for structural reasons."""
+        t = _task(attempts=1, retryable=False, failure_reason="stale_timeout")
+        p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
+        assert should_retry(t, p) is False
+
+    def test_non_structural_reason_uses_normal_policy(self):
+        """Non-structural reasons follow the normal max_attempts policy."""
+        t = _task(attempts=2, retryable=True, failure_reason="spec_error")
+        p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
+        assert should_retry(t, p) is True
+
+    def test_no_reason_uses_normal_policy(self):
+        """None reason does not trigger structural cap."""
+        t = _task(attempts=2, retryable=True, failure_reason=None)
+        p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
         assert should_retry(t, p) is True
 
 

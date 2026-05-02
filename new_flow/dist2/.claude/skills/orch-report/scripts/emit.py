@@ -91,7 +91,7 @@ def main() -> int:
     if not worker_id:
         print(json.dumps({
             "status": "error",
-            "reason": "missing_worker_id",
+            "reason": "missing_env",
             "detail": (
                 "ORCH_WORKER_ID is not set and worker_id could not be inferred from "
                 f"registry. task_id={args.task_id!r} attempt={args.attempt}. "

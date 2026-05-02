@@ -1655,10 +1655,21 @@ def should_retry(task: TaskState, policy: RetryPolicy) -> bool:
 
     Rules (in order):
       - last_failure_retryable is False → False (immediate DLQ)
+      - structural failure reasons cap at 1 retry (attempt 2 = already retried once)
       - attempts >= policy.max_attempts → False (max exhausted)
       - otherwise → True
+
+    Structural reasons (agent could not execute, not a logic error):
+      subagent_invalid_response, worker_exited_without_terminal, stale_timeout
     """
     if task.last_failure_retryable is False:
+        return False
+    _STRUCTURAL_REASONS = frozenset({
+        "subagent_invalid_response",
+        "worker_exited_without_terminal",
+        "stale_timeout",
+    })
+    if task.last_failure_reason in _STRUCTURAL_REASONS and task.attempts >= 2:
         return False
     if task.attempts >= policy.max_attempts:
         return False

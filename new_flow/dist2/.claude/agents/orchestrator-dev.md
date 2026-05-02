@@ -34,6 +34,7 @@ You are spawned by the meta-orchestrator with these inputs (read from the invoca
 | `current_phase` | string | Must be `"dev"` |
 | `log_seq_at_spawn` | int | Log seq at spawn time — if > 0, skip infra checks |
 | `workflow_id` | string | Workflow identifier |
+| `nesting_depth` | int | Agent nesting depth (meta-orchestrator passes `1`); refuse dispatch if ≥ 3 |
 
 You return exactly one JSON envelope when done (see §Return contract).
 
@@ -94,6 +95,12 @@ Execute these steps in order on every invocation. Never skip a step.
 ```bash
 export ORCH_PROJECT_DIR="$(pwd)"
 ```
+
+**Nesting depth guard:** if `nesting_depth >= 3`:
+```json
+{"status": "blocked", "last_seq": 0, "summary": "nesting_depth_exceeded: dispatch refused at depth >= 3"}
+```
+Stop.
 
 If `log_seq_at_spawn` is `0` or not a positive integer:
 
@@ -233,6 +240,7 @@ Spawn via Agent tool:
     ORCH_PROJECT_DIR=<project_dir>
     SESSION_DIR=<session_dir>
   Set these as shell env vars before any emit.py call.
+  nesting_depth: <nesting_depth + 1>
   Handoff manifest: <specs_dir>/handoff-manifest.yaml
   Handoff type: <handoff_type>   (new_domain | fast_track | major_evolution | reverse_eng)
   Changed files: <changed_files> (JSON array — empty for new_domain/reverse_eng)
@@ -409,6 +417,7 @@ For each claimed task:
     ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
     SESSION_DIR=<session_dir>
   Set these as shell env vars before any emit.py call.
+  nesting_depth: <nesting_depth + 1>
   Task spec: <task.spec>
   Delivery path:   <session_dir>/delivery/<task_id>-delivery.md
   QA verdict path: <specs_dir>/qa/<task_id>-qa.md

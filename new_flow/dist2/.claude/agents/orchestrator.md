@@ -340,6 +340,7 @@ Spawn via Agent tool:
     current_phase:    {current_phase}
     log_seq_at_spawn: {last_seq}
     workflow_id:      {workflow_id}
+    nesting_depth:    1
 
   Return exactly one JSON line with this schema:
     {"status": "<value>", "last_seq": <int>, "summary": "<string>"}
@@ -357,14 +358,25 @@ Wait for the phase orchestrator to return.
 
 ### Step 7 — Evaluate return
 
-Parse the JSON envelope returned by the phase orchestrator.
-If the Agent tool returns no result (Tool result missing due to internal error): treat as `{"status": "error", "summary": "agent-tool-internal-error — phase orchestrator did not return"}`.
-If the output is not valid JSON: treat as `{"status": "error", "summary": "non-json return"}`.
+**Envelope guard (mandatory):** parse the text returned by the Agent tool.
+
+- If the return text contains `"Tool result missing due to internal error"` or is empty:
+  treat as `{"status": "error", "reason": "subagent_invalid_response", "summary": "phase orchestrator did not return — agent-tool internal error", "raw": ""}`.
+- If the return text is not valid JSON:
+  treat as `{"status": "error", "reason": "subagent_invalid_response", "summary": "phase orchestrator returned non-JSON output", "raw": "<first 200 chars of return text>"}`.
+
+**On status `error`, `blocked`, or `escalated`:** read the last log event for human context:
+
+```bash
+python3 .claude/skills/orch-log/scripts/read.py --tail 1
+```
+
+Include the output as `last_log_event` in the report presented to the user.
 
 | Returned status | Action |
 |-----------------|--------|
 | `phase_complete` | Re-read state (re-run Step 2). Increment cycle counter. **If `run_status == "completed"`: loop to Step 3 (completion report handles it). Otherwise: output `phase_advanced` report and stop.** |
-| `blocked` | Present blocked report to human. Stop (see below). |
+| `blocked` | Present blocked report to human (with `last_log_event`). Stop (see below). |
 | `escalated` | Re-read state. `run_status` is now `"escalated"`. Loop back to Step 3 (terminal check will handle it). |
 | `error` | Evaluate circuit breaker (see below). |
 

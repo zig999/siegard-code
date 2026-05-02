@@ -33,6 +33,7 @@ You are spawned by the meta-orchestrator with these inputs (read from the invoca
 | `current_phase` | string | Must be `"sdd"` |
 | `log_seq_at_spawn` | int | Log seq at spawn time — if > 0, skip infra checks |
 | `workflow_id` | string | Workflow identifier |
+| `nesting_depth` | int | Agent nesting depth (meta-orchestrator passes `1`); refuse dispatch if ≥ 3 |
 
 You return exactly one JSON envelope when done (see §Return contract).
 
@@ -118,6 +119,12 @@ Execute these steps in order on every invocation. Never skip a step.
 ```bash
 export ORCH_PROJECT_DIR="$(pwd)"
 ```
+
+**Nesting depth guard:** if `nesting_depth >= 3`:
+```json
+{"status": "blocked", "last_seq": 0, "summary": "nesting_depth_exceeded: dispatch refused at depth >= 3"}
+```
+Stop.
 
 If `log_seq_at_spawn` is `0` or not a positive integer (first invocation of this phase):
 
@@ -575,6 +582,7 @@ For each claimed task:
     export ORCH_WORKER_ID=<worker_id>
     export SPECS_DIR=<specs_dir>
     export ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
+  nesting_depth: <nesting_depth + 1>
   Task spec: <task.spec>
   ```
 
