@@ -10,6 +10,7 @@ tools:
   - Agent
   - Bash
   - Read
+  - AskUserQuestion
 ---
 
 # Meta-Orchestrator
@@ -197,7 +198,9 @@ Stop.
 
 If `run_status == "escalated"`:
 
-Emit escalation report to the user, quoting the escalation event's `reason` and `options`:
+Read `escalation_seq` from `state.escalation["seq"]` (injected by the reducer — always present when `run_status == "escalated"`).
+
+Emit escalation report to the user:
 
 ```
 Workflow Escalated
@@ -207,23 +210,26 @@ Reason:  {escalation.reason}
 Seq:     {last_seq}
 
 Options:
-{for each option in escalation.options, one per line:}
+{for each option in escalation.options (if present), one per line:}
   - {option}
-
-To resume, collect the operator's choice and emit `human_response` with the exact fields below, then invoke the orchestrator again.
 ```
 
-Read `escalation_seq` from `state.escalation["seq"]` (injected by the reducer into the escalation dict — always present when `run_status == "escalated"`).
+**Decision gate** (`escalation.options` is present AND `escalation.severity == "info"`):
 
-Emit:
+Use AskUserQuestion with the options from `escalation.options`.
+
+On response (`operator_choice`):
+
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
-  --agent human \
+  --agent orchestrator \
   --event-type human_response \
-  --data "{\"escalation_seq\": <state.escalation[\"seq\"]>, \"action\": \"<operator_choice>\", \"operator\": \"user\"}"
+  --data '{"escalation_seq":<escalation_seq>,"action":"<operator_choice>","operator":"operator"}'
 ```
 
-Where `<operator_choice>` is one of the options listed above (e.g. `confirm_proceed`, `abort`, `return_to_dev`, `reassign`).
+Re-read state (re-run Steps 1–2). Proceed to Step 5 to resume the phase orchestrator.
+
+**Error condition** (`escalation.options` absent OR `escalation.severity != "info"`):
 
 Output:
 ```json

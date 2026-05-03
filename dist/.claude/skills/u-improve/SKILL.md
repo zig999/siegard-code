@@ -33,7 +33,7 @@ Constraints:
 
 ## Controlled vocabulary
 
-This skill does not prompt for human confirmation in chat. Human decisions are captured exclusively via `human_response` events in the event log (escalation protocol). The only token accepted interactively is:
+Human decisions at confirmation gates (E14, E15) are captured via `AskUserQuestion` with discrete options. The agent emits the resulting `human_response` event to the event log transparently — the operator never interacts with `append.py` directly.
 
 | Token | Meaning |
 |-------|---------|
@@ -82,21 +82,33 @@ python3 .claude/skills/orch-log/scripts/append.py \
     "reason": "session_conflict — pending spec pipeline detected (spec_change_status: pending_spec)",
     "options": ["force_overwrite", "abort"],
     "evidence": [],
-    "note": "To force overwrite: emit human_response with action: force_overwrite. To use a different id: abort and run /u-improve with a new workflow_id."
+    "note": "force_overwrite — overwrite the pending session and restart. abort — stop and use a different workflow_id."
   }'
 ```
 
-To force overwrite, the operator must emit:
+Capture `escalation_seq` from the seq of the escalation event just emitted.
+
+Use AskUserQuestion:
+- question: "Session conflict — a pending spec pipeline is active for `{workflow_id}` (`spec_change_status: pending_spec`). Proceeding will overwrite the in-progress session."
+- options: `["force_overwrite", "abort"]`
+
+On `force_overwrite`: emit to log and continue to Step 1:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
-  --agent operator \
+  --agent u-improve \
   --event-type human_response \
   --data '{"escalation_seq":<escalation_seq>,"action":"force_overwrite","operator":"operator"}'
 ```
 
-On `force_overwrite`: continue to Step 1.
-On `abort`: stop.
+On `abort`: emit to log and stop:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent u-improve \
+  --event-type human_response \
+  --data '{"escalation_seq":<escalation_seq>,"action":"abort","operator":"operator"}'
+```
 
 ---
 
@@ -437,22 +449,29 @@ print(ev.seq if ev else 0)
 
 Store result as `escalation_seq`.
 
-Stop. Do not wait for response in chat. Do not invoke the orchestrator.
+Use AskUserQuestion:
+- question: "Improvement classified as `spec_change_required` — the spec pipeline will run on {len(affected_specs)} file(s) before implementation (mode: `{mode_hint}`)."
+- options: `["confirm_proceed", "abort"]`
 
-To confirm, the operator must emit:
+On `confirm_proceed`: emit to log and proceed to Step 5:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
-  --agent operator \
+  --agent u-improve \
   --event-type human_response \
   --data '{"escalation_seq":<escalation_seq>,"action":"confirm_proceed","operator":"operator"}'
 ```
 
-Replace `<escalation_seq>` with the integer seq captured above. To abort instead, use `"action":"abort"`.
+On `abort`: emit to log and stop:
 
-On next invocation, the meta-orchestrator reads `human_response.action`:
-- `confirm_proceed` → escalation cleared; orchestrator enters `sdd` phase (already declared in step 3b)
-- `abort` → escalation cleared; operator must manually clean up session if needed
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent u-improve \
+  --event-type human_response \
+  --data '{"escalation_seq":<escalation_seq>,"action":"abort","operator":"operator"}'
+```
+
+Operator must manually clean up session if needed.
 
 **If `type: implementation_only`:**
 
@@ -593,14 +612,14 @@ recalculate_diff:
 | scope_block_persistence | write-before-escalate — Step 3a (improve-scope.json) and 3b (phase_declared) run BEFORE Step 3c escalation emission. Step 3b always emits phase_declared (for all types), with phase set derived from type + pipeline. |
 | state_persistence_path | `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/improve-scope.json` — NEVER write to docs/ or any other path |
 | event_log_tool | Use `append.py` (orch-log) for orchestrator-level events — NEVER use emit.py (worker-only guard-rail) |
-| spec_invocation | escalation_protocol — for spec_change_required, emit E14_improve_spec_confirmation escalation and stop; the meta-orchestrator handles routing on resume |
-| human_decision_protocol | All operator decisions are captured via `human_response` events in the log — never via free-text chat prompts |
+| spec_invocation | escalation_protocol — for spec_change_required, emit E14_improve_spec_confirmation escalation, use AskUserQuestion to capture operator choice, emit human_response to log, then continue inline (confirm_proceed → Step 5; abort → stop) |
+| human_decision_protocol | Operator decisions at E14/E15 gates are captured via `AskUserQuestion` (discrete options); the agent emits the resulting `human_response` event to the log. No raw `append.py` commands are shown to the operator. |
 | planner_required | Authoritative from improve-scope.json; operator edits the file directly if override needed — no interactive gate |
 | spec_change_status | Always resolved before Step 5; pending_spec is non-terminal |
 | execution_policy_derivation | Text-and-specs-based (Step 2.6) — never ask the human to set pipeline or regression_test_required |
 | unified_change_scope | Bug fixes, tweaks, and enhancements all flow through this skill — no separate bug channel |
 | session_guard | Step 0 always executes before any write; non-terminal sessions require E15 escalation before overwrite; terminal sessions warn but proceed |
-| session_overwrite_protocol | Silent overwrite is prohibited; terminal-state sessions emit [session_conflict] warning; pending_spec sessions require force_overwrite human_response |
+| session_overwrite_protocol | Silent overwrite is prohibited; terminal-state sessions emit [session_conflict] warning; pending_spec sessions use AskUserQuestion (E15 gate) to capture force_overwrite or abort, then emit human_response to log |
 | ui_detection | Step 1b derives ui_task automatically from keyword heuristics — never asks the human |
 | brief_recommended | Informational flag only — does not block the flow; emitted in Step 3c when ui_task is true and input lacks structured brief sections |
 | brief_source_u-ui-brief | When input contains structured u-ui-brief sections, Step 2.1 candidate identification uses that structure; no recommendation emitted |

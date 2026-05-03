@@ -306,7 +306,7 @@ Domains:  {domain_count}
 Pending tasks: {pending_count}
 Completed:     {completed_count}
 
-Confirm to proceed with dispatch? (emit human_response with action: confirm_proceed to continue)
+Options: confirm_proceed | abort
 ```
 
 Emit escalation:
@@ -318,9 +318,10 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{
     "code": "E99_human_confirmation_required",
     "severity": "info",
-    "reason": "SDD phase requires human confirmation before dispatching spec workers. Review the pipeline state above and emit human_response {action: confirm_proceed} to proceed or {action: abort} to stop.",
+    "reason": "SDD phase requires human confirmation before dispatching spec workers.",
+    "options": ["confirm_proceed", "abort"],
     "evidence": [],
-    "suggested_actions": ["emit human_response with action: confirm_proceed to start dispatch", "emit human_response with action: abort to stop"]
+    "suggested_actions": ["confirm_proceed — start spec worker dispatch", "abort — stop the workflow"]
   }'
 ```
 

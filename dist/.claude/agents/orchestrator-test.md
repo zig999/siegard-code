@@ -440,11 +440,12 @@ python3 .claude/skills/orch-log/scripts/append.py \
     "code": "E99_human_test_intervention_required",
     "severity": "warning",
     "reason": "Test phase completed with failures. Human decision required: accept failures or return tasks to dev.",
+    "options": ["return_to_dev", "accept_with_failures"],
     "evidence": [<test task completed/dlq seqs>],
     "failing_tasks": [<list of task_ids with test failures>],
     "suggested_actions": [
-      "emit human_response with action: return_to_dev to send failing tasks back for fixes",
-      "emit human_response with action: accept_with_failures to approve delivery despite known failures"
+      "return_to_dev — send failing tasks back to dev for correction",
+      "accept_with_failures — approve delivery despite known test failures"
     ]
   }'
 ```

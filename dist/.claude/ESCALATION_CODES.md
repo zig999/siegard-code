@@ -39,7 +39,13 @@ Each code appears in the event log as `escalation.data.code`.
 
 ## How to respond to an escalation
 
-All escalations are resolved by emitting a `human_response` event with the appropriate `action` field:
+**Decision gates** (severity `info` — codes E99_*, E14, E15): respond by selecting an option in the conversation. The orchestrator captures your choice via `AskUserQuestion`, emits the `human_response` event to the log automatically, and resumes the workflow without requiring a separate invocation.
+
+**Error conditions** (severity `warning` or `critical`): the workflow is stopped. Resolve the underlying issue as described in the escalation's `suggested_actions`, then re-invoke the orchestrator.
+
+### Manual response (advanced / headless)
+
+For programmatic or batch contexts where `AskUserQuestion` is not available:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -48,7 +54,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"escalation_seq": <seq_of_escalation_event>, "action": "<action>", "notes": "<optional>"}'
 ```
 
-Then re-invoke the relevant orchestrator with `log_seq_at_spawn: <current_seq>` to resume.
+Then re-invoke the relevant orchestrator to resume.
 
 ---
 

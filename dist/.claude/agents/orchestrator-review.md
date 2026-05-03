@@ -433,9 +433,10 @@ Rejected:                  {rejected_count}
 Spec divergences requiring CR: {spec_divergences_count}
 {if spec_divergences_count > 0: list each SPEC-DIVERGENCE line with source artifact}
 
-To proceed: emit human_response with action: approve
-To return rejected tasks to dev: emit human_response with action: return_to_dev
-To return specific tasks: emit human_response with action: return_partial and rejected_task_ids: [...]
+Options:
+  approve         — proceed to test phase
+  return_to_dev   — return all tasks to dev for revision
+  return_partial  — return specific tasks (requires rejected_task_ids; use manual human_response for this option)
 ```
 
 Emit escalation:
@@ -447,12 +448,13 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{
     "code": "E99_human_approval_required",
     "severity": "info",
-    "reason": "QA verdicts collected. Human approval required before phase transition. Review verdict summary and emit human_response.",
+    "reason": "QA verdicts collected. Human approval required before phase transition.",
+    "options": ["approve", "return_to_dev", "return_partial"],
     "evidence": [<review task completed seqs>],
     "suggested_actions": [
-      "emit human_response with action: approve to proceed to test phase",
-      "emit human_response with action: return_to_dev to send all tasks back to dev",
-      "emit human_response with action: return_partial and rejected_task_ids: [...] to send specific tasks back"
+      "approve — proceed to test phase",
+      "return_to_dev — send all tasks back to dev for revision",
+      "return_partial — send specific tasks back (requires rejected_task_ids in human_response)"
     ]
   }'
 ```
