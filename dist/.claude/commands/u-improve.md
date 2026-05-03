@@ -10,6 +10,7 @@ Read the following file:
 Extract from `$ARGUMENTS`:
 - **Quoted string** = `IMPROVEMENT_TASK` (optional — natural-language description of the improvement)
 - **Last non-quoted argument** = `workflow_id` (human-readable identifier for this workflow; must not contain `/` or `\`)
+- **`--recalculate` flag** = `RECALCULATE_MODE` (optional — re-derives classification from existing session without restarting)
 
 **Resolving `SPECS_DIR` (priority):**
 1. `specs_dir:` field in `CLAUDE.md` (project root) → use *(canonical source)*
@@ -28,11 +29,21 @@ Derive from `pwd` at command invocation (absolute path to project root).
 1. Quoted string in `$ARGUMENTS` → pass to the SKILL as inline input (skip Step 1 prompt)
 2. None → SKILL Step 1 will prompt the human for it
 
+**Resolving `RECALCULATE_MODE`:**
+1. `--recalculate` present in `$ARGUMENTS` → `RECALCULATE_MODE = true`
+2. Not present → `RECALCULATE_MODE = false`
+
+When `RECALCULATE_MODE = true`:
+- `workflow_id` is **required** — stop with error if not provided
+- `IMPROVEMENT_TASK` is **ignored** — existing `improvement_task` from session is used
+- The SKILL enters Recalculate Mode (see SKILL.md § Recalculate Mode)
+
 ## Execution
 
 Follow the skill execution flow defined in `.claude/skills/u-improve/SKILL.md`. The SKILL is responsible for:
 - write-before-confirm (Steps 3a/3b run before any human prompt)
 - emitting `phase_declared` to `.orch/log.jsonl` when the human types `confirm`
 - invoking the meta-orchestrator (`orchestrator`) directly via the Agent tool
+- session guard (Step 0) — detecting and blocking silent overwrites of active sessions
 
 This command does not print shell-paste instructions.

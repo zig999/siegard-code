@@ -41,6 +41,65 @@ This skill does not prompt for human confirmation in chat. Human decisions are c
 
 ---
 
+## Step 0 — Session guard
+
+Executed immediately after `workflow_id` is resolved and before any other operation.
+
+Check: does `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/improve-scope.json` exist?
+
+**Case A — File does not exist:**
+Continue to Step 1.
+
+**Case B — File exists, `spec_change_status` is terminal (`not_required`, `completed`, `failed`, `divergence_accepted`):**
+
+Emit to output:
+
+```
+[session_conflict]
+workflow_id: {workflow_id}
+existing_state:
+  spec_change_status: {status}
+  improvement_task: {existing improvement_task}
+  type: {existing type}
+action: overwrite_pending
+note: Existing session is terminal. Proceeding will overwrite improve-scope.json.
+      To preserve the existing session, abort and use a different workflow_id.
+```
+
+Proceed to Step 1. Overwrite happens at Step 3a as normal.
+
+**Case C — File exists, `spec_change_status` is non-terminal (`pending_spec`):**
+
+Capture `escalation_seq` after emit (same pattern as Step 3c). Emit escalation and STOP:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent u-improve \
+  --event-type escalation \
+  --data '{
+    "code": "E15_session_overwrite_guard",
+    "severity": "warning",
+    "reason": "session_conflict — pending spec pipeline detected (spec_change_status: pending_spec)",
+    "options": ["force_overwrite", "abort"],
+    "evidence": [],
+    "note": "To force overwrite: emit human_response with action: force_overwrite. To use a different id: abort and run /u-improve with a new workflow_id."
+  }'
+```
+
+To force overwrite, the operator must emit:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent operator \
+  --event-type human_response \
+  --data '{"escalation_seq":<escalation_seq>,"action":"force_overwrite","operator":"operator"}'
+```
+
+On `force_overwrite`: continue to Step 1.
+On `abort`: stop.
+
+---
+
 ## Step 1 — Collect improvement task
 
 If `IMPROVEMENT_TASK` was provided inline with the command, use it directly and proceed to Step 2.
@@ -51,7 +110,29 @@ Otherwise emit exactly:
 Improvement task:
 ```
 
-Wait for human input. Record as `improvement_task`. Do not ask follow-up questions. Proceed to Step 2 immediately after recording.
+Wait for human input. Record as `improvement_task`. Do not ask follow-up questions. Proceed to Step 1b immediately after recording.
+
+---
+
+## Step 1b — UI task detection
+
+Executed immediately after `improvement_task` is recorded. Classification is automatic — no human input.
+
+**UI signal keywords** (any match → `ui_task: true`):
+`component`, `screen`, `page`, `layout`, `modal`, `dialog`, `form`, `button`, `card`, `table`, `sidebar`, `navigation`, `header`, `footer`, `theme`, `typography`, `icon`, `color`, `spacing`, `padding`, `margin`, `animation`, `hover`, `tooltip`, `dropdown`, `input`, `checkbox`, `stepper`, `tab`, `drawer`
+
+**Suppression rule** — override to `ui_task: false` if task text contains any of:
+`API`, `endpoint`, `route`, `service`, `repository`, `migration`, `cron`, `background job`, `webhook`, `database`
+
+**Brief detection** (when `ui_task: true`):
+
+| Condition | `brief_source` | `brief_recommended` | Action |
+|-----------|----------------|---------------------|--------|
+| Input contains structured u-ui-brief sections (`access context:`, `states:`, `layout:`, or `§N`) | `u-ui-brief` | `false` | Use structure to improve Step 2.1 candidate identification. Proceed to Step 2. |
+| Input is free-text only | — | `true` | Emit recommendation in Step 3c diagnosis. Proceed to Step 2. |
+| `ui_task: false` | — | `false` | Proceed to Step 2 normally. |
+
+> **Note:** `brief_recommended: true` is informational — it does not block the flow. The operator may proceed with the raw description or stop, run `/u-ui-brief`, and re-invoke `/u-improve` with the structured brief as `IMPROVEMENT_TASK`.
 
 ---
 
@@ -317,6 +398,16 @@ execution_policy:
 mode_hint: {fast-track:minor | fast-track:patch | full}
 ```
 
+**If `brief_recommended: true` (UI task with free-text description), append:**
+
+```
+[recommendation]
+brief_recommended: true
+reason: ui_task_detected_without_structured_brief
+action: run /u-ui-brief before /u-improve for higher-quality spec input
+note: To proceed with raw description: continue. To use a structured brief: run /u-ui-brief, then re-invoke /u-improve with the brief output as IMPROVEMENT_TASK.
+```
+
 Emit escalation event to request operator confirmation:
 
 ```bash
@@ -396,6 +487,99 @@ The user must run `/u-dev {workflow_id}` to proceed with implementation.
 
 ---
 
+## Recalculate Mode (`--recalculate`)
+
+Activated when `--recalculate` flag is present in `$ARGUMENTS`. Replaces the standard Steps 0–5 entirely.
+
+**Purpose:** Re-derive `affected_specs`, `type`, and `execution_policy` from the existing `improvement_task` without restarting the session. Does NOT re-emit `phase_declared` — phases are already committed in the log and remain authoritative.
+
+### RC-1 — Load existing session
+
+Read `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/improve-scope.json`.
+
+**If file does not exist:**
+```
+status: error
+reason: session_not_found
+workflow_id: {workflow_id}
+```
+Stop.
+
+**If `spec_change_status` is `pending_spec`:**
+```
+status: blocked
+reason: spec_pipeline_active
+spec_change_status: pending_spec
+note: Recalculate is only allowed when spec_change_status is terminal (not_required, completed, failed, divergence_accepted).
+```
+Stop.
+
+Extract from existing scope:
+- `improvement_task` (reused as-is — not modifiable via recalculate)
+- `type` → store as `previous_type`
+- `execution_policy` → store as `previous_execution_policy`
+
+### RC-2 — Re-run classification
+
+Re-execute Steps 1b and 2.1 through 2.6 using the existing `improvement_task`.
+
+Record diff:
+
+```yaml
+recalculate_diff:
+  type:
+    previous: {previous_type}
+    new: {new_type}
+    changed: true | false
+  pipeline:
+    previous: {previous_execution_policy.pipeline}
+    new: {new_pipeline}
+    changed: true | false
+  regression_test_required:
+    previous: {previous_execution_policy.regression_test_required}
+    new: {new_regression_test_required}
+    changed: true | false
+  planner_required:
+    previous: {previous_execution_policy.planner_required}
+    new: {new_planner_required}
+    changed: true | false
+```
+
+### RC-3 — Overwrite improve-scope.json
+
+Write updated scope to `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/improve-scope.json`.
+
+`spec_change_status` is re-initialized:
+- `pending_spec` if new `type: spec_change_required`
+- `not_required` if new `type: implementation_only`
+
+### RC-4 — Emit scope_recalculated event
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent u-improve \
+  --event-type scope_recalculated \
+  --data '{"workflow_id":"{workflow_id}","diff":<recalculate_diff_json>}'
+```
+
+### RC-5 — Present updated diagnosis
+
+Emit the standard Step 3c diagnosis block, appended with:
+
+```
+recalculate_diff:
+  type: {previous} → {new} (changed: true|false)
+  pipeline: {previous} → {new} (changed: true|false)
+  regression_test_required: {previous} → {new} (changed: true|false)
+  planner_required: {previous} → {new} (changed: true|false)
+```
+
+**Routing after RC-5:**
+- `new type: spec_change_required` → proceed to Step 3c escalation (E14)
+- `new type: implementation_only` → proceed to Step 5 (Handoff)
+
+---
+
 ## Behavioral rules
 
 | Rule | Description |
@@ -415,3 +599,10 @@ The user must run `/u-dev {workflow_id}` to proceed with implementation.
 | spec_change_status | Always resolved before Step 5; pending_spec is non-terminal |
 | execution_policy_derivation | Text-and-specs-based (Step 2.6) — never ask the human to set pipeline or regression_test_required |
 | unified_change_scope | Bug fixes, tweaks, and enhancements all flow through this skill — no separate bug channel |
+| session_guard | Step 0 always executes before any write; non-terminal sessions require E15 escalation before overwrite; terminal sessions warn but proceed |
+| session_overwrite_protocol | Silent overwrite is prohibited; terminal-state sessions emit [session_conflict] warning; pending_spec sessions require force_overwrite human_response |
+| ui_detection | Step 1b derives ui_task automatically from keyword heuristics — never asks the human |
+| brief_recommended | Informational flag only — does not block the flow; emitted in Step 3c when ui_task is true and input lacks structured brief sections |
+| brief_source_u-ui-brief | When input contains structured u-ui-brief sections, Step 2.1 candidate identification uses that structure; no recommendation emitted |
+| recalculate_mode | --recalculate replaces standard Steps 0–5; does NOT re-emit phase_declared; blocked when spec_change_status is pending_spec |
+| recalculate_improvement_task | improvement_task is immutable in recalculate mode — only classification and policy are re-derived |
