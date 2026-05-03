@@ -80,7 +80,7 @@ def _detect_stuck_improve_spec(state, orch_dir: Path) -> dict | None:
             "action_required": (
                 f"SDD phase completed but spec_change_status was never closed "
                 f"(spec_pipeline_return not emitted). "
-                f"Deploy latest orchestrator-sdd.md+orch_core.py and re-invoke /orchestrator, "
+                f"Deploy latest orchestrator-sdd.md+orch_core.py and re-invoke /u-orchestrator, "
                 f"OR run: python3 .claude/scripts/fix_stuck_improve.py "
                 f"--session {workflow_id} --action accept_divergence"
             ),

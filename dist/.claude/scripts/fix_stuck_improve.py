@@ -128,7 +128,7 @@ def _action_retry(workflow_id: str, dry_run: bool) -> int:
     if dry_run:
         print("DRY RUN — no changes written.")
     print("Next step:")
-    print("  /orchestrator")
+    print("  /u-orchestrator")
     print()
     print("The orchestrator will re-enter the SDD phase and resume the fast-track pipeline.")
     return 0
