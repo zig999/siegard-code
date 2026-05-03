@@ -1956,15 +1956,26 @@ def register_worker(
     """
     Writes a worker registry entry before the orchestrator spawns the agent.
 
+    Idempotent: if an entry already exists for this worker_id with the same
+    task_id and attempt, the call is a no-op. This prevents orphaned entries
+    when an orchestrator is interrupted between register_worker() and the Agent
+    spawn, and then re-invoked (it would otherwise overwrite a valid entry with
+    a new registered_at timestamp, confusing staleness detection).
+
     The on_subagent_stop hook reads these entries to identify which task each
     subagent was handling, without relying on shell env vars (which are
     unreliable under parallel dispatch).
-
-    Optional fields (phase, stack, task_type) are stored when provided so that
-    the hook can synthesize task_failed without replaying the full log. The
-    orchestrator should always pass these when available.
     """
     ensure_dirs()
+    entry_path = WORKERS_DIR / f"{worker_id}.json"
+    if entry_path.exists():
+        try:
+            existing = json.loads(entry_path.read_text(encoding="utf-8"))
+            if existing.get("task_id") == task_id and existing.get("attempt") == attempt:
+                return  # idempotent: same entry already registered
+        except (json.JSONDecodeError, OSError):
+            pass  # overwrite corrupt entry
+
     entry: dict[str, Any] = {
         "worker_id": worker_id,
         "task_id": task_id,
@@ -1977,10 +1988,71 @@ def register_worker(
         entry["stack"] = stack
     if task_type is not None:
         entry["task_type"] = task_type
-    (WORKERS_DIR / f"{worker_id}.json").write_text(
+    entry_path.write_text(
         json.dumps(entry, separators=(",", ":")),
         encoding="utf-8",
     )
+
+
+def cleanup_stale_workers(max_age_seconds: int = 3600) -> list[str]:
+    """
+    Removes registry entries older than max_age_seconds that have no
+    corresponding running task in the current log state.
+
+    Returns the list of worker_ids that were removed.
+
+    Call this at the start of each orchestrator dispatch cycle to prevent
+    accumulation of orphaned entries from interrupted sessions. Only removes
+    entries whose task is already in a terminal state (completed, dlq) or
+    whose registered_at timestamp exceeds max_age_seconds — it never removes
+    entries for genuinely running tasks.
+    """
+    if not WORKERS_DIR.exists():
+        return []
+
+    try:
+        state = reduce_all()
+    except Exception:
+        return []
+
+    removed: list[str] = []
+    cutoff_dt = None
+    try:
+        from datetime import datetime, timezone
+        cutoff_dt = datetime.now(timezone.utc).timestamp() - max_age_seconds
+    except Exception:
+        return []
+
+    for p in list(WORKERS_DIR.glob("*.json")):
+        try:
+            entry = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            p.unlink(missing_ok=True)
+            removed.append(p.stem)
+            continue
+
+        task_id = entry.get("task_id")
+        attempt = entry.get("attempt")
+        registered_at = entry.get("registered_at", "")
+
+        # Remove if the task has already reached a terminal state
+        task = state.tasks.get(task_id) if task_id else None
+        if task and task.status in (TaskStatus.COMPLETED, TaskStatus.DLQ):
+            p.unlink(missing_ok=True)
+            removed.append(entry.get("worker_id", p.stem))
+            continue
+
+        # Remove if the entry is older than max_age_seconds
+        if registered_at:
+            try:
+                reg_dt = parse_iso(registered_at).timestamp()
+                if reg_dt < cutoff_dt:
+                    p.unlink(missing_ok=True)
+                    removed.append(entry.get("worker_id", p.stem))
+            except Exception:
+                pass
+
+    return removed
 
 
 def unregister_worker(worker_id: str) -> None:
@@ -2158,6 +2230,7 @@ __all__ = [
     # Worker registry
     "register_worker",
     "unregister_worker",
+    "cleanup_stale_workers",
     "get_active_workers",
     # Report validation
     "validate_orchestrator_report",

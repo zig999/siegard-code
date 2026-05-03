@@ -547,7 +547,11 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 #### 5.1 — Select batch
 
-From ready queue (sorted by tier priority, then creation seq), select up to **2 tasks**.
+From ready queue (sorted by tier priority, then creation seq), select:
+- **Standard mode:** up to **2 tasks** per iteration
+- **Fast-track improve mode (`workflow_type == "improve"`):** up to **1 task** per iteration
+
+> Reason for fast-track limit: in improve mode, multiple parallel spec domains are dispatched with no dependency between them. Running 2+ workers simultaneously increases the probability of simultaneous parent-context overflow, which causes both workers to stop at the same time — the dominant failure pattern. Sequential dispatch at cost of throughput is acceptable because fast-track pipelines are short (2 tasks per domain).
 
 Look up worker for each task:
 

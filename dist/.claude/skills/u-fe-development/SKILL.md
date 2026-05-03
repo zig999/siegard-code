@@ -126,14 +126,52 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
   --data '{"phase":"dev","checkpoint":"analysis_complete"}'
 
-# Checkpoint 3 — after implementation, before writing delivery.md
+# Checkpoint 3 — after creating the branch, before first file write
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent $ORCH_WORKER_ID --event-type task_progress \
+  --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
+  --data '{"phase":"dev","checkpoint":"branch_created"}'
+
+# Checkpoint 4 — after all source code is written, before tests
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent $ORCH_WORKER_ID --event-type task_progress \
   --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
   --data '{"phase":"dev","checkpoint":"implementation_done"}'
+
+# Checkpoint 5 — after tests are written, before delivery.md
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent $ORCH_WORKER_ID --event-type task_progress \
+  --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
+  --data '{"phase":"dev","checkpoint":"tests_written"}'
 ```
 
 Never skip a checkpoint. If `$ORCH_WORKER_ID`, `$ORCH_TASK_ID`, or `$ORCH_ATTEMPT` are unresolved, stop and emit `task_failed` with `reason: unresolved_context_variables, retryable: false`.
+
+---
+
+## Terminal event guarantee (mandatory)
+
+Before stopping for any reason — tool failure, blocked state, unexpected error, context limit — verify that a terminal event (`task_completed` or `task_failed`) has been emitted for `$ORCH_TASK_ID / $ORCH_ATTEMPT`.
+
+**If no terminal has been emitted, emit `task_failed` immediately before stopping:**
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent $ORCH_WORKER_ID --event-type task_failed \
+  --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
+  --data '{"phase":"dev","reason":"<specific_reason>","retryable":true}'
+```
+
+| Situation | reason | retryable |
+|-----------|--------|-----------|
+| Tool call denied or failed | `tool_failure` | `true` |
+| Required file not found | `missing_input:<file>` | `false` |
+| Implementation blocked by ambiguity | `blocked_ambiguity` | `false` |
+| Context limit approaching | `context_limit` | `true` |
+| Unresolved env variables | `unresolved_context_variables` | `false` |
+| Any other unexpected stop | `unexpected_exit` | `true` |
+
+The `on_subagent_stop` hook synthesizes `task_failed` if this rule is not followed, but explicit emission is always preferred — it carries an accurate reason and retryable flag.
 
 ---
 
@@ -146,12 +184,16 @@ Never skip a checkpoint. If `$ORCH_WORKER_ID`, `$ORCH_TASK_ID`, or `$ORCH_ATTEMP
 2.5 Check component specs — covered in Step 1C (Pre-flight gate). By the time you reach this step, component specs for §7 components must already be confirmed present and read. If Step 1C was not executed, stop and run it now before continuing.
 3. Map the interface contracts the Task Contract will touch or create
    → emit checkpoint: analysis_complete
-4. Write the plan as a comment at the top of the first file created
-5. Only then begin implementation
-   → emit checkpoint: implementation_done (after code is written, before delivery.md)
+4. Create the feature branch (feat/TC-XX, fix/TC-XX, or refactor/TC-XX)
+   → emit checkpoint: branch_created
+5. Write the implementation plan as a comment at the top of the first file created
+6. Only then begin implementation
+   → emit checkpoint: implementation_done (after all source code is written, before tests)
+7. Write tests
+   → emit checkpoint: tests_written (after tests, before delivery.md)
 ```
 
-If any step reveals a blocking ambiguity -> **stop and record it in the delivery file before continuing**.
+If any step reveals a blocking ambiguity -> **stop, emit `task_failed` with `reason: blocked_ambiguity, retryable: false`, and record the ambiguity in the delivery file**.
 
 ---
 

@@ -19,6 +19,7 @@ sys.path.insert(0, str(_LIB))
 from orch_core import (
     reduce_all, TaskStatus, PhaseStatus, ORCH_DIR, METRICS_DIR,
     ensure_dirs, now_iso, parse_iso, read_events_filtered,
+    cleanup_stale_workers,
 )
 
 
@@ -158,6 +159,44 @@ def _compute_metrics(state=None) -> dict:
     }
 
 
+def _detect_worker_stopped_failures(state) -> dict | None:
+    """
+    Returns a structured recovery diagnostic when the session ended with
+    worker_stopped_without_terminal_event failures that were synthesized by the
+    on_subagent_stop hook.
+
+    These failures are retryable but require the orchestrator to be re-invoked.
+    This function surfaces the actionable recovery steps so operators don't
+    need to inspect the raw log to understand what happened.
+    """
+    stopped_tasks = [
+        t for t in state.tasks.values()
+        if t.status in (TaskStatus.FAILED, TaskStatus.SCHEDULED)
+        and getattr(t, "last_failure_reason", None) == "worker_stopped_without_terminal_event"
+    ]
+    if not stopped_tasks:
+        return None
+
+    return {
+        "worker_stopped_count": len(stopped_tasks),
+        "affected_tasks": [
+            {
+                "task_id": t.task_id,
+                "phase": t.phase,
+                "status": t.status.value if hasattr(t.status, "value") else str(t.status),
+                "attempts": t.attempts,
+            }
+            for t in stopped_tasks
+        ],
+        "action_required": (
+            "Re-invoke the orchestrator — these tasks were synthesized as failed by "
+            "on_subagent_stop because their workers stopped without emitting a terminal event. "
+            "They are retryable and will be picked up automatically on next orchestrator run."
+        ),
+        "command": "/u-orchestrator",
+    }
+
+
 _ERROR_RUN_STATUSES = frozenset({"escalated", "partial", "completed_with_dlq"})
 _ERROR_EVENT_TYPES = frozenset({
     "task_failed", "task_dlq", "escalation", "circuit_breaker_tripped", "preflight_failed",
@@ -195,6 +234,19 @@ def _write_orphan_alert(orphan: dict, metrics: dict) -> None:
     out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _write_worker_stopped_alert(stopped: dict, metrics: dict) -> None:
+    """Writes .orch/last_error.json with a worker_stopped recovery diagnostic."""
+    payload = {
+        "generated_at": now_iso(),
+        "workflow_id": metrics.get("workflow_id"),
+        "run_status": "worker_stopped_recovery_required",
+        "last_seq": metrics.get("last_seq"),
+        "diagnostic": stopped,
+    }
+    out_path = ORCH_DIR / "last_error.json"
+    out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     try:
         log_file = ORCH_DIR / "log.jsonl"
@@ -202,6 +254,14 @@ def main() -> None:
             return
 
         ensure_dirs()
+
+        # Purge stale worker registry entries from interrupted sessions before
+        # computing state — prevents phantom worker_stopped detections on next run.
+        try:
+            cleanup_stale_workers(max_age_seconds=3600)
+        except Exception:
+            pass
+
         state = reduce_all()
         metrics = _compute_metrics(state)
         metrics["orphaned_phase"] = None
@@ -219,6 +279,17 @@ def main() -> None:
             if metrics.get("run_status") not in ("orphaned_phase",):
                 metrics["run_status"] = "stuck_improve_spec"
             _write_stuck_improve_alert(stuck, metrics)
+
+        # Detect tasks that failed via on_subagent_stop synthesis and need
+        # orchestrator re-invocation to retry. Surfaces recovery instructions
+        # in last_error.json so operators don't need to read the raw log.
+        metrics["worker_stopped_recovery"] = None
+        stopped = _detect_worker_stopped_failures(state)
+        if stopped:
+            metrics["worker_stopped_recovery"] = stopped["worker_stopped_count"]
+            if metrics.get("run_status") not in ("orphaned_phase", "stuck_improve_spec"):
+                metrics["run_status"] = "worker_stopped_recovery_required"
+            _write_worker_stopped_alert(stopped, metrics)
 
         out_path = METRICS_DIR / "current.json"
         out_path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
