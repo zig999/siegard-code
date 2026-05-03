@@ -183,6 +183,17 @@ python3 .claude/skills/orch-state/scripts/reduce.py
 python3 .claude/skills/orch-state/scripts/current_phase.py
 ```
 
+**If `reduce.py` exits with code 1:** emit E12 and stop — do NOT proceed to Step 2.
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type escalation \
+  --data '{"code":"E12_state_reduction_failed","severity":"critical","reason":"reduce.py failed — log may be corrupt or orch_core.py version mismatch. Workflow cannot proceed until log integrity is restored.","evidence":[],"suggested_actions":["run: python3 .claude/skills/orch-log/scripts/verify.py","inspect tail of .orch/log.jsonl for malformed events","ensure deployed .claude/lib/orch_core.py matches dist version"]}'
+```
+
+Output `{"status": "escalated", "last_seq": 0, "summary": "reduce_failed — see E12 escalation in log"}` and stop.
+
 Hold the full `OrchState` in memory for this cycle. Extract:
 - `sdd_tasks`: all tasks where `task.phase == "sdd"`
 - `last_seq`: the highest seq in state
@@ -758,7 +769,7 @@ Re-read state. Determine why:
 |-----------|--------|
 | Infra check blocked | Return `{status: "blocked"}` immediately |
 | `append.py` exit 1 on `task_claimed` | Skip task, record issue, continue |
-| `reduce.py` exit 1 | Return `{status: "error", summary: "reduce_failed"}` |
+| `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
 | Worker exits without terminal | Synthesize `task_failed` in Step 5.4 |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` (E10 emitted by meta-orchestrator) |
 | E11 detected in DLQ | Emit E11 and return `{status: "escalated"}` immediately — do not cascade |

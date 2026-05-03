@@ -365,6 +365,17 @@ Wait for the phase orchestrator to return.
 - If the return text is not valid JSON:
   treat as `{"status": "error", "reason": "subagent_invalid_response", "summary": "phase orchestrator returned non-JSON output", "raw": "<first 200 chars of return text>"}`.
 
+**If either guard condition fired** (subagent_invalid_response): emit E13 before evaluating the error path, so the failure is traceable in the log:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type escalation \
+  --data '{"code":"E13_subagent_invalid_response","severity":"critical","reason":"Phase orchestrator for <current_phase> returned non-JSON or empty output — possible context overflow, agent startup failure, or tool permission error.","evidence":[<last_seq>],"suggested_actions":["re-invoke the orchestrator — transient tool errors often self-resolve","if persistent: inspect agent definition for syntax errors","if persistent: check tool permissions in .claude/settings.json","if context overflow: consider checkpointing or splitting the workflow"]}'
+```
+
+Then treat the status as `"error"` and continue to the error evaluation path below.
+
 **On status `error`, `blocked`, or `escalated`:** read the last log event for human context:
 
 ```bash
@@ -501,4 +512,5 @@ On every **user invocation**, the meta-orchestrator starts fresh from Step 1. Ea
 | Code | Source | Condition |
 |------|--------|-----------|
 | `E10_phase_orchestrator_error` | meta-orchestrator | Phase orchestrator returned error + circuit tripped |
+| `E13_subagent_invalid_response` | meta-orchestrator | Phase orchestrator returned non-JSON or empty (envelope guard fired) |
 | (infrastructure codes) | `orch-infra` scripts | Preflight / integrity / circuit failures |

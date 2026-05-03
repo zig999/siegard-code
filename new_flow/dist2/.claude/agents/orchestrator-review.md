@@ -125,6 +125,17 @@ python3 .claude/skills/orch-state/scripts/reduce.py
 python3 .claude/skills/orch-state/scripts/current_phase.py
 ```
 
+**If `reduce.py` exits with code 1:** emit E12 and stop — do NOT proceed to Step 2.
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E12_state_reduction_failed","severity":"critical","reason":"reduce.py failed — log may be corrupt or orch_core.py version mismatch. Workflow cannot proceed until log integrity is restored.","evidence":[],"suggested_actions":["run: python3 .claude/skills/orch-log/scripts/verify.py","inspect tail of .orch/log.jsonl for malformed events","ensure deployed .claude/lib/orch_core.py matches dist version"]}'
+```
+
+Output `{"status": "escalated", "last_seq": 0, "summary": "reduce_failed — see E12 escalation in log"}` and stop.
+
 Extract:
 - `review_tasks`: all tasks where `task.phase == "review"`
 - `dev_completed_tasks`: all tasks where `task.phase == "dev"` and `task.status == "completed"`
@@ -143,15 +154,32 @@ export SPECS_DIR="${SPECS_DIR:-specs}"
 python3 -c "
 import os, json, sys
 sys.path.insert(0, '.claude/lib')
-from orch_core import parse_manifest_fields
 from pathlib import Path
 specs_dir = Path(os.environ.get('SPECS_DIR', 'specs'))
 manifest = specs_dir / 'handoff-manifest.yaml'
 content = manifest.read_text(encoding='utf-8') if manifest.exists() else ''
-result = parse_manifest_fields(content)
+try:
+    from orch_core import parse_manifest_fields
+    result = parse_manifest_fields(content)
+except (ImportError, AttributeError) as e:
+    result = {
+        'stack': 'be', 'type': 'new_domain', 'dev_impact': '', 'changed_files': [],
+        '_warning': f'parse_manifest_fields unavailable ({e}) — using defaults. Update orch_core.py.'
+    }
 print(json.dumps(result))
 "
 ```
+
+If the output contains `_warning`: emit a warning before continuing:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E12_state_reduction_failed","severity":"warning","reason":"parse_manifest_fields not found in orch_core.py — stack detection fell back to defaults (stack: be). Worker routing may be incorrect. Update .claude/lib/orch_core.py to the current dist version.","evidence":[],"suggested_actions":["copy new_flow/dist2/.claude/lib/orch_core.py to .claude/lib/orch_core.py in the target project","re-invoke orchestrator after update to correct stack routing"]}'
+```
+
+Continue execution with the default values — do not stop.
 
 Store `stack` (and `type`, `dev_impact`, `changed_files`) for worker routing in Step 4.
 
@@ -563,7 +591,7 @@ Stop.
 | Infra check blocked | Return `{status: "blocked"}` immediately |
 | No dev delivery artifacts | Return `{status: "blocked"}` |
 | `append.py` exit 1 on `task_claimed` | Skip task, continue |
-| `reduce.py` exit 1 | Return `{status: "error", summary: "reduce_failed"}` |
+| `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
 | Worker exits without terminal | Synthesize `task_failed` in Step 4.4 |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |
 | `human_response` action unknown | Treat as no response; re-emit escalation on next invocation |

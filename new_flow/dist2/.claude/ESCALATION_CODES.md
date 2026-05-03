@@ -22,6 +22,8 @@ Each code appears in the event log as `escalation.data.code`.
 | `E99_human_confirmation_required` | info | orchestrator-sdd | First dispatch gate — awaiting human confirmation to proceed | Emit `human_response` with `action: confirm_proceed` |
 | `E99_human_approval_required` | info | orchestrator-review | QA verdicts collected — awaiting human approval before phase transition | Emit `human_response` with `action: approve`, `return_to_dev`, or `return_partial` |
 | `E99_human_test_intervention_required` | warning | orchestrator-test | Test failures detected — human decision required | Emit `human_response` with `action: return_to_dev` or `action: accept_with_failures` |
+| `E12_state_reduction_failed` | critical | orchestrator-sdd, orchestrator-dev, orchestrator-review, orchestrator-test | `reduce.py` exited with error — log may be corrupt or `orch_core.py` version mismatch | Run `python3 .claude/skills/orch-log/scripts/verify.py`; inspect tail of `.orch/log.jsonl` for malformed events; ensure deployed `orch_core.py` matches dist version |
+| `E13_subagent_invalid_response` | critical | orchestrator (meta) | Phase orchestrator returned non-JSON or empty output — possible context overflow or agent startup failure | Re-invoke the orchestrator (transient tool errors often self-resolve); if persistent: inspect agent definition; reduce context by checkpointing |
 
 ---
 
@@ -59,5 +61,6 @@ Then re-invoke the relevant orchestrator with `log_seq_at_spawn: <current_seq>` 
 | E06 | orchestrator-sdd (dispatch loop limit) |
 | E07–E09 | Phase orchestrators (dev, review) |
 | E10 | Meta-orchestrator |
-| E11–E19 | Phase orchestrators (extended) |
+| E11–E13 | Phase orchestrators (extended) + meta-orchestrator |
+| E14–E19 | Reserved |
 | E99 | Human confirmation / approval gates |
