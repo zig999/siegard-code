@@ -714,11 +714,42 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"from_phase":"sdd","to_phase":"dev","evidence_seq":<last_seq>}'
 ```
 
+**If `workflow_type == "improve"`:** close the spec_change_status loop by emitting `spec_pipeline_return`.
+This transitions `improve-scope.json` from `pending_spec` to `completed` for the meta-orchestrator and
+for any guard in `orchestrator-dev` Step 2.
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type spec_pipeline_return \
+  --data '{"workflow_id":"<workflow_id>","session_id":"<workflow_id>","spec_change_status":"completed"}'
+```
+
+Then update `improve-scope.json` on disk so `orchestrator-dev` Step 2 can read the resolved status
+without replaying the log:
+
+```bash
+python3 -c "
+import json, sys, os
+from pathlib import Path
+project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
+workflow_id = sys.argv[1]
+scope_path = Path(project_dir) / '.orch' / 'sessions' / workflow_id / 'improve-scope.json'
+if scope_path.exists():
+    scope = json.loads(scope_path.read_text())
+    scope['spec_change_status'] = 'completed'
+    scope_path.write_text(json.dumps(scope, indent=2))
+    print(json.dumps({'updated': True, 'path': str(scope_path)}))
+else:
+    print(json.dumps({'updated': False, 'reason': 'file_not_found'}))
+" "<workflow_id>"
+```
+
 Output return envelope:
 ```json
 {
   "status": "phase_complete",
-  "last_seq": <last_seq_after_phase_transitioned>,
+  "last_seq": <last_seq_after_spec_pipeline_return>,
   "summary": "SDD phase complete — all exit criteria met; transitioned to dev"
 }
 ```

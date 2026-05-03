@@ -183,7 +183,7 @@ def canonical_json(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 
 class EventType(str, Enum):
-    """Canonical event types. 21 total."""
+    """Canonical event types. 22 total."""
 
     # Task lifecycle (8)
     TASK_CREATED = "task_created"
@@ -203,6 +203,11 @@ class EventType(str, Enum):
     PHASE_TRANSITIONED = "phase_transitioned"
     PHASE_PAUSED = "phase_paused"
     PHASE_RESUMED = "phase_resumed"
+
+    # Improve flow (1)
+    # Emitted by orchestrator-sdd when workflow_type=="improve" and SDD phase
+    # completes, closing the spec_change_status loop in improve-scope.json.
+    SPEC_PIPELINE_RETURN = "spec_pipeline_return"
 
     # Management and operations (6)
     CIRCUIT_BREAKER_TRIPPED = "circuit_breaker_tripped"
@@ -379,6 +384,7 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.PHASE_TRANSITIONED.value:        {"from_phase", "to_phase", "evidence_seq"},
     EventType.PHASE_PAUSED.value:              {"phase", "reason"},
     EventType.PHASE_RESUMED.value:             {"phase", "paused_seq"},
+    EventType.SPEC_PIPELINE_RETURN.value:      {"workflow_id", "session_id", "spec_change_status"},
     EventType.ESCALATION.value:                {"code", "severity", "reason", "evidence"},
     EventType.CIRCUIT_BREAKER_TRIPPED.value:   {"window_start", "window_end", "failure_count", "threshold"},
     EventType.HUMAN_RESPONSE.value:            {"escalation_seq", "action", "operator"},

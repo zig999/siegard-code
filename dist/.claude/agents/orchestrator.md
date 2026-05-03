@@ -319,9 +319,12 @@ Re-read state (re-run Step 2). `current_phase` is now set.
 
 ### Step 6 — Spawn phase orchestrator
 
-Initialise cycle counter (starts at 0, increments each time Step 6 executes).
-If counter ≥ 2: output `{"status": "error", "reason": "phase_transition_limit_reached", "last_seq": <n>}` and stop.
-(Counter should never exceed 1 in normal operation — I5 stops after the first `phase_complete`. Counter ≥ 2 indicates a logic bug.)
+Initialise two counters (both survive loop-backs to this step from Step 7 auto-retry):
+- `cycle_counter` (starts at 0): increments each time a phase orchestrator is dispatched.
+- `e13_retry_count` (starts at 0): increments on E13 auto-retry; does not reset within an invocation.
+
+If `cycle_counter ≥ 2`: output `{"status": "error", "reason": "phase_transition_limit_reached", "last_seq": <n>}` and stop.
+(Should never exceed 1 in normal operation — I5 stops after the first `phase_complete`. ≥ 2 indicates a logic bug.)
 
 Read `last_seq` from state (this becomes `log_seq_at_spawn` for the phase orchestrator).
 
@@ -329,6 +332,21 @@ Look up phase orchestrator from routing table using `current_phase`.
 
 If `current_phase` is not in the routing table:
 Output `{"status": "error", "reason": "unknown_phase", "detail": "<current_phase> has no entry in routing table", "last_seq": <n>}` and stop.
+
+Derive `workflow_type` from the `phase_declared` event before spawning:
+
+```bash
+python3 -c "
+import sys, json
+sys.path.insert(0, '.claude/lib')
+from orch_core import read_events_filtered, EventType
+events = read_events_filtered(event_type=EventType.PHASE_DECLARED.value)
+wt = events[0].data.get('workflow_type', 'standard') if events else 'standard'
+print(json.dumps({'workflow_type': wt}))
+"
+```
+
+Store result as `workflow_type` (pass explicitly to phase orchestrator so sub-agents never need to re-derive it from the log).
 
 Spawn via Agent tool:
 - `subagent_type`: phase orchestrator name from routing table
@@ -340,6 +358,7 @@ Spawn via Agent tool:
     current_phase:    {current_phase}
     log_seq_at_spawn: {last_seq}
     workflow_id:      {workflow_id}
+    workflow_type:    {workflow_type}
     nesting_depth:    1
 
   Return exactly one JSON line with this schema:
@@ -365,16 +384,35 @@ Wait for the phase orchestrator to return.
 - If the return text is not valid JSON:
   treat as `{"status": "error", "reason": "subagent_invalid_response", "summary": "phase orchestrator returned non-JSON output", "raw": "<first 200 chars of return text>"}`.
 
-**If either guard condition fired** (subagent_invalid_response): emit E13 before evaluating the error path, so the failure is traceable in the log:
+**If either guard condition fired** (subagent_invalid_response):
+
+Consult `e13_retry_count` (from Step 6 counters).
+
+**If `e13_retry_count == 0`** (first occurrence — likely transient):
+
+Emit E13 as warning:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator \
   --event-type escalation \
-  --data '{"code":"E13_subagent_invalid_response","severity":"critical","reason":"Phase orchestrator for <current_phase> returned non-JSON or empty output — possible context overflow, agent startup failure, or tool permission error.","evidence":[<last_seq>],"suggested_actions":["re-invoke the orchestrator — transient tool errors often self-resolve","if persistent: inspect agent definition for syntax errors","if persistent: check tool permissions in .claude/settings.json","if context overflow: consider checkpointing or splitting the workflow"]}'
+  --data '{"code":"E13_subagent_invalid_response","severity":"warning","reason":"Phase orchestrator for <current_phase> returned no output on attempt 1 — retrying once (transient agent-tool errors usually self-resolve).","evidence":[<last_seq>],"suggested_actions":["automatic retry in progress — no action required"]}'
 ```
 
-Then treat the status as `"error"` and continue to the error evaluation path below.
+Increment `e13_retry_count`. Re-read state (re-run Step 2). Return to Step 6 to re-spawn the phase orchestrator. Do **not** increment `cycle_counter` for this retry.
+
+**If `e13_retry_count >= 1`** (second occurrence — not transient):
+
+Emit E13 as critical:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type escalation \
+  --data '{"code":"E13_subagent_invalid_response","severity":"critical","reason":"Phase orchestrator for <current_phase> returned no output on both attempts — not transient. Possible context overflow, startup failure, or tool permission error.","evidence":[<last_seq>],"suggested_actions":["re-invoke the orchestrator if this was a one-off infrastructure hiccup","inspect agent definition for syntax errors","check tool permissions in .claude/settings.json","if context overflow: consider checkpointing or splitting the workflow"]}'
+```
+
+Treat status as `"error"` and continue to the error evaluation path below.
 
 **On status `error`, `blocked`, or `escalated`:** read the last log event for human context:
 

@@ -155,6 +155,32 @@ export SESSION_DIR="$ORCH_PROJECT_DIR/.orch/sessions/$workflow_id"
 mkdir -p "$SESSION_DIR/backlog" "$SESSION_DIR/delivery" "$SESSION_DIR/pending" "$SESSION_DIR/cr" "$SESSION_DIR/reviews" "$SESSION_DIR/gates"
 ```
 
+**Guard — improve flow spec_change_status (R4):**
+
+When `workflow_type == "improve"`, verify that the SDD pipeline completed before allowing dev to proceed.
+Read `improve-scope.json` from the session directory:
+
+```bash
+python3 -c "
+import json, sys, os
+from pathlib import Path
+project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
+workflow_id = sys.argv[1]
+scope_path = Path(project_dir) / '.orch' / 'sessions' / workflow_id / 'improve-scope.json'
+if not scope_path.exists():
+    print(json.dumps({'spec_change_status': 'not_required', 'workflow_type': 'standard'}))
+else:
+    scope = json.loads(scope_path.read_text())
+    print(json.dumps({'spec_change_status': scope.get('spec_change_status', 'not_required'), 'workflow_type': 'improve'}))
+" "$workflow_id"
+```
+
+If `workflow_type == "improve"` AND `spec_change_status == "pending_spec"`:
+```json
+{"status": "blocked", "last_seq": <last_seq>, "summary": "spec_change_status is pending_spec — sdd phase must complete first; re-invoke orchestrator to resume after sdd completes"}
+```
+Stop.
+
 Run the criterion checker directly to validate the manifest:
 
 ```bash
@@ -445,7 +471,29 @@ python3 .claude/skills/orch-state/scripts/reduce.py
 ```
 
 For each task in batch:
-- `completed` or `dlq` → unregister worker, proceed to 5.5
+- `completed` or `dlq` → for `completed` impl tasks, validate delivery artifact exists on disk:
+  ```bash
+  python3 -c "
+  import json, sys
+  from pathlib import Path
+  artifacts = json.loads(sys.argv[1])
+  delivery = next((p for p in artifacts if 'delivery' in p), None)
+  if delivery and not Path(delivery).exists():
+      print(json.dumps({'valid': False, 'missing': delivery}))
+  else:
+      print(json.dumps({'valid': True}))
+  " '<json_array_of_task_artifacts>'
+  ```
+  If `valid == False`: synthesize `task_failed` immediately (do not let a phantom artifact reach review):
+  ```bash
+  python3 .claude/skills/orch-log/scripts/append.py \
+    --agent orchestrator-dev \
+    --event-type task_failed \
+    --task-id <task_id> \
+    --attempt <attempt> \
+    --data '{"phase":"dev","reason":"delivery_artifact_missing","retryable":false,"missing_artifact":"<missing>","synthesized_by":"orchestrator-dev"}'
+  ```
+  Then unregister and proceed to 5.5.
 - `running` (no terminal) → synthesize `task_failed`:
   ```bash
   python3 .claude/skills/orch-log/scripts/append.py \
