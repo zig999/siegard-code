@@ -189,7 +189,7 @@ python3 .claude/skills/orch-state/scripts/current_phase.py
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type escalation \
-  --data '{"code":"E12_state_reduction_failed","severity":"critical","reason":"reduce.py failed — log may be corrupt or orch_core.py version mismatch. Workflow cannot proceed until log integrity is restored.","evidence":[],"suggested_actions":["run: python3 .claude/skills/orch-log/scripts/verify.py","inspect tail of .orch/log.jsonl for malformed events","ensure deployed .claude/lib/orch_core.py matches dist version"]}'
+  --data '{"code":"E12_state_reduction_failed","severity":"critical","reason":"reduce.py failed — log may be corrupt or orch_core.py version mismatch. Workflow cannot proceed until log integrity is restored.","evidence":[],"suggested_actions":["run: python3 .claude/scripts/recover_retry_sequence.py --dry-run","run: python3 .claude/skills/orch-log/scripts/verify.py","inspect tail of .orch/log.jsonl for malformed events","ensure deployed .claude/lib/orch_core.py matches dist version"]}'
 ```
 
 Output `{"status": "escalated", "last_seq": 0, "summary": "reduce_failed — see E12 escalation in log"}` and stop.
@@ -508,6 +508,19 @@ Stop conditions (break loop):
     --data '{"code":"E06_dispatch_loop_limit","severity":"critical","reason":"Dispatch loop reached safety limit of 30 iterations without convergence. Tasks may be stuck in ready/retry cycle.","evidence":[<last_seq>],"suggested_actions":["inspect log for tasks with status ready that are not progressing","check select_worker.py and worker agent definitions","reset stuck tasks manually and re-invoke"]}'
   ```
   Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached after 30 iterations"}` and stop
+
+**Retry re-queue:** for each `scheduled` sdd task with `next_retry_at <= now` (or null):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_retried \
+  --task-id <task_id> \
+  --attempt <task.attempts + 1> \
+  --data '{"phase":"sdd","previous_attempt":<task.attempts>,"scheduled_retry_seq":<scheduled_retry_seq>}'
+```
+
+After all syntheses, re-read state.
 
 **Rejection cycle check:**
 

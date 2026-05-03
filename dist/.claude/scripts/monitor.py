@@ -274,7 +274,7 @@ def _hline(win: Any, row: int, col: int, ch: str, n: int) -> None:
         return
     n = min(n, max_cols - col - 1)
     try:
-        win.hline(row, col, ch, n)
+        win.addstr(row, col, ch * n)
     except curses.error:
         pass
 
@@ -510,6 +510,8 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
 
 
 def main() -> int:
+    import locale
+    locale.setlocale(locale.LC_ALL, "")
     args = _parse_args()
     # project_dir was already resolved early (before orch_core import).
     # Re-resolve here only if the user passed --project-dir explicitly.
