@@ -14,10 +14,11 @@ Its sole purpose is to design, build, and refine agent and skill structures that
 ```
 siegard-code/
 ├── dist/              # Distribution root — production artifacts (see below)
+│   └── .claude/       # Deployed as <target>/.claude/ via install.sh
 ├── docs-en/           # End-user documentation (English) for downstream projects
 ├── docs/              # Internal project documentation (diagrams, flow maps)
-├── extras/            # Drafts, analysis notes, experimental artifacts — NOT published
-├── tests/             # Test suite that validates dist/ artifacts (9 layers)
+├── extras/            # Reference specs, architecture docs, event schemas — NOT published
+├── tests/             # Test suite that validates dist/ artifacts
 ├── install.sh         # Deployment script: syncs dist/ → <target>/.claude/
 ├── skills-lock.json   # Locks external skill versions (analogous to package-lock.json)
 └── assets/            # Static assets (logo, images)
@@ -30,7 +31,7 @@ siegard-code/
 | `dist/` | Published artifacts consumed by target projects | Only complete, validated artifacts |
 | `docs-en/` | Human-readable docs shipped with the system | Update when commands/flows change |
 | `docs/` | Internal diagrams and flow maps | Freely editable |
-| `extras/` | Scratchpad: drafts, changelogs, analysis | Never referenced by agents |
+| `extras/` | Reference specs and architecture docs | Read-only during implementation — edit only when architecture changes |
 | `tests/` | Automated validation of `dist/` | Must pass before promoting to `dist/` |
 
 ### install.sh
@@ -198,11 +199,62 @@ All agent-to-agent communication must:
 
 Logs must be:
 
-* Structured
+* Structured (append-only JSONL with SHA-256 hash chain)
 * Traceable
 * Auditable
 
 Never use free-form logs.
+
+---
+
+## Orchestration Engine
+
+This project builds and ships an **event-driven orchestration engine** for Claude Code workflows. The engine manages tasks, workers, retries, failures, and phase-based state — without encoding business logic from downstream projects.
+
+> Canonical reference: `extras/architecture.md`
+
+### Architecture
+
+```
+User → orchestrator → [task_created × N] → specialized workers
+                    ↑                              ↓
+                 log.jsonl  ←←←← task_completed / task_failed
+```
+
+Skills (`u-spec`, `u-dev`, etc.) operate as worker internals under orchestrator coordination. Manual prompt chaining is replaced by event-driven dispatch with automatic retry, full traceability, and crash recovery.
+
+### Delivery Roadmap
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| Phase 1 — Orchestration Engine | Event-sourced log, dispatcher, worker lifecycle, retry, circuit breaker — phase-agnostic | Complete |
+| Phase 2 — Phase Rules | `phase-{name}-rules/` skills and phase-specific workers; engine unchanged | Complete |
+| Phase 3 — Merge with siegard | Legacy skills become worker internals; event-driven coordination replaces manual chaining | Current |
+
+### Architecture Invariants
+
+These invariants are enforced across all artifacts in this project:
+
+| # | Invariant |
+|---|-----------|
+| P1 | Log is the truth. All state is derived. |
+| P2 | Orchestrator is a pure function of the log. No own state. |
+| P3 | Append-only. Corrections via new events. |
+| P4 | Idempotency by key `(task_id, attempt, event_type)`. |
+| P5 | Deterministic ordering. Ties resolved by `(priority, seq)`. |
+| P6 | Least privilege. Workers have only the tools they need. |
+| P7 | Robustness via hooks. Critical guarantees outside the LLM. |
+| P8 | Evidence mandatory. Every decision cites the events that justify it. |
+| P9 | Every task belongs to exactly one phase. |
+| P10 | Phase transition is an auditable event. |
+| P11 | Exit criteria in testable code, not in prompts. |
+| P12 | Current phase is derived from the log, not stored outside it. |
+
+### Constraints
+
+- Zero external Python dependencies — stdlib 3.10+ only
+- Do not deviate from `extras/architecture.md` without explicit instruction
+- Do not implement business logic from downstream projects
 
 ---
 
@@ -247,14 +299,18 @@ Each skill must follow this standard:
 
 ## Distribution Directory (`./dist`)
 
-All production-ready artifacts are located in `./dist`. This is the **distribution root** of the project — the only directory consumed by external projects.
+All production-ready artifacts are located in `./dist`. Its contents are deployed as `<target>/.claude/` by `install.sh`.
 
 ```
 dist/
-├── agents/        # Agent definitions (dev, spec, reverse-spec)
-├── commands/      # Entry-point command files (/u-spec, /u-dev, /u-improve, etc.)
-├── skills/        # Reusable skill definitions and shared templates/schemas
-└── templates/     # CLAUDE.md base templates for downstream projects
+└── .claude/
+    ├── agents/        # orchestrator.md + phase orchestrators (orchestrator-sdd.md, etc.)
+    ├── commands/      # Entry-point commands (/u-spec, /u-dev, /u-improve, etc.)
+    ├── hooks/         # on_subagent_stop.py, on_stop.py
+    ├── lib/           # orch_core.py (shared library, no external deps)
+    ├── scripts/       # preflight.py, circuit_breaker.py, dlq_triage.py, gc_orphan_blobs.py
+    ├── settings.json  # Claude Code settings for target projects
+    └── skills/        # orch-log, orch-state, orch-report, phase-*-rules, u-* skills
 ```
 
 ### Rules for `./dist`
@@ -273,7 +329,7 @@ dist/
 3. **Test** — validate behavior in isolation
 4. **Validate** — ensure schema and protocol compliance
 5. **Document** — update `docs/`
-6. **Export** — promote artifact to `./dist`
+6. **Export** — promote artifact to `./dist/.claude/`
 
 ---
 
