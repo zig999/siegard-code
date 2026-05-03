@@ -109,15 +109,46 @@ design_system_routing:
 
 ---
 
+## Progress reporting (mandatory)
+
+Emit `task_progress` at each checkpoint before proceeding to the next phase of work. These events reset the stale detection timer and give the orchestrator visibility during long-running tasks.
+
+```bash
+# Checkpoint 1 — after reading and validating the task spec
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent $ORCH_WORKER_ID --event-type task_progress \
+  --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
+  --data '{"phase":"dev","checkpoint":"spec_validated"}'
+
+# Checkpoint 2 — after analysis, before writing any code
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent $ORCH_WORKER_ID --event-type task_progress \
+  --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
+  --data '{"phase":"dev","checkpoint":"analysis_complete"}'
+
+# Checkpoint 3 — after implementation, before writing delivery.md
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent $ORCH_WORKER_ID --event-type task_progress \
+  --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT \
+  --data '{"phase":"dev","checkpoint":"implementation_done"}'
+```
+
+Never skip a checkpoint. If `$ORCH_WORKER_ID`, `$ORCH_TASK_ID`, or `$ORCH_ATTEMPT` are unresolved, stop and emit `task_failed` with `reason: unresolved_context_variables, retryable: false`.
+
+---
+
 ## Mandatory flow before coding
 
 ```
 1. Read the full Task Contract (narrative + all acceptance criteria)
+   → emit checkpoint: spec_validated
 2. Read the files listed as dependencies in the previous delivery (if any)
 2.5 Check component specs — covered in Step 1C (Pre-flight gate). By the time you reach this step, component specs for §7 components must already be confirmed present and read. If Step 1C was not executed, stop and run it now before continuing.
 3. Map the interface contracts the Task Contract will touch or create
+   → emit checkpoint: analysis_complete
 4. Write the plan as a comment at the top of the first file created
 5. Only then begin implementation
+   → emit checkpoint: implementation_done (after code is written, before delivery.md)
 ```
 
 If any step reveals a blocking ambiguity -> **stop and record it in the delivery file before continuing**.

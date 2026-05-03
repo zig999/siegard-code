@@ -12,7 +12,14 @@
       "Bash(npx *)",
       "Bash(tsc *)",
       "Bash(pnpm *)",
-      "Bash(yarn *)"
+      "Bash(yarn *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(grep *)",
+      "Bash(cp *)",
+      "Bash(echo *)",
+      "Bash(head *)",
+      "Bash(tail *)"
     ]
   },
   "hooks": {

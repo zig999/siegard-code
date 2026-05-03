@@ -93,7 +93,10 @@ Execute these steps in order on every invocation. Never skip a step.
 ### Step 0 — Infrastructure check
 
 ```bash
-export ORCH_PROJECT_DIR="$(pwd)"
+# Use ORCH_PROJECT_DIR from spawn prompt inputs — do NOT rely on pwd.
+# The meta-orchestrator passes ORCH_PROJECT_DIR explicitly to guarantee the correct project root.
+export ORCH_PROJECT_DIR="<ORCH_PROJECT_DIR from spawn prompt inputs — the absolute project path>"
+export ORCH_DIR="${ORCH_PROJECT_DIR}/.orch"
 ```
 
 **Nesting depth guard:** if `nesting_depth >= 3`:
@@ -149,7 +152,6 @@ Hold the full `OrchState` in memory. Extract:
 ### Step 2 — Validate handoff-manifest
 
 ```bash
-export ORCH_PROJECT_DIR="$(pwd)"
 export SPECS_DIR="${SPECS_DIR:-specs}"
 export SESSION_DIR="$ORCH_PROJECT_DIR/.orch/sessions/$workflow_id"
 mkdir -p "$SESSION_DIR/backlog" "$SESSION_DIR/delivery" "$SESSION_DIR/pending" "$SESSION_DIR/cr" "$SESSION_DIR/reviews" "$SESSION_DIR/gates"
@@ -377,16 +379,27 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"dev","reason":"cascade_from_dep","last_error":"dep <dep_id> is in dlq"}'
 ```
 
-**Stale detection:** for each `running` dev task, compute elapsed since `last_event_at`.
-Threshold: `standard` → 300s, `critical` → 600s, `bulk` → 120s.
-If stale:
+**Stale detection:** for each `running` dev task, compute elapsed seconds since `last_event_at`.
+Use this threshold matrix (tier × task_type):
+
+| tier     | task_type | threshold |
+|----------|-----------|-----------|
+| critical | planning  | 600s      |
+| critical | impl      | 900s      |
+| standard | planning  | 300s      |
+| standard | impl      | 600s      |
+| bulk     | any       | 120s      |
+
+Compute `stale_origin`: if `task.attempts == 1` use `"initial"`, otherwise `"on_retry_<task.attempts>"`.
+
+If elapsed > threshold:
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type task_failed \
   --task-id <task_id> \
   --attempt <current_attempt> \
-  --data '{"phase":"dev","reason":"stale_timeout","retryable":true,"synthesized_by":"orchestrator-dev"}'
+  --data '{"phase":"dev","reason":"stale_timeout","retryable":true,"synthesized_by":"orchestrator-dev","stale_origin":"<stale_origin>","elapsed_seconds":<elapsed>}'
 ```
 
 **Retry re-queue:** for each `scheduled` dev task with `next_retry_at <= now` (or null):
@@ -460,6 +473,14 @@ For each claimed task:
   QA verdict path: <specs_dir>/qa/<task_id>-qa.md
   Emit task_completed with artifacts: [<session_dir>/delivery/<task_id>-delivery.md] when done.
   Emit task_failed with retryable: true|false on failure.
+
+  Progress checkpoints (mandatory — emit before proceeding to each next step):
+    1. After reading and validating the task spec:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"dev","checkpoint":"spec_validated"}'
+    2. After completing analysis, before writing any code:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"dev","checkpoint":"analysis_complete"}'
+    3. After writing implementation, before writing delivery.md:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"dev","checkpoint":"implementation_done"}'
   ```
 
 #### 5.4 — Verify terminal events

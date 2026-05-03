@@ -91,7 +91,10 @@ You return exactly one JSON envelope when done (see §Return contract).
 ### Step 0 — Infrastructure check
 
 ```bash
-export ORCH_PROJECT_DIR="$(pwd)"
+# Use ORCH_PROJECT_DIR from spawn prompt inputs — do NOT rely on pwd.
+# The meta-orchestrator passes ORCH_PROJECT_DIR explicitly to guarantee the correct project root.
+export ORCH_PROJECT_DIR="<ORCH_PROJECT_DIR from spawn prompt inputs — the absolute project path>"
+export ORCH_DIR="${ORCH_PROJECT_DIR}/.orch"
 ```
 
 **Nesting depth guard:** if `nesting_depth >= 3`:
@@ -141,12 +144,13 @@ Extract:
 - `dev_completed_tasks`: all tasks where `task.phase == "dev"` and `task.status == "completed"`
 - `last_seq`: highest seq in state
 
+**Context discipline:** After extracting the three variables above, do NOT retain the full `reduce.py` output in your working context. Discard the raw JSON. Only the extracted fields are needed for subsequent steps — holding the full state amplifies context usage and increases the risk of context overflow before any QA worker is dispatched.
+
 ---
 
 ### Step 2 — Detect stack
 
 ```bash
-export ORCH_PROJECT_DIR="$(pwd)"
 export SPECS_DIR="${SPECS_DIR:-specs}"
 ```
 
@@ -224,6 +228,8 @@ Run until no ready review tasks remain (max 30 iterations).
 ```bash
 python3 .claude/skills/orch-state/scripts/reduce.py
 ```
+
+**Context discipline:** Extract only `review_tasks` summaries (`task_id`, `status`, `attempts`, `last_event_at`) and `last_seq`. Do NOT retain the full state JSON — discard immediately after extraction.
 
 Check circuit breaker:
 ```bash
