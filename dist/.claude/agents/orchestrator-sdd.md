@@ -622,6 +622,14 @@ For each claimed task:
     export ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
   nesting_depth: <nesting_depth + 1>
   Task spec: <task.spec>
+
+  Progress checkpoints (mandatory — emit before proceeding to each next step):
+    1. After loading spec and context, before any analysis:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"sdd","checkpoint":"context_loaded"}'
+    2. After completing analysis, before writing any spec content:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"sdd","checkpoint":"analysis_complete"}'
+    3. After writing spec content, before final validation:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"sdd","checkpoint":"draft_written"}'
   ```
 
 #### 5.4 — Verify terminal events

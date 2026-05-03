@@ -53,6 +53,9 @@ from orch_core import (  # noqa: E402
     PhaseStatus,
     TaskStatus,
     reduce_all,
+    read_events_filtered,
+    is_blob_ref,
+    load_blob_data,
 )
 
 # ---------------------------------------------------------------------------
@@ -143,6 +146,20 @@ def _stat_key(path: Path) -> tuple[float, int]:
         return (st.st_mtime, st.st_size)
     except OSError:
         return (0.0, 0)
+
+
+def _last_checkpoint(task_id: str) -> str | None:
+    """Returns the checkpoint label from the last task_progress event for task_id, or None."""
+    try:
+        events = read_events_filtered(task_id=task_id, event_type="task_progress", tail=1)
+        if not events:
+            return None
+        data = events[-1].data
+        if is_blob_ref(data):
+            data = load_blob_data(events[-1])
+        return data.get("checkpoint") or None
+    except Exception:
+        return None
 
 
 def _load_state(project_dir: Path) -> tuple[OrchState | None, str | None]:
@@ -426,6 +443,10 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
             extras = []
             if t.attempts > 1:
                 extras.append(f"attempt {t.attempts}/{t.max_attempts}")
+            if status == TaskStatus.RUNNING:
+                cp = _last_checkpoint(t.task_id)
+                if cp:
+                    extras.append(f"→ {cp}")
             if status == TaskStatus.DLQ and t.last_failure_reason:
                 extras.append(_trunc(t.last_failure_reason, 20))
             if status == TaskStatus.SCHEDULED and t.next_retry_at:

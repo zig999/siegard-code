@@ -299,6 +299,14 @@ Emit all Agent tool calls in a **single response turn**.
   Emit task_completed with artifacts: [<session_dir>/test-reports/<task_id>-report.md] when done.
   Emit task_failed with retryable: false if the delivery artifact is missing or test environment is broken.
   Emit task_failed with retryable: true if tests failed due to a transient environment issue.
+
+  Progress checkpoints (mandatory — emit before proceeding to each next step):
+    1. After loading and validating the delivery artifact:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"test","checkpoint":"delivery_loaded"}'
+    2. After test environment setup, before executing tests:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"test","checkpoint":"setup_complete"}'
+    3. After all tests have run, before writing the report:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"test","checkpoint":"tests_run"}'
   ```
 
 #### 4.4 — Verify terminal events

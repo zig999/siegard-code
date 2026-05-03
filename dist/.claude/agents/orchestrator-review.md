@@ -319,6 +319,14 @@ Emit all Agent tool calls in a **single response turn**.
   Emit task_completed with artifacts: [<qa_verdict_path>] when done.
   qa_verdict_path convention: <specs_dir>/qa/<task_id>-qa.md
   Emit task_failed with retryable: false if the delivery artifact is missing or unreadable.
+
+  Progress checkpoints (mandatory — emit before proceeding to each next step):
+    1. After loading and validating the delivery artifact:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"review","checkpoint":"delivery_loaded"}'
+    2. After completing all checks, before writing the verdict:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"review","checkpoint":"checks_complete"}'
+    3. After writing the QA verdict file:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"review","checkpoint":"verdict_written"}'
   ```
 
 #### 4.4 — Verify terminal events
