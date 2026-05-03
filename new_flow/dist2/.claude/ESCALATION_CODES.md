@@ -13,6 +13,7 @@ Each code appears in the event log as `escalation.data.code`.
 |------|----------|------------|-----------|-----------------|
 | `E04_critical_task_dlq` | critical | orchestrator-dev, orchestrator-test | Non-retryable impl or test task sent to DLQ | Inspect task spec at `task.spec`; resolve issue; re-invoke the relevant phase orchestrator |
 | `E05_rejection_cycle_limit` | critical | orchestrator-sdd | `spec-writer` ≥ 3 attempts or `spec-validator` ≥ 2 attempts | Inspect spec for domain; manually resolve conflict; emit `human_response` to resume |
+| `E06_dispatch_loop_limit` | critical | orchestrator-sdd | Dispatch loop reached 30 iterations without convergence — tasks stuck in ready/retry cycle | Inspect log for tasks with `status: ready` that are not progressing; check `select_worker.py`; reset stuck tasks and re-invoke |
 | `E07_planning_failed` | critical | orchestrator-dev | Planning task failed and is non-retryable | Inspect `handoff-manifest.yaml`; verify SDD phase artifacts are complete; re-invoke |
 | `E08_exit_criteria_not_met` | warning | orchestrator-sdd, orchestrator-dev, orchestrator-review, orchestrator-test | All tasks terminal but exit criteria not met | Review failing criterion detail in escalation evidence; fix and re-invoke |
 | `E09_spec_divergences_found` | warning | orchestrator-review | QA found necessary spec divergences (`SPEC-DIVERGENCE:` markers) | Open CR for each divergence; update `openapi.yaml` or `.back.md`; re-invoke after CRs resolved |
@@ -55,7 +56,7 @@ Then re-invoke the relevant orchestrator with `log_seq_at_spawn: <current_seq>` 
 |-------|-------|
 | E01–E03 | Reserved (DLQ triage — not yet allocated) |
 | E04–E05 | Phase orchestrators (sdd, dev) |
-| E06 | Reserved (unallocated) |
+| E06 | orchestrator-sdd (dispatch loop limit) |
 | E07–E09 | Phase orchestrators (dev, review) |
 | E10 | Meta-orchestrator |
 | E11–E19 | Phase orchestrators (extended) |

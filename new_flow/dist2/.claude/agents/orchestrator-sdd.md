@@ -488,7 +488,14 @@ If `status == "blocked"` (circuit tripped): output `{"status": "error", "last_se
 Stop conditions (break loop):
 - No tasks have `status = "ready"` → proceed to Step 6
 - All sdd tasks are terminal → proceed to Step 6
-- Iteration ≥ 30 → output `{"status": "error", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached"}` and stop
+- Iteration ≥ 30 → emit escalation and stop:
+  ```bash
+  python3 .claude/skills/orch-log/scripts/append.py \
+    --agent orchestrator-sdd \
+    --event-type escalation \
+    --data '{"code":"E06_dispatch_loop_limit","severity":"critical","reason":"Dispatch loop reached safety limit of 30 iterations without convergence. Tasks may be stuck in ready/retry cycle.","evidence":[<last_seq>],"suggested_actions":["inspect log for tasks with status ready that are not progressing","check select_worker.py and worker agent definitions","reset stuck tasks manually and re-invoke"]}'
+  ```
+  Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached after 30 iterations"}` and stop
 
 **Rejection cycle check:**
 
@@ -506,7 +513,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "rejection cycle limit reached for <task_id>"}` and stop.
 
-**Spec-reviewer missing-input check:** before cascading, scan each task in DLQ for `reason == "missing_input_spec_files"`. For each such task, emit a targeted escalation before the cascade so the operator knows exactly what to create:
+**Spec-reviewer missing-input check:** before cascading, scan each task in DLQ for `reason == "missing_input_spec_files"`. If any such task is found, emit a targeted escalation for the first one and stop immediately — do not cascade:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -514,6 +521,8 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --event-type escalation \
   --data '{"code":"E11_spec_input_missing","severity":"critical","reason":"spec-reviewer for domain <domain> failed non-retryably — required input files are missing. Create the missing spec files and re-invoke.","evidence":[<task_evidence_seqs>],"missing_files":<task.last_error.missing_files>,"suggested_actions":["ensure openapi.yaml and .spec.md exist in specs/<domain>/","run spec-writer for <domain> before spec-reviewer"]}'
 ```
+
+Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "spec-reviewer for <domain> requires missing input files — see E11 escalation"}` and stop.
 
 **DLQ cascade:** for each `pending` or `scheduled` sdd task, if any dep has `status = "dlq"`:
 ```bash
@@ -720,7 +729,7 @@ Re-read state. Determine why:
   Output:
   ```json
   {
-    "status": "blocked",
+    "status": "escalated",
     "last_seq": <last_seq>,
     "summary": "all tasks terminal but exit criteria not met: <failing criteria>"
   }
@@ -737,6 +746,7 @@ Re-read state. Determine why:
 |------|----------|-----------|
 | `E99_human_confirmation_required` | info | First dispatch requires human confirmation |
 | `E05_rejection_cycle_limit` | critical | spec-writer ≥ 3 attempts or spec-validator ≥ 2 attempts |
+| `E06_dispatch_loop_limit` | critical | Dispatch loop reached 30 iterations without convergence |
 | `E11_spec_input_missing` | critical | spec-reviewer failed non-retryably — required input files absent |
 | `E08_exit_criteria_not_met` | warning | All tasks terminal but criteria not met |
 
@@ -750,5 +760,8 @@ Re-read state. Determine why:
 | `append.py` exit 1 on `task_claimed` | Skip task, record issue, continue |
 | `reduce.py` exit 1 | Return `{status: "error", summary: "reduce_failed"}` |
 | Worker exits without terminal | Synthesize `task_failed` in Step 5.4 |
-| Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |
+| Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` (E10 emitted by meta-orchestrator) |
+| E11 detected in DLQ | Emit E11 and return `{status: "escalated"}` immediately — do not cascade |
+| E08 after exit criteria eval | Emit E08 and return `{status: "escalated"}` — not `"blocked"` |
+| Dispatch loop hits 30 iterations | Emit E06 and return `{status: "escalated"}` — not `"error"` |
 | `log_seq_at_spawn` not provided | Treat as 0 (run infra checks) |
