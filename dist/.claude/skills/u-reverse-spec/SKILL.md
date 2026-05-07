@@ -1,7 +1,7 @@
 ---
 name: u-reverse-spec
 description: Primary reverse engineering skill - defines the mapping between code artifacts and spec artifacts, generation rules, and quality criteria for specs generated from existing code.
-user-invocable: true
+user-invocable: false
 ---
 
 # SKILL: Reverse Engineering Specs
@@ -47,7 +47,9 @@ For every implementation detail an agent would need to guess, the spec is incomp
 |---------------|--------------|----------------|
 | Controller/Route with HTTP decorators | `openapi.yaml` | `paths` with verb, route, operationId |
 | DTO/Request/Response classes | `openapi.yaml` | `components.schemas` |
+| Zod schema (`z.object(...)`) | `openapi.yaml` | `components.schemas` |
 | Model/Entity with typed fields | `{domain}.back.md` | Section 2 — Data Model |
+| Repository class | `{domain}.back.md` | Section 2 — Data Access Layer |
 | Service/UseCase with business logic | `{domain}.spec.md` | Section 3 — Use Cases (UC-NN) |
 | Validator/Guard/Pipe | `{domain}.back.md` | Section 3 — Business Rules (BR-NN) |
 | Status/state enum | `{domain}.back.md` | Section 4 — State Machine (ST-NN) |
@@ -84,7 +86,7 @@ If found:
 - Preserve the file as-is during this migration run.
 - Add to its header: `<!-- TODO: migrate to design-system/ directory format via /u-spec -->`
 - Do NOT create a `design-system/` directory — that conversion requires the Front Spec writing flow with full project context.
-- Record a `<!-- TO CONFIRM: design-system.md must be migrated to directory format before next /u-spec run -->` comment in `front.md` if it exists.
+- Record the migration need in `{SPECS_DIR}/log-reverse-spec.md` under Identified Gaps: `design-system.md must be migrated to directory format before next /u-spec run`.
 
 If `{SPECS_DIR}/front/design-system/` directory already exists: proceed normally, no action needed.
 

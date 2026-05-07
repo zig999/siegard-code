@@ -93,12 +93,15 @@ Fullstack project detected. Which side to process first?
 
 ### Step 2: Check mode (new vs merge)
 
-| specs/ exists | analysis-report exists | Mode |
-|---------------|----------------------|------|
-| No | No | **New** — generate everything from scratch |
-| No | Yes | **Resume** — analysis ready, generate specs |
-| Yes | No | **Merge** — analyze and compare with existing |
-| Yes | Yes | **Merge resume** — comparison in progress |
+`{SPECS_DIR}/log-reverse-spec.md` is the authoritative state signal (P1 — log is truth). Check it first.
+
+| log exists | specs/ exists | analysis-report exists | Mode |
+|------------|---------------|----------------------|------|
+| Yes | * | * | **Resume** — read log to determine completed phase |
+| No | No | No | **New** — generate everything from scratch |
+| No | No | Yes | **Resume** — analysis done, generate specs |
+| No | Yes | No | **Merge** — analyze and compare with existing |
+| No | Yes | Yes | **Merge resume** — comparison in progress |
 
 **If merge mode:** follow the merge procedure in §Step 7 of this file.
 
@@ -119,6 +122,11 @@ Analyze the source code in {CODE_DIR} and produce analysis-report.md
 ## Context
 {backend / frontend}
 
+## Output constraints
+- Target: ~300 lines for analysis-report.md
+- If the report would exceed 300 lines: add an ## Executive Summary section at the top (max 50 lines) with domains found, entities per domain, total endpoints, total business rules
+- If the project has more than 20 domains: split into analysis-report-{domain}.md files and process one domain at a time
+
 ## Agent
 Read and follow the instructions in: .claude/agents/reverse-spec/u-reverse-spec-analyzer.md
 Load the skill: .claude/skills/u-reverse-spec-analysis/SKILL.md
@@ -126,15 +134,7 @@ Load the skill: .claude/skills/u-reverse-spec-analysis/SKILL.md
 
 Wait for the Analyzer to produce `{SPECS_DIR}/_temp/analysis-report.md`.
 
-### Token budget for analysis-report
-
-The `analysis-report.md` will be passed as context to the Writer and optionally to the Reviewer. To avoid context overflow:
-
-1. **Recommended limit:** ~300 lines (~8,000 tokens). If the report exceeds this limit:
-   - Instruct the Analyzer to generate an `## Executive Summary` section at the beginning (max 50 lines) with: domains found, entities per domain, total endpoints, total business rules
-   - The Writer receives the complete report
-   - The Reviewer receives only the `## Executive Summary` + sections relevant to the domain being reviewed
-2. **If the project has more than 20 domains:** split the report into separate files (`analysis-report-{domain}.md`) and process one domain at a time
+> When passing the report to the Reviewer, provide only the `## Executive Summary` + sections relevant to the domain being reviewed — not the full report.
 
 ### Step 4: Present summary to the human
 
@@ -233,11 +233,64 @@ For each {domain} in processed_domains:
 
 ### Step 7: Merge mode (if applicable)
 
-If specs already existed, after the Writer generates the new ones:
-1. Load the merge protocol
-2. Compare generated specs vs existing ones
-3. Present diff to the human
-4. Apply only confirmed changes
+If specs already existed before this run, compare generated artifacts against existing ones after the Writer completes.
+
+#### 7.1 Inventory — classify every spec file
+
+For each domain processed, classify every file:
+
+| Class | Condition |
+|-------|-----------|
+| `new` | Generated file has no existing counterpart — pure addition |
+| `conflict` | Same path exists in both existing specs and generated output |
+| `untouched` | File exists only in existing specs — this run did not touch it |
+
+Write `new` files immediately without confirmation. Do not process `untouched` files.
+
+#### 7.2 Classify each conflict
+
+| Type | Condition | Treatment |
+|------|-----------|-----------|
+| `additive` | Generated adds UCs, endpoints, or BRs absent from existing | Present for confirmation — low risk |
+| `update` | Generated modifies existing content (renamed fields, changed rules, different UC flows) | Require explicit confirmation per change |
+| `structural` | Domain renamed, split, or merged — folder structure incompatible | Block entire merge — escalate to human before any write |
+
+#### 7.3 Present diff to human
+
+For each `conflict` file, display:
+
+```
+## Merge Conflict: {file path}
+Type: {additive / update / structural}
+
+### Existing
+{relevant excerpt — UC list, endpoint list, or entity table}
+
+### Generated (reverse-engineering)
+{corresponding excerpt}
+
+Accept? [Y = apply generated | N = keep existing | E = manual merge]
+```
+
+**Never apply any change without explicit per-file confirmation.**
+
+If type = `structural`: stop the entire merge and request human resolution before proceeding.
+
+#### 7.4 Apply decisions
+
+| Response | Action |
+|----------|--------|
+| Y | Overwrite file with generated content |
+| N | Keep existing file unchanged |
+| E | Display both versions side by side and await the human-provided merged content |
+
+#### 7.5 Update origin marker
+
+After merge completes, add a row to `_meta/origin-reverse-spec.md` Generation History:
+
+| Date | Domains | Conflicts | Accepted (Y) | Kept (N) | Mode |
+|------|---------|-----------|--------------|----------|------|
+| {date} | {list} | {N total} | {count} | {count} | merge |
 
 ### Step 8: Generate origin marker
 

@@ -120,6 +120,10 @@ Search for configuration files in the project root:
 | Pipes/Validators | `@UsePipes(` or `class-validator` decorators | validations -> .back.md |
 | Modules | `@Module(` | domains (grouping) |
 | Enums | `enum.*Status` or `enum.*State` | state machine -> .back.md |
+| Zod schemas | `z\.object\(` | schemas -> openapi.yaml |
+| Zod type alias | `z\.infer<` | DTO type name → schema |
+| Joi schemas | `Joi\.object\(` | schemas -> openapi.yaml |
+| Repositories | `class.*Repository` or `@InjectRepository\(` | data access -> .back.md |
 
 **Typical folder structure:**
 ```
@@ -145,6 +149,25 @@ src/
 | Models (Sequelize) | `sequelize\.define\(` or `Model\.init\(` | data model -> .back.md |
 | Validation | `Joi\.` or `yup\.` or `zod\.` | validations -> .back.md |
 | Error handler | `(err, req, res, next)` | errors -> error-codes.md |
+| Zod schemas | `z\.object\(` | schemas -> openapi.yaml |
+| Repositories | `class.*Repository` | data access -> .back.md |
+
+**Typical folder structure (manual-factory pattern):**
+```
+src/
+  routes/        ← route/endpoint definitions ([resource].routes.ts)
+  controllers/   ← HTTP handlers ([resource].controller.ts)
+  services/      ← business rules ([resource].service.ts)
+  repositories/  ← data access ([resource].repository.ts)
+  models/        ← entity/DB schema definitions ([resource].model.ts)
+  dto/           ← input/output schemas (Zod, Joi, or class-validator)
+  middleware/    ← auth, logging, error handler
+  factories/     ← DI wiring ([resource].factory.ts)
+  config/        ← application configuration
+  types/         ← global types and interfaces
+  __tests__/     ← tests (mirrors src/)
+```
+Module-based alternative: `src/modules/{domain}/` with `controller/`, `service/`, `repository/`, `dto/`, `entity/`, `factory/`.
 
 ### FastAPI (Backend)
 
@@ -188,7 +211,7 @@ src/
 | What to search for | Search pattern | Spec artifact |
 |--------------------|---------------|---------------|
 | Pages (Next pages) | Files in `pages/` or `app/` | features -> .feature.spec.md |
-| Page components | `export default function.*Page` | features -> .feature.spec.md |
+| Page components | `export (function\|const) [A-Z][a-zA-Z]*(Page\|Screen\|View)` | features -> .feature.spec.md |
 | API calls | `fetch\(` or `axios\.(get\|post)` or `useQuery\(` | consumed domains |
 | Custom hooks | `function use[A-Z]` or `const use[A-Z]` | state logic |
 | State stores | `create\(` (zustand) or `createSlice\(` (redux) | state strategy -> feature.spec.md (§4 Requests, Order, and Cache) |
@@ -221,6 +244,47 @@ src/
 
 ---
 
+## ORM-Specific Entity Patterns
+
+When the project uses an ORM other than TypeORM, use these patterns **instead of** `@Entity(` for entity detection.
+
+### Prisma
+
+Entities are defined in `schema.prisma`, not in TypeScript files. Use `Glob("**/schema.prisma")` to locate the file.
+
+| What to detect | Search | Notes |
+|----------------|--------|-------|
+| Entity definition | `^model [A-Z]` in `*.prisma` | Each `model` block = one entity |
+| Required field | Field line without `?` inside model block | e.g., `name String` |
+| Optional field | Field line with `?` | e.g., `bio String?` |
+| Default value | `@default\(` | e.g., `@default(now())`, `@default(uuid())` |
+| Unique constraint | `@unique` or `@@unique\(` | Single-field or composite |
+| Relationship | `@relation\(` | Read both sides to determine cardinality |
+| Enum | `^enum [A-Z]` in `*.prisma` | State machine candidates |
+
+Prisma type → OpenAPI type mapping: `String→string`, `Int→integer`, `Float→number`, `Boolean→boolean`, `DateTime→string(format:date-time)`, `Json→object`.
+
+### Mongoose (Node.js)
+
+| What to detect | Search pattern | Notes |
+|----------------|---------------|-------|
+| Schema definition | `new Schema\(` or `mongoose\.Schema\(` | — |
+| Model registration | `mongoose\.model\(` | Entity name = first argument |
+| Required field | `required: true` | Inside schema field definition |
+| Unique constraint | `unique: true` | Inside schema field definition |
+| Relationship | `ref:` | Cross-model reference (populate) |
+
+### Sequelize (TypeScript class style)
+
+| What to detect | Search pattern | Notes |
+|----------------|---------------|-------|
+| Model class | `class.*extends Model` | TypeScript Sequelize style |
+| Column decorator | `@Column\(` | From `sequelize-typescript` |
+| Primary key | `@PrimaryKey` | — |
+| Relationship | `@HasMany\(` or `@BelongsTo\(` or `@HasOne\(` or `@BelongsToMany\(` | Relationship decorators |
+
+---
+
 ## Analysis Rules
 
 ### Domain Identification
@@ -235,7 +299,59 @@ src/
 1. Class/interface with persisted fields = entity
 2. Fields with `id`, `createdAt`, `updatedAt` = root entity (aggregate root)
 3. Class embedded within another (nested) = value object
-4. Entity with a `status` or `state` field (enum) = state machine candidate
+4. Entity with a `status` or `state` field (enum or union type) = state machine candidate
+
+### Relationship Identification
+
+Search for inter-entity relationships using ORM-specific patterns:
+
+| ORM | Pattern | Cardinality |
+|-----|---------|-------------|
+| TypeORM | `@OneToMany\(` | 1:N |
+| TypeORM | `@ManyToOne\(` | N:1 |
+| TypeORM | `@OneToOne\(` | 1:1 |
+| TypeORM | `@ManyToMany\(` + `@JoinTable\(` | N:N |
+| Prisma | `@relation\(` in `*.prisma` | Read both field sides |
+| Mongoose | `ref:` | Cross-model reference |
+| Sequelize | `@HasMany\(`, `@BelongsTo\(`, `@HasOne\(`, `@BelongsToMany\(` | various |
+
+For each relationship found: identify source entity, target entity, cardinality, and whether bidirectional. Record in `analysis-report.md` Entities → Relationships table.
+
+### Field and Constraint Extraction
+
+For each entity, extract fields and constraints using the active ORM/validation library:
+
+#### TypeORM decorators
+| What to extract | Pattern |
+|----------------|---------|
+| Column | `@Column\(` |
+| Primary key | `@PrimaryGeneratedColumn\(` or `@PrimaryColumn\(` |
+| Timestamps | `@CreateDateColumn\(`, `@UpdateDateColumn\(` |
+| Nullable | `nullable: true` inside `@Column` |
+| Unique | `unique: true` inside `@Column` |
+| Default | `default:` inside `@Column` |
+| Enum values | `enum:` inside `@Column` |
+
+#### Zod schemas (default TS library)
+| What to extract | Pattern | OpenAPI mapping |
+|----------------|---------|----------------|
+| Required string | `.string()` without `.optional()` | `type: string, required: true` |
+| Optional | `.optional()` or `.nullable()` | `required: false` |
+| Min/max length | `.min\(N\)`, `.max\(N\)` | `minLength`, `maxLength` |
+| Email | `.email\(\)` | `format: email` |
+| UUID | `.uuid\(\)` | `format: uuid` |
+| Enum | `z\.enum\(\[` | `enum: [...]` |
+| Default | `.default\(` | `default:` |
+
+#### class-validator (NestJS)
+| What to extract | Pattern | OpenAPI mapping |
+|----------------|---------|----------------|
+| Required | `@IsNotEmpty\(` | `required: true` |
+| Optional | `@IsOptional\(` | `required: false` |
+| Email | `@IsEmail\(` | `format: email` |
+| UUID | `@IsUUID\(` | `format: uuid` |
+| Length | `@MinLength\(`, `@MaxLength\(` | `minLength`, `maxLength` |
+| Enum | `@IsEnum\(` | `enum: [...]` |
 
 ### Business Rule Identification
 
