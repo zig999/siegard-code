@@ -123,6 +123,35 @@ If `log_seq_at_spawn` is a positive integer (`> 0`): skip infra script calls.
 
 ---
 
+### Step 0.5 — Detect workflow_type
+
+Read `workflow_type` from the log (`phase_declared` event). This is the canonical source of truth (P1) and must be consistent with how `orchestrator-sdd` operates.
+
+```bash
+python3 -c "
+import sys, json
+sys.path.insert(0, '.claude/lib')
+try:
+    from orch_core import read_events_filtered, EventType
+    events = read_events_filtered(event_type=EventType.PHASE_DECLARED.value)
+    wt = events[0].data.get('workflow_type', 'standard') if events else 'standard'
+    if not isinstance(wt, str) or not wt:
+        wt = 'standard'
+except Exception:
+    wt = 'standard'
+print(json.dumps({'workflow_type': wt}))
+"
+```
+
+Store as `workflow_type`. This value drives the R4 guard and the planning skip in Step 3.
+
+| `workflow_type` | Behavior |
+|-----------------|----------|
+| `standard` (or absent) | Standard flow — handoff-manifest required, planning always runs |
+| `improve` | Improve flow — guard R4 active, planning conditional on `planner_required` |
+
+---
+
 ### Step 1 — State derivation
 
 ```bash
@@ -152,15 +181,15 @@ Hold the full `OrchState` in memory. Extract:
 ### Step 2 — Validate handoff-manifest
 
 ```bash
-export SPECS_DIR="${SPECS_DIR:-specs}"
+export SPECS_DIR="<SPECS_DIR from spawn prompt inputs>"
 export SESSION_DIR="$ORCH_PROJECT_DIR/.orch/sessions/$workflow_id"
 mkdir -p "$SESSION_DIR/backlog" "$SESSION_DIR/delivery" "$SESSION_DIR/pending" "$SESSION_DIR/cr" "$SESSION_DIR/reviews" "$SESSION_DIR/gates"
 ```
 
 **Guard — improve flow spec_change_status (R4):**
 
-When `workflow_type == "improve"`, verify that the SDD pipeline completed before allowing dev to proceed.
-Read `improve-scope.json` from the session directory:
+When `workflow_type == "improve"` (from Step 0.5), read `improve-scope.json` to verify SDD completion
+and collect planning policy:
 
 ```bash
 python3 -c "
@@ -170,12 +199,17 @@ project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
 workflow_id = sys.argv[1]
 scope_path = Path(project_dir) / '.orch' / 'sessions' / workflow_id / 'improve-scope.json'
 if not scope_path.exists():
-    print(json.dumps({'spec_change_status': 'not_required', 'workflow_type': 'standard'}))
+    print(json.dumps({'spec_change_status': 'not_required', 'planner_required': True}))
 else:
     scope = json.loads(scope_path.read_text())
-    print(json.dumps({'spec_change_status': scope.get('spec_change_status', 'not_required'), 'workflow_type': 'improve'}))
+    print(json.dumps({
+        'spec_change_status': scope.get('spec_change_status', 'not_required'),
+        'planner_required': scope.get('planner_required', True)
+    }))
 " "$workflow_id"
 ```
+
+Store `spec_change_status` and `planner_required` from the output.
 
 If `workflow_type == "improve"` AND `spec_change_status == "pending_spec"`:
 ```json
@@ -183,7 +217,28 @@ If `workflow_type == "improve"` AND `spec_change_status == "pending_spec"`:
 ```
 Stop.
 
-Run the criterion checker directly to validate the manifest:
+**If `workflow_type == "improve"` AND `spec_change_status == "not_required"`:**
+
+No SDD phase ran for this improve flow — skip manifest validation. Derive `stack` from CLAUDE.md
+and set fixed handoff context for a targeted improvement:
+
+```bash
+python3 -c "
+import json, re
+from pathlib import Path
+text = Path('CLAUDE.md').read_text(encoding='utf-8')
+m = re.search(r'^domain:\s*(\S+)', text, re.MULTILINE)
+domain = m.group(1).strip() if m else 'frontend'
+stack_map = {'frontend': 'fe', 'backend': 'be', 'fullstack': 'fullstack'}
+stack = stack_map.get(domain, domain)
+print(json.dumps({'stack': stack}))
+"
+```
+
+Store `stack`. Set `handoff_type = "fast_track"`, `dev_impact = ""`, `changed_files = []`.
+Proceed directly to Step 3 — do NOT run `check_handoff_manifest_approved.py`.
+
+Run the criterion checker to validate the manifest (standard and spec_change_required improve flows only):
 
 ```bash
 python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
@@ -224,6 +279,11 @@ If `handoff_type` is `fast_track` or `major_evolution` AND `dev_impact` is `no_a
 ---
 
 ### Step 3 — Planning dispatch
+
+**Planning skip (improve flow only):** If `workflow_type == "improve"` AND `planner_required == false`
+(read from `improve-scope.json` in Step 2): skip this entire step. The improve-scope already defines
+the task contracts — generating a full backlog would duplicate and potentially contradict that scope.
+Proceed directly to Step 4.
 
 If `planning_task` is `null` (not yet created):
 

@@ -151,7 +151,7 @@ Extract:
 ### Step 2 — Detect stack
 
 ```bash
-export SPECS_DIR="${SPECS_DIR:-specs}"
+export SPECS_DIR="<SPECS_DIR from spawn prompt inputs>"
 ```
 
 ```bash

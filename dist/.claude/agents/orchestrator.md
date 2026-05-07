@@ -374,6 +374,7 @@ Spawn via Agent tool:
     workflow_type:    {workflow_type}
     nesting_depth:    1
     ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
+    SPECS_DIR:        {SPECS_DIR}
 
   Return exactly one JSON line with this schema:
     {"status": "<value>", "last_seq": <int>, "summary": "<string>"}

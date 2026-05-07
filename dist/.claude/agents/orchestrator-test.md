@@ -150,8 +150,8 @@ Extract:
 ### Step 2 — Detect stack
 
 ```bash
-export ORCH_PROJECT_DIR="$(pwd)"
-export SPECS_DIR="${SPECS_DIR:-specs}"
+export ORCH_PROJECT_DIR="<ORCH_PROJECT_DIR from spawn prompt inputs>"
+export SPECS_DIR="<SPECS_DIR from spawn prompt inputs>"
 ```
 
 ```bash
