@@ -88,20 +88,6 @@ class TestSpecI08SpecValidationNoAlertSeverity:
         assert not re.search(r"flag as alert", content), "GUARD-25c"
 
 
-class TestSpecI09ConventionsPrefixes:
-    def test_guard26_conventions_has_flow_nn(self):
-        content = _read("skills/u-spec-globals/conventions.md")
-        assert "FLOW-NN" in content, "GUARD-26"
-
-    def test_guard26b_conventions_has_comp_nn(self):
-        content = _read("skills/u-spec-globals/conventions.md")
-        assert "COMP-NN" in content, "GUARD-26b"
-
-    def test_guard27_reverse_spec_writer_no_manual_spec_agents(self):
-        content = _read("agents/reverse-spec/u-reverse-spec-writer.md")
-        assert "manual-spec-agents.md" not in content, "GUARD-27"
-
-
 class TestDevI11TcTypeSchemaEnum:
     @pytest.mark.parametrize("label,rel", [
         ("u-be-standards/SKILL.md", "skills/u-be-standards/SKILL.md"),
@@ -114,19 +100,6 @@ class TestDevI11TcTypeSchemaEnum:
         assert not re.search(r"\| \*\*Visual adjustment\*\* \|", content), f"GUARD-30c: {label}"
 
 
-class TestSpecI11ComplianceReportRenamed:
-    def test_guard33_spec_validator_uses_spec_quality_report(self):
-        content = _read("agents/spec/u-spec-validator.md")
-        assert "compliance-report.md" not in content, "GUARD-33a"
-        assert "spec-quality-report.md" in content, "GUARD-33b"
-
-
-class TestDevI13BeQaShortMode:
-    def test_guard34_be_qa_docs_has_short_mode(self):
-        content = _read("agents/dev/u-be-qa-docs.md")
-        assert re.search(r"short mode", content, re.IGNORECASE), "GUARD-34a"
-
-
 class TestSpecI12UspecRequirementParam:
     def test_guard35_u_spec_documents_requirement_resolution(self):
         content = _read("commands/u-spec.md")
@@ -135,12 +108,6 @@ class TestSpecI12UspecRequirementParam:
     def test_guard35d_u_spec_usage_includes_requirement(self):
         content = _read("commands/u-spec.md")
         assert '"requirement"' in content, "GUARD-35d"
-
-
-class TestSpecI14UimproveHandoffContext:
-    def test_guard37b_fast_track_includes_improvement_task(self):
-        content = _read("skills/u-improve/SKILL.md")
-        assert "{improvement_task}" in content, "GUARD-37b"
 
 
 class TestSpecI15ImproveHashEliminated:

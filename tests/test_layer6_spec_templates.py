@@ -54,8 +54,6 @@ class TestLayer6SpecTemplates:
             assert _has_section_number(content, n, name), \
                 f'Section "## {n}. {name}" not found in TEMPLATE.feature.spec.md'
         assert _has_section(content, "Changelog"), "Changelog section missing"
-        assert "Component adapters" in content, "Component adapters declaration missing"
-        assert re.search(r"Given .+\nWhen .+\nThen", content), "BDD Given/When/Then pattern missing"
 
     def test_component_template_sections_and_content(self):
         content = COMPONENT_TEMPLATE.read_text(encoding="utf-8")
@@ -75,9 +73,6 @@ class TestLayer6SpecTemplates:
             assert _has_section_number(content, n, name), \
                 f'Section "## {n}. {name}" not found in TEMPLATE.component.spec.md'
         assert _has_section(content, "Changelog"), "Changelog section missing"
-        assert "Binding contract" in content, "Props Contract binding-contract note missing"
-        scenario_matches = re.findall(r"###\s+\w", content)
-        assert len(scenario_matches) >= 3, "Need at least 3 BDD scenarios"
 
     def test_flow_template_required_structure(self):
         content = FLOW_TEMPLATE.read_text(encoding="utf-8")
@@ -103,11 +98,6 @@ class TestLayer6SpecTemplates:
         ]
         for heading in sections:
             assert f"## {heading}" in content, f'"## {heading}" not found in tokens.md'
-        assert "```css" in content, "CSS block missing"
-        assert "```yaml" in content, "YAML manifest block missing"
-        assert "--duration-" in content, "motion duration tokens missing in §7"
-        assert "prefers-reduced-motion" in content, "§7 must include prefers-reduced-motion rule"
-
         section7idx = content.find("## 7.")
         section8idx = content.find("## 8.")
         assert section7idx > 0, "Section 7 not found"

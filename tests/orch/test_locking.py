@@ -180,3 +180,38 @@ class TestLogLockTimeout:
         err = LockTimeoutError("test")
         assert isinstance(err, TimeoutError)
         assert isinstance(err, Exception)
+
+
+# ---------------------------------------------------------------------------
+# Concurrency: sequential seq numbers under concurrent appends
+# ---------------------------------------------------------------------------
+
+class TestLogLockConcurrency:
+
+    def test_concurrent_appends_maintain_sequential_seqs(self, tmp_orch):
+        """Multiple threads appending simultaneously must produce sequential, non-duplicate seqs."""
+        import threading
+        errors = []
+        thread_count = 5
+        events_per_thread = 4
+
+        def append_events():
+            try:
+                for _ in range(events_per_thread):
+                    orch_core.append_event("t", "orchestrator_heartbeat", data={})
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=append_events, daemon=True) for _ in range(thread_count)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10.0)
+
+        assert not errors, f"Thread errors: {errors}"
+
+        events = list(orch_core.read_events())
+        seqs = [e.seq for e in events]
+        expected_count = thread_count * events_per_thread
+        assert len(seqs) == expected_count
+        assert sorted(seqs) == list(range(1, expected_count + 1)), "Seqs must be unique and sequential"

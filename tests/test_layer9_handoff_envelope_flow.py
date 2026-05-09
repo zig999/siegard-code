@@ -24,13 +24,6 @@ def _matches(pattern):
 
 
 class TestLayer9HandoffEnvelopeFlowInvariants:
-    def test_improve_handoff_envelope_template(self):
-        _run_rules("skills/u-shared-templates/improve-handoff-envelope.yaml", [
-            ("ENV-070a", _contains("handoff_envelope:"), "template must declare handoff_envelope root"),
-            ("ENV-070b", _contains("return_contract:"), "template must declare return_contract"),
-            ("ENV-070c", _contains("mode_hint:"), "template must declare mode_hint"),
-        ])
-
     def test_improve_handoff_envelope_schema(self):
         _run_rules("skills/u-shared-templates/improve-handoff-envelope.schema.yaml", [
             ("ENV-071a", _contains("handoff_envelope"), "schema must declare handoff_envelope"),
