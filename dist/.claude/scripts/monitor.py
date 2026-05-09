@@ -26,7 +26,14 @@ from typing import Any
 # because that module computes ORCH_DIR at module load time (not lazily).
 # ---------------------------------------------------------------------------
 def _early_resolve_project_dir() -> Path:
-    """Parse --project-dir / ORCH_PROJECT_DIR without consuming sys.argv."""
+    """Parse --project-dir / ORCH_PROJECT_DIR without consuming sys.argv.
+
+    Resolution order:
+      1. --project-dir flag
+      2. ORCH_PROJECT_DIR env var
+      3. Walk up from cwd looking for .orch/log.jsonl
+      4. cwd fallback
+    """
     for i, arg in enumerate(sys.argv[1:], 1):
         if arg in ("--project-dir", "-project-dir") and i < len(sys.argv):
             return Path(sys.argv[i + 1]).resolve()
@@ -35,6 +42,15 @@ def _early_resolve_project_dir() -> Path:
     env = os.environ.get("ORCH_PROJECT_DIR")
     if env:
         return Path(env).resolve()
+    # Walk up from cwd looking for .orch/log.jsonl
+    candidate = Path(".").resolve()
+    while True:
+        if (candidate / ".orch" / "log.jsonl").exists():
+            return candidate
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
     return Path(".").resolve()
 
 _project_dir_early = _early_resolve_project_dir()
@@ -185,6 +201,167 @@ def _load_state(project_dir: Path) -> tuple[OrchState | None, str | None]:
 
 
 # ---------------------------------------------------------------------------
+# Multi-workflow index (re-scans the log; does NOT mutate engine state)
+# ---------------------------------------------------------------------------
+
+UNKNOWN_WORKFLOW = "_unknown"
+_ORCHESTRATOR_PREFIXES = ("orchestrator-", "u-orchestrator-")
+_TASK_EVENT_TYPES = {
+    "task_created", "task_claimed", "task_progress", "task_completed",
+    "task_failed", "task_dlq", "task_skipped", "task_retried",
+    "task_scheduled_retry",
+}
+_TERMINAL_EVENTS = {"task_completed", "task_failed", "task_dlq", "task_skipped"}
+
+
+def _new_workflow_record() -> dict[str, Any]:
+    return {
+        "first_seq": None,
+        "last_seq": 0,
+        "phases": [],
+        "current_phase": None,
+        "status": "unknown",
+        "agents_running": [],
+        "agents_executed": [],
+        "agents_failed": [],
+    }
+
+
+def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | None]:
+    """
+    Re-scan the log and group events by workflow_id.
+
+    workflow_id is set by `phase_declared.data.workflow_id`. Every event
+    between one phase_declared and the next is attributed to that workflow.
+    Events emitted before any phase_declared land in UNKNOWN_WORKFLOW.
+
+    Returns (workflows, error). On hard error returns ({}, error_msg).
+    """
+    import orch_core as _oc
+    orch_dir = project_dir / ".orch"
+    log = orch_dir / "log.jsonl"
+    if not log.exists():
+        return {}, "waiting for log…"
+    _oc.ORCH_DIR = orch_dir
+    _oc.LOG_PATH = log
+
+    workflows: dict[str, dict] = {}
+    # Per workflow: per (task_id, attempt) the most recent state record.
+    task_state: dict[str, dict[tuple[str, int], dict]] = {}
+    current_wf: str | None = None
+
+    try:
+        events = list(read_events_filtered())
+    except CorruptedLogError as exc:
+        return {}, f"CORRUPTED LOG: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return {}, f"ERROR: {exc}"
+
+    for event in events:
+        et = event.event_type
+        data = event.data
+        if is_blob_ref(data):
+            try:
+                data = load_blob_data(event)
+            except Exception:  # noqa: BLE001
+                data = {}
+
+        if et == "phase_declared":
+            wf_id = data.get("workflow_id")
+            if wf_id:
+                current_wf = wf_id
+                w = workflows.setdefault(wf_id, _new_workflow_record())
+                if w["first_seq"] is None:
+                    w["first_seq"] = event.seq
+                phases = data.get("phases", [])
+                if isinstance(phases, list):
+                    for p in phases:
+                        if p not in w["phases"]:
+                            w["phases"].append(p)
+
+        wf = current_wf or UNKNOWN_WORKFLOW
+        w = workflows.setdefault(wf, _new_workflow_record())
+        if w["first_seq"] is None:
+            w["first_seq"] = event.seq
+        if event.seq > (w["last_seq"] or 0):
+            w["last_seq"] = event.seq
+
+        if et == "phase_entered":
+            w["current_phase"] = data.get("phase")
+            w["status"] = "active"
+        elif et == "phase_transitioned":
+            to_phase = data.get("to_phase")
+            if to_phase:
+                w["current_phase"] = to_phase
+            w["status"] = "active"
+        elif et == "phase_exit_approved":
+            if not data.get("next_phase"):
+                w["status"] = "done"
+
+        if et in _TASK_EVENT_TYPES and event.task_id:
+            attempt = event.attempt or 1
+            key = (event.task_id, attempt)
+            te_map = task_state.setdefault(wf, {})
+            te = te_map.setdefault(key, {
+                "task_id": event.task_id,
+                "attempt": attempt,
+                "phase": data.get("phase"),
+                "worker_type": None,
+                "worker_id": None,
+                "claimed_at": None,
+                "last_event_at": None,
+                "last_event_type": None,
+                "last_progress": None,
+                "reason": None,
+            })
+            te["last_event_at"] = event.ts
+            te["last_event_type"] = et
+            if data.get("phase"):
+                te["phase"] = data.get("phase")
+
+            if et == "task_claimed":
+                te["worker_type"] = data.get("worker_type")
+                te["worker_id"] = data.get("worker_id")
+                te["claimed_at"] = event.ts
+            elif et == "task_progress":
+                te["last_progress"] = data.get("checkpoint") or data.get("note")
+            elif et in ("task_failed", "task_dlq"):
+                te["reason"] = data.get("reason")
+
+    # Materialize per-workflow agent lists from task_state.
+    for wf_id, te_map in task_state.items():
+        w = workflows.setdefault(wf_id, _new_workflow_record())
+        for te in te_map.values():
+            kind = te.get("last_event_type")
+            if kind in _TERMINAL_EVENTS:
+                if kind == "task_completed":
+                    w["agents_executed"].append(te)
+                else:
+                    w["agents_failed"].append(te)
+            elif kind in ("task_claimed", "task_progress", "task_retried"):
+                w["agents_running"].append(te)
+            # task_created / task_scheduled_retry alone → not yet in flight; skip
+
+        w["agents_running"].sort(key=lambda x: x.get("claimed_at") or "")
+        w["agents_executed"].sort(key=lambda x: x.get("last_event_at") or "")
+        w["agents_failed"].sort(key=lambda x: x.get("last_event_at") or "")
+
+    return workflows, None
+
+
+def _is_orchestrator_agent(worker_type: str | None) -> bool:
+    if not worker_type:
+        return False
+    return any(worker_type.startswith(p) for p in _ORCHESTRATOR_PREFIXES)
+
+
+def _filter_orchestrators(agents: list[dict], show: bool) -> list[dict]:
+    if show:
+        return agents
+    return [a for a in agents if not _is_orchestrator_agent(a.get("worker_type"))]
+
+
+# ---------------------------------------------------------------------------
 # Plain-text renderer (--once mode)
 # ---------------------------------------------------------------------------
 
@@ -226,6 +403,83 @@ def _plain_phases(state: OrchState) -> None:
         ts = _short_ts(p.entered_at if ps == "active" else p.completed_at)
         qualifier = f"(since {ts})" if ps == "active" else f"(completed {ts})" if ps == "completed" else ""
         print(f"  {icon} {name}  {qualifier}")
+
+
+def render_plain_multi(workflows: dict[str, dict], error: str | None,
+                       *, workflow_filter: str | None = None,
+                       running_only: bool = False,
+                       show_orchestrators: bool = False) -> None:
+    """Plain-text multi-workflow renderer for --once mode."""
+    if error:
+        print(f"  {error}")
+        return
+    if not workflows:
+        print("  No workflows found in log.")
+        return
+
+    items = sorted(workflows.items(), key=lambda kv: -(kv[1]["last_seq"] or 0))
+
+    if workflow_filter:
+        items = [(k, v) for k, v in items if k == workflow_filter]
+        if not items:
+            print(f"  Workflow not found: {workflow_filter}")
+            return
+
+    if running_only:
+        items = [(k, v) for k, v in items if v["status"] != "done"]
+        if not items:
+            print("  No live workflows.")
+            return
+
+    print(f"SIEGARD MONITOR — {len(items)} workflow(s)")
+    print()
+
+    for wf_id, w in items:
+        phase = w["current_phase"] or "(none)"
+        status = w["status"]
+        badge = {
+            "active":  "● LIVE",
+            "done":    "● DONE",
+            "unknown": "● ?",
+        }.get(status, "● ?")
+        wf_label = wf_id if wf_id != UNKNOWN_WORKFLOW else "(orphan events — no phase_declared)"
+        print(f"▼ {wf_label}  [{phase}]  seq={w['last_seq']}  {badge}")
+
+        running = _filter_orchestrators(w["agents_running"], show_orchestrators)
+        executed = _filter_orchestrators(w["agents_executed"], show_orchestrators)
+        failed = _filter_orchestrators(w["agents_failed"], show_orchestrators)
+
+        if running:
+            print(f"   Agents running ({len(running)}):")
+            for a in running:
+                wt = (a.get("worker_type") or "—")[:22]
+                tid = (a.get("task_id") or "—")[:18]
+                claimed = _short_ts(a.get("claimed_at"))
+                cp = a.get("last_progress")
+                cp_str = f"  ⤳ {cp}" if cp else ""
+                print(f"     {wt:<22} {tid:<18}  attempt {a.get('attempt')}  claimed {claimed}{cp_str}")
+
+        if executed:
+            print(f"   Agents executed ({len(executed)}):")
+            for a in executed:
+                wt = (a.get("worker_type") or "—")[:22]
+                tid = (a.get("task_id") or "—")[:18]
+                ts = _short_ts(a.get("last_event_at"))
+                print(f"     {wt:<22} ✓ {tid:<18}  {ts}")
+
+        if failed:
+            print(f"   Agents failed ({len(failed)}):")
+            for a in failed:
+                wt = (a.get("worker_type") or "—")[:22]
+                tid = (a.get("task_id") or "—")[:18]
+                kind = a.get("last_event_type", "")
+                reason = (a.get("reason") or "")[:40]
+                print(f"     {wt:<22} ✗ {tid:<18}  {kind}  {reason}")
+
+        if not (running or executed or failed):
+            hint = "" if show_orchestrators else " (run with --show-orchestrators to include meta agents)"
+            print(f"   (no leaf-agent activity recorded{hint})")
+        print()
 
 
 def _plain_tasks(state: OrchState) -> None:
@@ -296,7 +550,9 @@ def _hline(win: Any, row: int, col: int, ch: str, n: int) -> None:
         pass
 
 
-def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_path: Path) -> None:
+def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_path: Path,
+                  workflows: dict[str, dict] | None = None,
+                  project_dir: Path | None = None) -> None:
     rows, cols = stdscr.getmaxyx()
     stdscr.erase()
 
@@ -322,6 +578,18 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
 
     _addstr(stdscr, row, 0, header, curses.color_pair(C_HEADER) | curses.A_BOLD)
     row += 1
+
+    # ---- Project path ----
+    if project_dir is not None:
+        orch_found = (project_dir / ".orch" / "log.jsonl").exists()
+        path_str = _trunc(str(project_dir), cols - 16)
+        if orch_found:
+            _addstr(stdscr, row, 0, f"  {path_str}", curses.color_pair(C_DIM) | curses.A_DIM)
+        else:
+            _addstr(stdscr, row, 0, f"  {path_str}  (orch not found)",
+                    curses.color_pair(C_ALERT))
+        row += 1
+
     _hline(stdscr, row, 0, "─", cols - 1)
     row += 1
 
@@ -396,6 +664,57 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
     if row >= rows - 2:
         stdscr.refresh()
         return
+
+    # ---- Agents ----
+    if workflows:
+        all_running: list[dict] = []
+        done_count = 0
+        failed_count = 0
+        for w in workflows.values():
+            all_running.extend(_filter_orchestrators(w["agents_running"], False))
+            done_count += len(_filter_orchestrators(w["agents_executed"], False))
+            failed_count += len(_filter_orchestrators(w["agents_failed"], False))
+
+        _addstr(stdscr, row, 0, "AGENTS", curses.A_BOLD)
+        summary = f"  {len(all_running)} running · {done_count} done · {failed_count} failed"
+        _addstr(stdscr, row, 6, summary, curses.color_pair(C_DIM) | curses.A_DIM)
+        row += 1
+
+        if not all_running:
+            _addstr(stdscr, row, 2, "(no agents running)", curses.color_pair(C_DIM) | curses.A_DIM)
+            row += 1
+        else:
+            _a_col_wt  = 2
+            _a_col_tid = 32
+            _a_col_ts  = 52
+            _a_col_cp  = 59
+
+            for a in all_running:
+                if row >= rows - 2:
+                    break
+                wt      = _trunc(a.get("worker_type") or "—", 28)
+                tid     = _trunc(a.get("task_id") or "—", 18)
+                claimed = _short_ts(a.get("claimed_at"))
+                attempt = a.get("attempt", 1)
+                cp      = a.get("last_progress")
+                att_str = f"×{attempt} " if attempt > 1 else ""
+                cp_str  = f"→ {_trunc(cp, cols - _a_col_cp - len(att_str) - 2)}" if cp else ""
+
+                _addstr(stdscr, row, _a_col_wt,  f"▶ {wt}", curses.color_pair(C_RUNNING))
+                _addstr(stdscr, row, _a_col_tid, tid,       curses.color_pair(C_DIM))
+                _addstr(stdscr, row, _a_col_ts,  claimed,   curses.color_pair(C_DIM))
+                cp_col = _a_col_cp
+                if att_str:
+                    _addstr(stdscr, row, cp_col, att_str, curses.color_pair(C_PENDING) | curses.A_DIM)
+                    cp_col += len(att_str)
+                if cp_str:
+                    _addstr(stdscr, row, cp_col, cp_str, curses.color_pair(C_RUNNING) | curses.A_DIM)
+                row += 1
+
+        row += 1  # spacer
+        if row >= rows - 2:
+            stdscr.refresh()
+            return
 
     # ---- Tasks ----
     _addstr(stdscr, row, 0, "TASKS", curses.A_BOLD)
@@ -483,12 +802,30 @@ def _parse_args() -> argparse.Namespace:
                    help="Poll interval in seconds (default: 2)")
     p.add_argument("--once", action="store_true",
                    help="Render one frame to stdout and exit")
+    p.add_argument("--workflow", default=None,
+                   help="Filter --once output to a single workflow_id")
+    p.add_argument("--running-only", action="store_true",
+                   help="Hide workflows whose status is 'done' (--once only)")
+    p.add_argument("--show-orchestrators", action="store_true",
+                   help="Include orchestrator-* agents (default: hidden)")
+    p.add_argument("--legacy", action="store_true",
+                   help="Use the legacy single-workflow plain renderer (--once only)")
     return p.parse_args()
 
 
-def run_once(project_dir: Path) -> int:
-    state, error = _load_state(project_dir)
-    render_plain(state, error)
+def run_once(project_dir: Path, args: argparse.Namespace) -> int:
+    if args.legacy:
+        state, error = _load_state(project_dir)
+        render_plain(state, error)
+        return 1 if error else 0
+
+    workflows, error = _collect_workflow_index(project_dir)
+    render_plain_multi(
+        workflows, error,
+        workflow_filter=args.workflow,
+        running_only=args.running_only,
+        show_orchestrators=args.show_orchestrators,
+    )
     return 1 if error else 0
 
 
@@ -503,6 +840,7 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
     last_stat: tuple[float, int] = (-1.0, -1)
     state: OrchState | None = None
     error: str | None = None
+    workflows: dict[str, dict] = {}
 
     tick_ms = 100  # key responsiveness
     ticks_per_poll = max(1, int(interval * 1000 / tick_ms))
@@ -525,7 +863,8 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
             if current_stat != last_stat:
                 last_stat = current_stat
                 state, error = _load_state(project_dir)
-                render_curses(stdscr, state, error, log_path)
+                workflows, _ = _collect_workflow_index(project_dir)
+                render_curses(stdscr, state, error, log_path, workflows, project_dir)
 
         time.sleep(tick_ms / 1000)
 
@@ -539,7 +878,7 @@ def main() -> int:
     project_dir = Path(args.project_dir).resolve() if args.project_dir else _project_dir_early
 
     if args.once:
-        return run_once(project_dir)
+        return run_once(project_dir, args)
 
     try:
         curses.wrapper(run_live, project_dir, args.interval)
