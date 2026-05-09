@@ -95,6 +95,7 @@ This skill is the **single source of truth** for the quality standards the Devel
 |---|---|---|
 | Line length | Text containers have `max-width` between `65ch` and `75ch` | `<p>`, `<li>`, `<article>` body text with no `max-width` constraint and rendered width > 75ch — Medium BUG |
 | Container padding | Elements with `border` or non-neutral `background-color` have `padding ≥ 8px` | Padding < 8px on bordered or colored container with text content — Medium BUG |
+| Padding/width proportion | Container padding scales proportionally with container size: padding ≈ 1/6–1/4 of the container's own width. Visually distinct containers (e.g., small card and extra-large card on the same screen) must not share the same padding value | Padding < 1/8 or > 1/3 of container width on a visually distinct element; or identical padding applied to containers of clearly different sizes — Medium BUG. **Detection: visual/QA only — not statically automatable (depends on computed layout width)** |
 
 ### 3.4 Motion
 
@@ -109,6 +110,18 @@ This skill is the **single source of truth** for the quality standards the Devel
 |---|---|---|
 | Side-tab border | Cards and containers use full border, background tint, or no side indicator | `border-left` or `border-right` ≥ 3px with non-neutral color on card/container — or ≥ 1px when `border-radius` is set — Medium BUG |
 | Border on rounded element | Rounded elements (`border-radius > 8px`) do not use top/bottom accent borders | `border-top` or `border-bottom` ≥ 2px with non-neutral color on element with `border-radius > 8px` — Medium BUG |
+
+### 3.6 Composition / Alignment
+
+> Rules in this section are Gestalt-based layout principles. Detection is visual/QA — not statically automatable via linter unless noted.
+
+| Rule | Compliant | Violation (quality BUG) |
+|---|---|---|
+| Axis-sharing | Every visible element shares at least one axis (horizontal or vertical) with another element in the same composition. No element is positioned with arbitrary offsets unanchored to a neighbor | Element with arbitrary offset sharing no axis with any sibling — Medium BUG. **Exception:** intentionally offset absolute-positioned elements (tooltips, badges, overlays) with offset documented in code |
+| Text block start-axis | Text elements within the same content block (same section, card, or semantic group) share the same inline-start edge (`left` in LTR, `right` in RTL). Intentional indentation (nested list, blockquote, code block) is accepted only when semantically justified | Text elements in the same block with different inline-start offsets and no semantic indentation justification — Medium BUG. CSS-agnostic: applies to flow, flex column, and grid. Use `start` (not `left`) to support RTL |
+| Row baseline | Multiple text elements arranged in a single horizontal row with different `font-size` values use typographic baseline alignment (`align-items: baseline` in flex/grid) | Horizontal flex/grid row with mixed `font-size` text using `align-items: center` or `align-items: start` — Medium BUG. **Scope: text-only rows. Rows that contain icons must follow the icon + text centering rule instead — these two rules are mutually exclusive per row** |
+| Form label alignment | Form labels use `text-align: start` (or `text-align: left` in LTR-only projects). Centering labels is forbidden | `text-align: center` on a `<label>` or label-equivalent element outside an isolated stat-card context — Medium BUG. **Exception:** a label that belongs visually to a large centered metric/stat number (e.g., `"Total Revenue"` below a centered `"$1.2M"`) |
+| Icon + text vertical centering | An icon adjacent to text (same horizontal row, same group) uses vertical center alignment (`align-items: center`). Gap between icon and text must be consistent across all occurrences of the same visual pattern within the same feature | Icon and adjacent text vertically misaligned; or gap value inconsistent across occurrences of the same icon+text pattern within the same feature — Medium BUG. **Note:** specific gap values (e.g., Tailwind `gap-2`, `gap-1.5`) are project-specific — define them in the project's own CLAUDE.md, not here |
 
 ---
 
