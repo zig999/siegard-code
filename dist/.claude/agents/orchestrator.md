@@ -327,7 +327,7 @@ Emit `phase_entered`:
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator \
   --event-type phase_entered \
-  --data '{"phase":"<next_phase>","order":<order>,"evidence_seq":<evidence_seq>}'
+  --data '{"phase":"<next_phase>","order":<order>,"evidence_seq":<evidence_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 Re-read state (re-run Step 2). `current_phase` is now set.

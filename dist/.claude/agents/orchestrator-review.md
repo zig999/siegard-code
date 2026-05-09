@@ -778,7 +778,7 @@ After creating all revision tasks, emit `phase_transitioned` back to dev:
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type phase_transitioned \
-  --data '{"from_phase":"review","to_phase":"dev","evidence_seq":<last_seq>}'
+  --data '{"from_phase":"review","to_phase":"dev","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 Output:
@@ -851,12 +851,12 @@ python3 .claude/skills/orch-log/scripts/append.py \
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type phase_exit_approved \
-  --data '{"phase":"review","criteria_met":["all_qa_verdicts_approved","no_open_critical_findings","documentation_verified"],"next_phase":"test"}'
+  --data '{"phase":"review","criteria_met":["all_qa_verdicts_approved","no_open_critical_findings","documentation_verified"],"next_phase":"test","workflow_id":"<workflow_id>"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type phase_transitioned \
-  --data '{"from_phase":"review","to_phase":"test","evidence_seq":<last_seq>}'
+  --data '{"from_phase":"review","to_phase":"test","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 Output:

@@ -924,12 +924,12 @@ python3 .claude/skills/orch-log/scripts/append.py \
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type phase_exit_approved \
-  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions"],"next_phase":"review"}'
+  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions"],"next_phase":"review","workflow_id":"<workflow_id>"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type phase_transitioned \
-  --data '{"from_phase":"dev","to_phase":"review","evidence_seq":<last_seq>}'
+  --data '{"from_phase":"dev","to_phase":"review","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 Output:

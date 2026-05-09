@@ -308,12 +308,12 @@ python3 .claude/skills/orch-log/scripts/append.py \
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type phase_exit_approved \
-  --data '{"phase":"sdd","criteria_met":["implementation_only_no_spec_change"],"next_phase":"dev"}'
+  --data '{"phase":"sdd","criteria_met":["implementation_only_no_spec_change"],"next_phase":"dev","workflow_id":"<workflow_id>"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type phase_transitioned \
-  --data '{"from_phase":"sdd","to_phase":"dev","evidence_seq":<last_seq>}'
+  --data '{"from_phase":"sdd","to_phase":"dev","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 Output:
@@ -998,7 +998,7 @@ Set `criteria_met = ["handoff_manifest_approved", "all_improve_reviewers_complet
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type phase_exit_approved \
-  --data '{"phase":"sdd","criteria_met":<criteria_met>,"next_phase":"dev"}'
+  --data '{"phase":"sdd","criteria_met":<criteria_met>,"next_phase":"dev","workflow_id":"<workflow_id>"}'
 ```
 
 Emit `phase_transitioned`:
@@ -1007,7 +1007,7 @@ Emit `phase_transitioned`:
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type phase_transitioned \
-  --data '{"from_phase":"sdd","to_phase":"dev","evidence_seq":<last_seq>}'
+  --data '{"from_phase":"sdd","to_phase":"dev","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 **If `trigger == "u-improve"`:** close the spec_change_status loop by emitting `spec_pipeline_return`.

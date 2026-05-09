@@ -224,6 +224,8 @@ def _new_workflow_record() -> dict[str, Any]:
         "agents_running": [],
         "agents_executed": [],
         "agents_failed": [],
+        "phase_details": {},   # phase_name → {status, order, entered_at, completed_at, approved_at, criteria_met}
+        "task_statuses": {},   # task_id → current task state dict
     }
 
 
@@ -275,28 +277,111 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
                     w["first_seq"] = event.seq
                 phases = data.get("phases", [])
                 if isinstance(phases, list):
-                    for p in phases:
-                        if p not in w["phases"]:
-                            w["phases"].append(p)
+                    for i, phase_def in enumerate(phases):
+                        pname = phase_def["name"] if isinstance(phase_def, dict) else str(phase_def)
+                        order = phase_def.get("order", i) if isinstance(phase_def, dict) else i
+                        if pname not in w["phases"]:
+                            w["phases"].append(pname)
+                        w["phase_details"].setdefault(pname, {
+                            "status": "pending", "order": order,
+                            "entered_at": None, "completed_at": None,
+                            "approved_at": None, "criteria_met": [],
+                        })
 
-        wf = current_wf or UNKNOWN_WORKFLOW
+        # Prefer workflow_id embedded in event data (new events) over tracked current_wf (legacy).
+        wf = data.get("workflow_id") or current_wf or UNKNOWN_WORKFLOW
         w = workflows.setdefault(wf, _new_workflow_record())
         if w["first_seq"] is None:
             w["first_seq"] = event.seq
         if event.seq > (w["last_seq"] or 0):
             w["last_seq"] = event.seq
 
+        pd_map = w["phase_details"]
         if et == "phase_entered":
             w["current_phase"] = data.get("phase")
             w["status"] = "active"
+            pname = data.get("phase")
+            if pname:
+                pd = pd_map.setdefault(pname, {
+                    "status": "pending", "order": len(pd_map),
+                    "entered_at": None, "completed_at": None,
+                    "approved_at": None, "criteria_met": [],
+                })
+                pd["status"] = "active"
+                pd["entered_at"] = event.ts
         elif et == "phase_transitioned":
             to_phase = data.get("to_phase")
             if to_phase:
                 w["current_phase"] = to_phase
-            w["status"] = "active"
-        elif et == "phase_exit_approved":
-            if not data.get("next_phase"):
+            declared = w["phases"]
+            if not to_phase or (declared and to_phase not in declared):
                 w["status"] = "done"
+            else:
+                w["status"] = "active"
+            from_phase = data.get("from_phase")
+            if from_phase and from_phase in pd_map:
+                pd_map[from_phase]["status"] = "completed"
+                pd_map[from_phase]["completed_at"] = event.ts
+        elif et == "phase_exit_approved":
+            next_phase = data.get("next_phase")
+            declared = w["phases"]
+            if not next_phase or (declared and next_phase not in declared):
+                w["status"] = "done"
+            pname = data.get("phase")
+            if pname and pname in pd_map:
+                pd_map[pname]["status"] = "exit_approved"
+                pd_map[pname]["approved_at"] = event.ts
+                criteria = data.get("criteria_met", [])
+                if isinstance(criteria, list):
+                    pd_map[pname]["criteria_met"].extend(criteria)
+        elif et == "phase_paused":
+            pname = data.get("phase")
+            if pname and pname in pd_map:
+                pd_map[pname]["status"] = "paused"
+        elif et == "phase_resumed":
+            pname = data.get("phase")
+            if pname and pname in pd_map:
+                pd_map[pname]["status"] = "active"
+
+        # --- task_statuses: per-task_id current state (for TASKS section) ---
+        if et in _TASK_EVENT_TYPES and event.task_id:
+            tid = event.task_id
+            ts_map = w["task_statuses"]
+            ts = ts_map.setdefault(tid, {
+                "task_id": tid,
+                "status": "pending",
+                "worker_id": None,
+                "attempts": 0,
+                "max_attempts": data.get("max_attempts", 3),
+                "claimed_at": None,
+                "last_event_at": None,
+                "last_failure_reason": None,
+                "next_retry_at": None,
+            })
+            ts["last_event_at"] = event.ts
+            if et == "task_created":
+                ts["status"] = "pending"
+                ts["max_attempts"] = data.get("max_attempts", ts["max_attempts"])
+            elif et == "task_claimed":
+                ts["status"] = "running"
+                ts["worker_id"] = data.get("worker_id")
+                ts["claimed_at"] = event.ts
+                ts["attempts"] += 1
+            elif et == "task_completed":
+                ts["status"] = "completed"
+            elif et == "task_failed":
+                ts["status"] = "failed"
+                ts["last_failure_reason"] = data.get("reason")
+            elif et == "task_scheduled_retry":
+                ts["status"] = "scheduled"
+                ts["next_retry_at"] = data.get("next_retry_at")
+            elif et == "task_retried":
+                ts["status"] = "running"
+            elif et == "task_dlq":
+                ts["status"] = "dlq"
+                ts["last_failure_reason"] = data.get("reason")
+            elif et == "task_skipped":
+                ts["status"] = "cancelled"
 
         if et in _TASK_EVENT_TYPES and event.task_id:
             attempt = event.attempt or 1
@@ -347,6 +432,57 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
         w["agents_failed"].sort(key=lambda x: x.get("last_event_at") or "")
 
     return workflows, None
+
+
+def _find_active_workflow(workflows: dict[str, dict]) -> tuple[str, dict] | None:
+    """Return (workflow_id, record) for the most recently active workflow, or None."""
+    active = [(wf_id, w) for wf_id, w in workflows.items() if w["status"] == "active"]
+    if not active:
+        return None
+    return max(active, key=lambda item: item[1]["last_seq"] or 0)
+
+
+def _wf_phases(wf: dict) -> dict:
+    """Convert workflow phase_details to SimpleNamespace objects for rendering."""
+    from types import SimpleNamespace
+    result = {}
+    for name, pd in wf["phase_details"].items():
+        try:
+            ps = PhaseStatus(pd["status"])
+        except ValueError:
+            ps = PhaseStatus.PENDING
+        result[name] = SimpleNamespace(
+            status=ps,
+            order=pd.get("order", 0),
+            entered_at=pd.get("entered_at"),
+            completed_at=pd.get("completed_at"),
+            approved_at=pd.get("approved_at"),
+            criteria_met=pd.get("criteria_met", []),
+        )
+    return result
+
+
+def _wf_tasks(wf: dict) -> dict:
+    """Convert workflow task_statuses to SimpleNamespace objects for rendering."""
+    from types import SimpleNamespace
+    result = {}
+    for tid, ts in wf["task_statuses"].items():
+        try:
+            status = TaskStatus(ts["status"])
+        except ValueError:
+            status = TaskStatus.PENDING
+        result[tid] = SimpleNamespace(
+            task_id=tid,
+            status=status,
+            worker_id=ts.get("worker_id"),
+            attempts=ts.get("attempts", 1),
+            max_attempts=ts.get("max_attempts", 3),
+            claimed_at=ts.get("claimed_at"),
+            last_event_at=ts.get("last_event_at"),
+            last_failure_reason=ts.get("last_failure_reason"),
+            next_retry_at=ts.get("next_retry_at"),
+        )
+    return result
 
 
 def _is_orchestrator_agent(worker_type: str | None) -> bool:
@@ -476,9 +612,13 @@ def render_plain_multi(workflows: dict[str, dict], error: str | None,
                 reason = (a.get("reason") or "")[:40]
                 print(f"     {wt:<22} ✗ {tid:<18}  {kind}  {reason}")
 
-        if not (running or executed or failed):
-            hint = "" if show_orchestrators else " (run with --show-orchestrators to include meta agents)"
-            print(f"   (no leaf-agent activity recorded{hint})")
+        if not running:
+            if w["status"] == "active":
+                phase = w["current_phase"] or "?"
+                print(f"   ⟳ {phase}  [orchestrator dispatching…]")
+            elif not (executed or failed):
+                hint = "" if show_orchestrators else " (run with --show-orchestrators to include meta agents)"
+                print(f"   (no leaf-agent activity recorded{hint})")
         print()
 
 
@@ -564,6 +704,12 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
 
     row = 0
 
+    # Resolve active workflow for per-workflow PHASES and TASKS rendering.
+    _active = _find_active_workflow(workflows or {})
+    active_wf_id, active_wf = _active if _active else (None, None)
+    active_phases = _wf_phases(active_wf) if active_wf else {}
+    active_tasks  = _wf_tasks(active_wf)  if active_wf else {}
+
     # ---- Header ----
     if error:
         badge = "● ERROR"
@@ -571,6 +717,11 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
     elif state is None:
         badge = "● WAIT"
         header = f"SIEGARD MONITOR  [—]  seq=?  {badge}"
+    elif active_wf:
+        phase_label = active_wf["current_phase"] or "—"
+        badge = "● DONE" if active_wf["status"] == "done" else "● LIVE"
+        wf_label = _trunc(active_wf_id or "—", max(10, cols - 50))
+        header = f"SIEGARD MONITOR  {wf_label}  [{phase_label}]  seq={active_wf['last_seq']}  {badge}"
     else:
         phase_label = state.current_phase or "—"
         badge = "● DONE" if state.run_status == "completed" else "● LIVE"
@@ -623,8 +774,9 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
     _addstr(stdscr, row, 0, "PHASES", curses.A_BOLD)
     row += 1
 
-    if state.phases:
-        for name, p in sorted(state.phases.items(), key=lambda kv: kv[1].order):
+    phases_src = active_phases or (state.phases if state else {})
+    if phases_src:
+        for name, p in sorted(phases_src.items(), key=lambda kv: kv[1].order):
             if row >= rows - 2:
                 break
             ps_raw = p.status.value if hasattr(p.status, "value") else str(p.status)
@@ -681,7 +833,13 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
         row += 1
 
         if not all_running:
-            _addstr(stdscr, row, 2, "(no agents running)", curses.color_pair(C_DIM) | curses.A_DIM)
+            current_phase = (active_wf["current_phase"] if active_wf else None) or (state.current_phase if state else None)
+            is_live = (active_wf["status"] == "active") if active_wf else (state and state.run_status != "completed")
+            if current_phase and is_live:
+                _addstr(stdscr, row, 2, f"⟳ {current_phase}  [orchestrator dispatching…]",
+                        curses.color_pair(C_PENDING) | curses.A_DIM)
+            else:
+                _addstr(stdscr, row, 2, "(no agents running)", curses.color_pair(C_DIM) | curses.A_DIM)
             row += 1
         else:
             _a_col_wt  = 2
@@ -721,7 +879,8 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
     row += 1
 
     by_status: dict[TaskStatus, list] = {s: [] for s in STATUS_ORDER}
-    for t in state.tasks.values():
+    tasks_src = active_tasks if active_tasks else (state.tasks if state else {})
+    for t in tasks_src.values():
         try:
             s = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
         except ValueError:

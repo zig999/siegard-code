@@ -408,12 +408,14 @@ python3 .claude/skills/orch-log/scripts/append.py \
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-test \
   --event-type phase_exit_approved \
-  --data '{"phase":"test","criteria_met":["all_test_tasks_terminal","all_tests_passed","no_critical_failures"],"next_phase":"done"}'
+  --data '{"phase":"test","criteria_met":["all_test_tasks_terminal","all_tests_passed","no_critical_failures"],"next_phase":"done","workflow_id":"<workflow_id>"}'
+
+> **RULE:** `to_phase` in the terminal `phase_transitioned` MUST always be the literal string `"done"`. Never derive this value dynamically from `next_phase` or any other field.
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-test \
   --event-type phase_transitioned \
-  --data '{"from_phase":"test","to_phase":"done","evidence_seq":<last_seq>}'
+  --data '{"from_phase":"test","to_phase":"done","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 Output:
@@ -492,7 +494,7 @@ Emit `phase_transitioned` back to dev:
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-test \
   --event-type phase_transitioned \
-  --data '{"from_phase":"test","to_phase":"dev","evidence_seq":<last_seq>}'
+  --data '{"from_phase":"test","to_phase":"dev","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
 Output:

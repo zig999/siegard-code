@@ -400,10 +400,10 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.TASK_SKIPPED.value:              {"phase", "reason"},
     EventType.OPERATION_MODE_DECLARED.value:   {"phase", "mode"},
     EventType.PHASE_DECLARED.value:            {"workflow_id", "phases"},
-    EventType.PHASE_ENTERED.value:             {"phase", "order"},
+    EventType.PHASE_ENTERED.value:             {"phase", "order", "workflow_id"},
     EventType.PHASE_EXIT_CRITERION_MET.value:  {"phase", "criterion"},
-    EventType.PHASE_EXIT_APPROVED.value:       {"phase", "criteria_met", "next_phase"},
-    EventType.PHASE_TRANSITIONED.value:        {"from_phase", "to_phase", "evidence_seq"},
+    EventType.PHASE_EXIT_APPROVED.value:       {"phase", "criteria_met", "next_phase", "workflow_id"},
+    EventType.PHASE_TRANSITIONED.value:        {"from_phase", "to_phase", "evidence_seq", "workflow_id"},
     EventType.PHASE_PAUSED.value:              {"phase", "reason"},
     EventType.PHASE_RESUMED.value:             {"phase", "paused_seq"},
     EventType.SPEC_PIPELINE_RETURN.value:      {"workflow_id", "session_id", "spec_change_status"},
@@ -458,6 +458,13 @@ def _validate_event_data(event_type: str, data: dict[str, Any]) -> None:
         raise EventValidationError(
             f"{event_type}: missing required data fields: {sorted(missing)}"
         )
+    if event_type == EventType.PHASE_TRANSITIONED.value:
+        to_phase = data.get("to_phase")
+        if not to_phase or not isinstance(to_phase, str):
+            raise EventValidationError(
+                "phase_transitioned: 'to_phase' must be a non-empty string "
+                "(use \"done\" for terminal transitions)"
+            )
     if event_type == EventType.TASK_CREATED.value:
         tier = data.get("tier")
         if tier is not None and tier not in _VALID_TIERS:
