@@ -188,8 +188,10 @@ mkdir -p "$SESSION_DIR/backlog" "$SESSION_DIR/delivery" "$SESSION_DIR/pending" "
 
 **Guard — improve flow spec_change_status (R4):**
 
-When `workflow_type == "improve"` (from Step 0.5), read `improve-scope.json` to verify SDD completion
-and collect planning policy:
+When `workflow_type == "improve"` (from Step 0.5), read `improve-scope.json` for `spec_change_status`
+(written by `u-improve`, updated by `orchestrator-sdd`) and `triage.json` for `planner_required`
+(written by `u-spec-triage` — single source of truth per `u-spec-triage/SKILL.md` rule
+`new_artifacts: Only triage.json may be written`):
 
 ```bash
 python3 -c "
@@ -197,21 +199,74 @@ import json, sys, os
 from pathlib import Path
 project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
 workflow_id = sys.argv[1]
-scope_path = Path(project_dir) / '.orch' / 'sessions' / workflow_id / 'improve-scope.json'
-if not scope_path.exists():
-    print(json.dumps({'spec_change_status': 'not_required', 'planner_required': True}))
-else:
+session_dir = Path(project_dir) / '.orch' / 'sessions' / workflow_id
+scope_path = session_dir / 'improve-scope.json'
+triage_path = session_dir / 'triage.json'
+
+spec_change_status = 'not_required'
+if scope_path.exists():
     scope = json.loads(scope_path.read_text())
-    print(json.dumps({
-        'spec_change_status': scope.get('spec_change_status', 'not_required'),
-        'planner_required': scope.get('planner_required', True)
-    }))
+    spec_change_status = scope.get('spec_change_status', 'not_required')
+
+planner_required = True
+if triage_path.exists():
+    triage = json.loads(triage_path.read_text())
+    planner_required = triage.get('planner_required', True)
+
+print(json.dumps({
+    'spec_change_status': spec_change_status,
+    'planner_required': planner_required
+}))
 " "$workflow_id"
 ```
 
 Store `spec_change_status` and `planner_required` from the output.
 
 If `workflow_type == "improve"` AND `spec_change_status == "pending_spec"`:
+
+Check whether the SDD pipeline has already terminated with a fatal error (meaning `spec_change_status` will never reach `"completed"` without intervention):
+
+```bash
+python3 -c "
+import sys, json
+sys.path.insert(0, '.claude/lib')
+from orch_core import read_events_filtered, EventType
+terminal_errors = read_events_filtered(event_type=EventType.ESCALATION.value, phase='sdd')
+fatal = [e for e in terminal_errors
+         if e.data.get('code') in ('E05_rejection_cycle_limit', 'E06_dispatch_loop_limit')]
+print(json.dumps({'sdd_pipeline_fatal': len(fatal) > 0, 'count': len(fatal), 'fatal_seqs': [e.seq for e in fatal]}))
+"
+```
+
+Store `fatal_seqs` from the output for use in the escalation `evidence` array.
+
+**IF `sdd_pipeline_fatal == true`:** the SDD pipeline has terminated with a fatal error. `spec_change_status` will never reach `"completed"` on its own. Emit escalation (substitute `<fatal_seqs>` with the JSON array printed above):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type escalation \
+  --data '{
+    "code": "E_r4_spec_pipeline_failed",
+    "severity": "critical",
+    "reason": "R4 guard: spec pipeline terminated with fatal error (E05 or E06). spec_change_status will never reach completed without intervention.",
+    "evidence": <fatal_seqs>,
+    "suggested_actions": [
+      "re-invoke /u-spec to retry the failed spec pipeline",
+      "invoke /u-improve with --recalculate to reclassify and rebuild the improve scope",
+      "manually set spec_change_status=divergence_accepted in improve-scope.json and run /u-dev to proceed without spec changes"
+    ]
+  }'
+```
+
+Output:
+```json
+{"status": "escalated", "last_seq": <last_seq>, "summary": "R4 guard: SDD pipeline terminated fatally — spec_change_status will not advance; see E_r4_spec_pipeline_failed escalation"}
+```
+Stop.
+
+**ELSE (SDD pipeline still in progress):**
+
 ```json
 {"status": "blocked", "last_seq": <last_seq>, "summary": "spec_change_status is pending_spec — sdd phase must complete first; re-invoke orchestrator to resume after sdd completes"}
 ```
@@ -281,13 +336,173 @@ If `handoff_type` is `fast_track` or `major_evolution` AND `dev_impact` is `no_a
 ### Step 3 — Planning dispatch
 
 **Planning skip (improve flow only):** If `workflow_type == "improve"` AND `planner_required == false`
-(read from `improve-scope.json` in Step 2): skip this entire step. The improve-scope already defines
-the task contracts — generating a full backlog would duplicate and potentially contradict that scope.
-Proceed directly to Step 4.
+(read from `triage.json` in Step 2): skip the planner dispatch and synthesize a minimal backlog
+directly from `triage.json` (`affected_specs`). The triage already defines the scoped task contracts —
+running the planner would duplicate and potentially contradict that scope.
+
+Record the skip in the log (P8 — every decision must be auditable):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type task_skipped \
+  --task-id dev_planning \
+  --data '{"phase":"dev","reason":"implementation_only_no_spec_change","detail":"planner_required=false in triage.json; backlog synthesized from triage.json"}'
+```
+
+Then synthesize the backlog:
+
+```bash
+python3 -c "
+import json, os, sys
+from pathlib import Path
+project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
+session_dir = os.environ.get('SESSION_DIR')
+workflow_id = sys.argv[1]
+default_stack = sys.argv[2]  # be | fe — derived in Step 2 from CLAUDE.md
+triage_path = Path(project_dir) / '.orch' / 'sessions' / workflow_id / 'triage.json'
+backlog_dir = Path(session_dir) / 'backlog'
+backlog_dir.mkdir(parents=True, exist_ok=True)
+backlog_path = backlog_dir / 'backlog.json'
+
+if not triage_path.exists():
+    print(json.dumps({'status': 'error', 'reason': 'triage_missing', 'detail': str(triage_path)}))
+    sys.exit(1)
+
+triage = json.loads(triage_path.read_text())
+affected = triage.get('affected_specs', []) or []
+tcs = []
+for i, spec in enumerate(affected, start=1):
+    tcs.append({
+        'task_id': f'dev_tc_{i:03d}',
+        'spec': spec.get('path', ''),
+        'deps': [],
+        'tier': 'standard',
+        'type': 'impl',
+        'stack': default_stack,
+        'title': spec.get('change_summary', '')[:120],
+    })
+
+# Fallback: if affected_specs is empty but improvement_task is present, create one TC over codebase
+if not tcs:
+    tcs.append({
+        'task_id': 'dev_tc_001',
+        'spec': 'codebase',
+        'deps': [],
+        'tier': 'standard',
+        'type': 'impl',
+        'stack': default_stack,
+        'title': triage.get('requirement', 'improve flow — single TC')[:120],
+    })
+
+backlog_path.write_text(json.dumps(tcs, indent=2))
+print(json.dumps({'backlog_path': str(backlog_path), 'total': len(tcs)}))
+" "<workflow_id>" "<stack>"
+```
+
+Set `backlog_path` to the path printed by the synthesis. Proceed directly to Step 4.
+
+If the synthesis exits with `status: error` (e.g., `triage_missing`), emit escalation and stop:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type escalation \
+  --data '{"code":"E13_improve_scope_unusable","severity":"critical","reason":"planner_required=false but triage.json missing or unreadable — cannot synthesize backlog","evidence":[],"suggested_actions":["re-run /u-improve to regenerate session","verify triage.json exists in session directory"]}'
+```
+
+Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "improve flow planner skip: triage.json unusable"}` and stop.
+
+**Stack-conditional planning dispatch:**
+
+**IF `stack == "fullstack"`:** spawn parallel BE and FE planners.
+
+If neither `dev_planning_be` nor `dev_planning_fe` task exists yet:
+
+```bash
+# Create both planning tasks (no dependency between them)
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type task_created \
+  --task-id dev_planning_be \
+  --data '{"phase":"dev","deps":[],"tier":"critical","type":"planning","spec":"<specs_dir>/handoff-manifest.yaml"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type task_created \
+  --task-id dev_planning_fe \
+  --data '{"phase":"dev","deps":[],"tier":"critical","type":"planning","spec":"<specs_dir>/handoff-manifest.yaml"}'
+```
+
+Look up both planner workers:
+```bash
+python3 .claude/skills/phase-dev-rules/scripts/select_worker.py --task-type planning --stack fullstack_be
+python3 .claude/skills/phase-dev-rules/scripts/select_worker.py --task-type planning --stack fullstack_fe
+```
+
+Claim both:
+```bash
+python3 .claude/skills/orch-log/scripts/append.py --agent orchestrator-dev --event-type task_claimed \
+  --task-id dev_planning_be --attempt 1 \
+  --data '{"phase":"dev","worker_type":"u-be-planner","worker_id":"u-be-planner-dev_planning_be"}'
+
+python3 .claude/skills/orch-log/scripts/append.py --agent orchestrator-dev --event-type task_claimed \
+  --task-id dev_planning_fe --attempt 1 \
+  --data '{"phase":"dev","worker_type":"u-fe-planner","worker_id":"u-fe-planner-dev_planning_fe"}'
+```
+
+Register both workers:
+```bash
+python3 -c "
+import sys; sys.path.insert(0,'.claude/lib')
+from orch_core import register_worker
+register_worker('u-be-planner-dev_planning_be', 'dev_planning_be', 1, phase='dev', stack='fullstack_be', task_type='planning')
+register_worker('u-fe-planner-dev_planning_fe', 'dev_planning_fe', 1, phase='dev', stack='fullstack_fe', task_type='planning')
+"
+```
+
+Spawn **both planners in a single response turn** (two parallel Agent tool calls):
+- BE: `subagent_type: "u-be-planner"`, `ORCH_TASK_ID=dev_planning_be`, write to `<session_dir>/backlog/backlog_be.json`
+- FE: `subagent_type: "u-fe-planner"`, `ORCH_TASK_ID=dev_planning_fe`, write to `<session_dir>/backlog/backlog_fe.json`
+- Each planner prompt must include: ORCH_TASK_ID, ORCH_ATTEMPT, ORCH_WORKER_ID, SPECS_DIR, ORCH_PROJECT_DIR, SESSION_DIR, nesting_depth, handoff_type, changed_files, dev_impact, and explicit instruction to scope tasks to its own stack only (no cross-stack tasks)
+- Each planner must `Emit task_completed with artifacts: [<session_dir>/backlog/backlog_{be|fe}.json] when done`
+
+Wait for both planners to return. Re-read state.
+
+If either `dev_planning_be` or `dev_planning_fe` is not `completed`:
+- Apply retry logic for the failed one
+- If non-retryable or attempts exhausted: escalate E07 and stop
+
+Merge backlog outputs:
+```bash
+python3 -c "
+import json, sys
+from pathlib import Path
+be = json.loads(Path(sys.argv[1]).read_text())
+fe = json.loads(Path(sys.argv[2]).read_text())
+combined = be + fe
+seen = set()
+deduped = []
+for tc in combined:
+    tid = tc.get('task_id')
+    if tid not in seen:
+        seen.add(tid)
+        deduped.append(tc)
+out = Path(sys.argv[3])
+out.write_text(json.dumps(deduped, indent=2))
+print(json.dumps({'total': len(deduped), 'be': len(be), 'fe': len(fe)}))
+" "<session_dir>/backlog/backlog_be.json" "<session_dir>/backlog/backlog_fe.json" "<session_dir>/backlog/backlog.json"
+```
+
+Set `backlog_path = <session_dir>/backlog/backlog.json`. Proceed to Step 4.
+
+If `dev_planning_be` and `dev_planning_fe` already exist and both are `completed`: skip creation and dispatch. Read `backlog_path` from the merged file if it exists, else re-merge.
+
+---
+
+**ELSE (`stack == "be"` or `stack == "fe"`):** single planner (existing behavior).
 
 If `planning_task` is `null` (not yet created):
-
-Create the planning task:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -390,6 +605,7 @@ Parse the backlog. Each task contract must provide:
 | `spec` | path to task contract file (e.g. `<session_dir>/backlog/tc-001.md`) |
 | `deps` | list of `dev_tc_{n}` IDs this task depends on (from backlog dependency graph) |
 | `tier` | `standard` unless explicitly marked `critical` in backlog |
+| `stack` | `be` or `fe` — propagated from the planner output; required for per-task worker routing in Step 5.1 |
 
 If no impl tasks exist yet (`impl_tasks` is empty), create them all:
 
@@ -399,8 +615,10 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type task_created \
   --task-id dev_tc_{n} \
-  --data '{"phase":"dev","deps":[<deps>],"tier":"<tier>","type":"impl","spec":"<tc-path>"}'
+  --data '{"phase":"dev","deps":[<deps>],"tier":"<tier>","type":"impl","spec":"<tc-path>","stack":"<be|fe>"}'
 ```
+
+> **Stack propagation:** for fullstack projects the merged backlog contains TCs from both planners with explicit per-TC `stack` (`be` or `fe`). Step 5.1 relies on this per-task `stack` to route FE TCs to `u-fe-developer` and BE TCs to `u-be-developer`. If the planner output omits `stack`, default to the project-level `<stack>` from Step 2 (single-stack projects only).
 
 Re-read state after all task_created events.
 
@@ -478,11 +696,13 @@ After all syntheses, re-read state.
 
 From ready queue (sorted by tier priority then creation seq), select up to **2 tasks**.
 
-Look up worker:
+Look up worker (use the **per-task stack** from `task.stack`, not the project-level stack — required for correct fullstack routing):
 ```bash
 python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
-  --task-type <task.task_type> --stack <stack>
+  --task-type <task.task_type> --stack <task.stack>
 ```
+
+If `task.stack` is null (legacy task created before stack propagation): fall back to the project-level `<stack>` from Step 2.
 
 Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.
 Example: if the output is `{"worker":"u-be-developer","task_type":"impl","stack":"be","phase":"dev"}`, then `selected_worker = "u-be-developer"`.
@@ -490,7 +710,46 @@ If the output contains `"status":"error"`, skip this task and emit `task_failed`
 
 #### 5.2 — Claim batch
 
-For each task, emit `task_claimed` before any spawn:
+**Audit batch (DISPATCH_AUDIT — P8):** before any `task_claimed`, emit a single `dispatch_decision` capturing the batch composition and applied constraints. This makes the dispatch verifiable from the log alone.
+
+**Context budget estimation (WORKER_CONTEXT_BUDGET — P7):** for each task in the batch, estimate the spawn context size (chars in spawn prompt + chars in task spec file) before emitting `dispatch_decision`. Threshold for inline dispatch: `200000` chars. If any task exceeds the threshold, record the mitigation applied (`split_spec`, `summarize_spec`, `inline_excerpt`) in the dispatch_decision constraints; never spawn silently above threshold.
+
+```bash
+# Compute per-task context estimate (one entry per batch member)
+python3 -c "
+import json, sys, os
+from pathlib import Path
+spec_path = sys.argv[1]
+prompt_chars = int(sys.argv[2])
+threshold = 200000
+spec_chars = 0
+p = Path(spec_path)
+if p.exists():
+    try:
+        spec_chars = len(p.read_text(encoding='utf-8'))
+    except Exception:
+        spec_chars = -1
+total = prompt_chars + spec_chars
+print(json.dumps({
+    'spec_chars': spec_chars,
+    'prompt_chars': prompt_chars,
+    'total_chars': total,
+    'threshold': threshold,
+    'over_threshold': total > threshold
+}))
+" "<task.spec>" "<estimated_prompt_chars>"
+```
+
+Use `estimated_prompt_chars ≈ 1500` (the dev spawn prompt template length). Include the per-task `context_estimate` array in the `dispatch_decision` constraints below.
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type dispatch_decision \
+  --data '{"phase":"dev","batch_size":<N>,"batch_members":[{"task_id":"<task_id>","worker_type":"<worker>","tier":"<tier>","stack":"<task.stack>"}],"rationale":"ready queue order, tier priority, per-task stack routing","constraints":{"max_batch":2,"nesting_depth":<nesting_depth>,"context_estimate":[{"task_id":"<task_id>","total_chars":<total_chars>,"over_threshold":<bool>,"mitigation":"<none|split_spec|summarize_spec|inline_excerpt>"}]}}'
+```
+
+Then for each task, emit `task_claimed` before any spawn:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -718,6 +977,7 @@ Re-read state. Determine:
 | `E07_planning_failed` | critical | Planning task failed and cannot be retried |
 | `E04_critical_task_dlq` | critical | Non-retryable impl task failure |
 | `E08_exit_criteria_not_met` | warning | All tasks terminal but delivery criteria not met |
+| `E13_improve_scope_unusable` | critical | improve flow with `planner_required=false` but `triage.json` missing — cannot synthesize backlog |
 
 ---
 

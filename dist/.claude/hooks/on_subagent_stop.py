@@ -105,7 +105,7 @@ def main() -> int:
                 attempt=attempt,
                 data={
                     "phase": phase,
-                    "reason": "worker_stopped_without_terminal_event",
+                    "reason": "worker_exited_without_terminal",
                     "retryable": True,
                     "synthesized_by": worker_id,
                 },

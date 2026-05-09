@@ -1,3 +1,9 @@
+---
+name: phase-dev-rules
+description: Exit criteria checkers and worker routing table for the dev (implementation) phase. Consumed by orchestrator-dev.md to dispatch workers via select_worker.py and evaluate phase transition gates (check_all_impl_tasks_terminal, check_all_deliveries_qa_ready, check_no_open_prohibitions). Not user-invocable — orchestrators call scripts directly.
+user-invocable: false
+---
+
 # phase-dev-rules
 
 Phase rules skill for the `dev` (implementation) phase.
@@ -7,17 +13,6 @@ Provides exit criteria checkers and worker routing table consumed by `orchestrat
 
 The orchestrator calls this skill's scripts directly. No inter-skill communication envelope needed.
 Every script returns a JSON object to stdout and exits 0 on success or 1 on error.
-
----
-
-## allowed-tools
-
-```
-Bash(python3 *)
-Read
-Glob
-Grep
-```
 
 ---
 
@@ -37,11 +32,16 @@ Grep
 Maps `task.type` + `stack` to worker sub-agent. Stack is resolved by `orchestrator-dev` from
 `handoff-manifest.yaml` before calling this script (Decision D2).
 
+For fullstack projects, orchestrator-dev spawns two planning tasks with explicit split stacks
+(`fullstack_be` and `fullstack_fe`) so both planners run in parallel.
+
 | task.type | stack | worker subagent_type |
 |-----------|-------|----------------------|
 | `planning` | `be` | `u-be-planner` |
 | `planning` | `fe` | `u-fe-planner` |
-| `planning` | `fullstack` | `u-be-planner` |
+| `planning` | `fullstack_be` | `u-be-planner` |
+| `planning` | `fullstack_fe` | `u-fe-planner` |
+| `planning` | `fullstack` | `u-be-planner` (legacy fallback) |
 | `impl` | `be` | `u-be-developer` |
 | `impl` | `fe` | `u-fe-developer` |
 | `impl` | `fullstack` | `u-be-developer` |
@@ -61,7 +61,7 @@ Returns the worker sub-agent name for a given task type and stack.
 ```bash
 python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
   --task-type <type> \
-  --stack <be|fe|fullstack>
+  --stack <be|fe|fullstack|fullstack_be|fullstack_fe>
 ```
 
 ### Output (exit 0)
@@ -70,7 +70,7 @@ python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
 {"worker": "u-be-developer", "task_type": "impl", "stack": "be", "phase": "dev"}
 ```
 
-### Error (exit 1)
+### Error (exit 1, stderr)
 
 ```json
 {"status": "error", "reason": "internal_error", "detail": "<message>"}
@@ -80,11 +80,12 @@ python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
 
 ## Exit criteria
 
-Three criteria must all be met before the dev phase can transition.
+All three criteria must be met before the dev phase can transition. DLQ tasks block transition —
+a task in DLQ represents a failure, not a completed deliverable.
 
 | Criterion | Script | Description |
 |-----------|--------|-------------|
-| `all_impl_tasks_terminal` | `scripts/check_all_impl_tasks_terminal.py` | All dev tasks in `completed` or `dlq` |
+| `all_impl_tasks_terminal` | `scripts/check_all_impl_tasks_terminal.py` | All dev tasks in `completed`; zero DLQ tasks |
 | `all_deliveries_qa_ready` | `scripts/check_all_deliveries_qa_ready.py` | Every `delivery.md` has `qa_ready: true` |
 | `no_open_prohibitions` | `scripts/check_no_open_prohibitions.py` | No `delivery.md` has a non-empty `prohibition_violations` list |
 
@@ -100,8 +101,8 @@ See `exit-criteria.json` for the machine-readable declaration.
 
 ## scripts/check_all_impl_tasks_terminal.py
 
-Criterion: every task in the `dev` phase has a terminal status (`completed` or `dlq`).
-Criterion is not met if there are no dev tasks (phase hasn't started).
+Criterion: every task in the `dev` phase has status `completed`. DLQ tasks block the criterion
+(a failed task is not a deliverable). Not met if there are no dev tasks.
 
 ```bash
 python3 .claude/skills/phase-dev-rules/scripts/check_all_impl_tasks_terminal.py
@@ -115,7 +116,9 @@ Output schema:
   "evidence": {
     "total": 10,
     "terminal": 10,
-    "non_terminal": []
+    "non_terminal": [],
+    "dlq": [],
+    "dlq_blocks_criterion": false
   }
 }
 ```

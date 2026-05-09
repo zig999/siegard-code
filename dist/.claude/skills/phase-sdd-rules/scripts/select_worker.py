@@ -21,6 +21,7 @@ PHASE_NAME = "sdd"
 DEFAULT_WORKER = "u-spec-writer"
 
 ROUTING_TABLE: dict[str, str] = {
+    "spec-triage": "u-spec-triage",
     "spec-writer": "u-spec-writer",
     "spec-reviewer": "u-spec-reviewer",
     "spec-back": "u-spec-back",

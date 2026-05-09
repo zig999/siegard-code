@@ -1,52 +1,102 @@
 #!/usr/bin/env python3
-"""Exit criterion: all test-phase tasks are in a terminal status (completed or dlq)."""
+"""
+check_all_test_tasks_terminal.py — Exit criterion: test / all_test_tasks_terminal.
+
+Criterion met when:
+  - At least one test-phase task exists
+  - Every test-phase task has status completed
+  - Zero DLQ tasks (a failed task is not a passing test run)
+
+Usage:
+    python3 .claude/skills/phase-test-rules/scripts/check_all_test_tasks_terminal.py
+
+Output (exit 0):
+    {"criterion": "all_test_tasks_terminal", "met": bool, "evidence": {...}}
+
+Output (exit 1, stderr):
+    {"status": "error", "reason": "<code>", "detail": "<message>"}
+"""
 import json
-import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "lib"))
+_CLAUDE_DIR = Path(__file__).resolve().parents[3]
+_LIB = _CLAUDE_DIR / "lib"
+sys.path.insert(0, str(_LIB))
 
-from orch_core import reduce_all, TaskStatus
+try:
+    from orch_core import TaskStatus, reduce_all
+except ImportError as exc:
+    print(json.dumps({
+        "status": "error",
+        "reason": "internal_error",
+        "detail": f"cannot import orch_core: {exc}",
+    }), file=sys.stderr)
+    sys.exit(1)
 
-TERMINAL = {TaskStatus.COMPLETED, TaskStatus.DLQ}
+CRITERION_ID = "all_test_tasks_terminal"
+PHASE_NAME = "test"
+TERMINAL = {TaskStatus.COMPLETED}
+DLQ_STATES = {TaskStatus.DLQ}
+
+
+def evaluate() -> dict:
+    state = reduce_all()
+    test_tasks = [t for t in state.tasks.values() if t.phase == PHASE_NAME]
+
+    if not test_tasks:
+        return {
+            "criterion": CRITERION_ID,
+            "met": False,
+            "evidence": {"total": 0, "terminal": 0, "non_terminal": [], "dlq": [], "dlq_blocks_criterion": False},
+        }
+
+    dlq_tasks = [
+        {"task_id": t.task_id, "status": t.status}
+        for t in test_tasks
+        if t.status in DLQ_STATES
+    ]
+    non_terminal = [
+        {"task_id": t.task_id, "status": t.status}
+        for t in test_tasks
+        if t.status not in TERMINAL and t.status not in DLQ_STATES
+    ]
+    terminal_count = len(test_tasks) - len(non_terminal) - len(dlq_tasks)
+
+    # DLQ is a terminal state — no further retries occur; check_all_tests_passed handles pass/fail.
+    met = len(non_terminal) == 0
+
+    return {
+        "criterion": CRITERION_ID,
+        "met": met,
+        "evidence": {
+            "total": len(test_tasks),
+            "terminal": terminal_count,
+            "non_terminal": non_terminal,
+            "dlq": dlq_tasks,
+            "dlq_blocks_criterion": len(dlq_tasks) > 0,
+        },
+    }
 
 
 def main() -> None:
-    orch_dir = os.path.join(os.environ.get("ORCH_PROJECT_DIR", "."), ".orch")
-    log_path = os.path.join(orch_dir, "log.jsonl")
-
-    if not os.path.exists(log_path):
-        print(json.dumps({"status": "error", "reason": "log_missing", "detail": log_path}))
-        sys.exit(1)
-
-    state = reduce_all()
-    test_tasks = [t for t in state.tasks.values() if t.phase == "test"]
-
-    if not test_tasks:
-        print(json.dumps({
-            "criterion": "all_test_tasks_terminal",
-            "met": False,
-            "evidence": {"total": 0, "terminal": 0, "non_terminal": []},
-        }))
-        sys.exit(0)
-
-    non_terminal = [t.task_id for t in test_tasks if t.status not in TERMINAL]
-
-    print(json.dumps({
-        "criterion": "all_test_tasks_terminal",
-        "met": len(non_terminal) == 0,
-        "evidence": {
-            "total": len(test_tasks),
-            "terminal": len(test_tasks) - len(non_terminal),
-            "non_terminal": non_terminal,
-        },
-    }))
-    sys.exit(0)
+    print(json.dumps(evaluate()))
 
 
 if __name__ == "__main__":
     try:
         main()
+    except FileNotFoundError:
+        print(json.dumps({
+            "status": "error",
+            "reason": "log_missing",
+            "detail": "orchestration log not found — run orchestrator first",
+        }), file=sys.stderr)
+        sys.exit(1)
     except Exception as exc:
-        print(json.dumps({"status": "error", "reason": "internal_error", "detail": str(exc)}))
+        print(json.dumps({
+            "status": "error",
+            "reason": "internal_error",
+            "detail": str(exc),
+        }), file=sys.stderr)
         sys.exit(1)

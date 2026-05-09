@@ -172,12 +172,53 @@ def check_claude_code_version() -> CheckResult:
     return _timed(_run)
 
 
+def check_agent_references() -> CheckResult:
+    """Validates all worker names referenced in select_worker.py scripts exist as agent files."""
+    def _run() -> CheckResult:
+        agents_dir = _DIST_DIR / "agents"
+        skills_dir = _DIST_DIR / "skills"
+        if not agents_dir.exists():
+            return CheckResult(ok=False, reason=f"agents/ directory not found at {agents_dir}")
+
+        missing: list[str] = []
+        checked: list[str] = []
+
+        for script in sorted(skills_dir.glob("phase-*/scripts/select_worker.py")):
+            try:
+                content = script.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            names = re.findall(r'"(u-[a-z][a-z0-9\-]+)"', content)
+            for name in sorted(set(names)):
+                if name in checked:
+                    continue
+                checked.append(name)
+                matches = list(agents_dir.rglob(f"{name}.md"))
+                if not matches:
+                    rel = str(script.relative_to(_DIST_DIR))
+                    missing.append(f"{rel}: agent '{name}' not found in agents/")
+
+        if missing:
+            return CheckResult(
+                ok=False,
+                reason=f"{len(missing)} unresolved agent reference(s)",
+                detail={"missing": missing},
+            )
+        return CheckResult(
+            ok=True,
+            reason=f"all agent references resolved ({len(checked)} checked)",
+            detail={"checked": checked},
+        )
+    return _timed(_run)
+
+
 LOCAL_CHECKS: list[tuple[str, Callable[[], CheckResult]]] = [
     ("python_version", check_python_version),
     ("flock_works", check_flock_works),
     ("filesystem_writable", check_filesystem_writable),
     ("claude_code_installed", check_claude_code_installed),
     ("claude_code_version", check_claude_code_version),
+    ("agent_references", check_agent_references),
 ]
 
 

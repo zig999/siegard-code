@@ -178,6 +178,6 @@ Activated by the Orchestrator from the 2nd invocation of this agent in the same 
 In short mode, the Orchestrator passes a compact reminder instead of the full skill. The reminder must include:
 1. Test command from `CLAUDE.md` (e.g., `npm test`)
 2. Acceptance criteria list from the Task Contract
-3. Verdict format: `approved | rejected | approved_with_reservations`
+3. Verdict format: `approved | rejected`
 
 Full skill re-read is skipped — agent relies on established standards from the first invocation.

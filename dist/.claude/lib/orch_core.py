@@ -183,9 +183,9 @@ def canonical_json(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 
 class EventType(str, Enum):
-    """Canonical event types. 22 total."""
+    """Canonical event types. 27 total."""
 
-    # Task lifecycle (8)
+    # Task lifecycle (9)
     TASK_CREATED = "task_created"
     TASK_CLAIMED = "task_claimed"
     TASK_PROGRESS = "task_progress"
@@ -194,6 +194,9 @@ class EventType(str, Enum):
     TASK_SCHEDULED_RETRY = "task_scheduled_retry"
     TASK_RETRIED = "task_retried"
     TASK_DLQ = "task_dlq"
+    # TASK_SKIPPED: emitted when an orchestrator skips a step in a restricted mode
+    # (e.g., implementation_only or targeted). Required by DECLARATIVE_TRUNCATION.
+    TASK_SKIPPED = "task_skipped"
 
     # Phase lifecycle (7)
     PHASE_DECLARED = "phase_declared"
@@ -209,13 +212,27 @@ class EventType(str, Enum):
     # completes, closing the spec_change_status loop in improve-scope.json.
     SPEC_PIPELINE_RETURN = "spec_pipeline_return"
 
-    # Management and operations (6)
+    # Dispatch governance (3)
+    # DISPATCH_DECISION: emitted by an orchestrator before each batch of task_claimed
+    # events; captures batch members, rationale, and applied constraints.
+    # CONTEXT_BUDGET_EVALUATED: emitted before spawning a worker; records estimated
+    # context size and any mitigation applied (split, summarize) per WORKER_CONTEXT_BUDGET.
+    # OPERATION_MODE_DECLARED: emitted by an orchestrator before any worker spawn,
+    # declaring the operation mode for the current invocation per ORCHESTRATOR_AUTHORITY.
+    DISPATCH_DECISION = "dispatch_decision"
+    CONTEXT_BUDGET_EVALUATED = "context_budget_evaluated"
+    OPERATION_MODE_DECLARED = "operation_mode_declared"
+
+    # Management and operations (7)
     CIRCUIT_BREAKER_TRIPPED = "circuit_breaker_tripped"
     ESCALATION = "escalation"
     HUMAN_RESPONSE = "human_response"
     SNAPSHOT = "snapshot"
     LOG_RECOVERED = "log_recovered"
     PREFLIGHT_FAILED = "preflight_failed"
+    # Emitted by the orchestrator at the start of each dispatch loop iteration.
+    # Used by on_stop.py to detect a stale orchestrator (alive but not making progress).
+    ORCHESTRATOR_HEARTBEAT = "orchestrator_heartbeat"
 
     @classmethod
     def is_worker_emittable(cls, event_type: str) -> bool:
@@ -251,14 +268,16 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     SCHEDULED = "scheduled"
     COMPLETED = "completed"
+    SKIPPED = "skipped"
     FAILED = "failed"
     DLQ = "dlq"
     CANCELLED = "cancelled"
 
     @classmethod
     def is_terminal(cls, status: str) -> bool:
+        # SKIPPED is terminal for dependency evaluation per STEP_DEPENDENCIES principle.
         # CANCELLED is reserved for future use; no handler produces it yet.
-        return status in {cls.COMPLETED.value, cls.DLQ.value}
+        return status in {cls.COMPLETED.value, cls.SKIPPED.value, cls.DLQ.value}
 
 
 class PhaseStatus(str, Enum):
@@ -366,6 +385,7 @@ _TASK_EVENTS = {
     EventType.TASK_SCHEDULED_RETRY.value,
     EventType.TASK_RETRIED.value,
     EventType.TASK_DLQ.value,
+    EventType.TASK_SKIPPED.value,
 }
 
 _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
@@ -377,6 +397,8 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.TASK_SCHEDULED_RETRY.value:      {"phase", "next_retry_at", "backoff_seconds", "previous_failure_seq"},
     EventType.TASK_RETRIED.value:              {"phase", "previous_attempt", "scheduled_retry_seq"},
     EventType.TASK_DLQ.value:                  {"phase", "reason", "last_error"},
+    EventType.TASK_SKIPPED.value:              {"phase", "reason"},
+    EventType.OPERATION_MODE_DECLARED.value:   {"phase", "mode"},
     EventType.PHASE_DECLARED.value:            {"workflow_id", "phases"},
     EventType.PHASE_ENTERED.value:             {"phase", "order"},
     EventType.PHASE_EXIT_CRITERION_MET.value:  {"phase", "criterion"},
@@ -394,6 +416,37 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
 
 _VALID_TIERS: frozenset[str] = frozenset(t.value for t in Tier)
 
+# Closed enumeration of structured failure/skip reason codes used by orchestrators
+# and workers. Per STRUCTURED_FAILURE_STATES principle: free-form strings are not
+# permitted; reasons must come from this set.
+_VALID_FAILURE_REASONS: frozenset[str] = frozenset({
+    # Orchestrator-emitted (synthesis or cascade)
+    "worker_exited_without_terminal",
+    "cascade_from_dep",
+    "max_attempts_exceeded",
+    "non_retryable",
+    "select_worker_failed",
+    "context_budget_exceeded",
+    "stale_timeout",
+    "delivery_artifact_missing",
+    # Worker-emitted (structural / input)
+    "missing_input_spec_files",
+    "schema_violation",
+    "validation_failed",
+    "requirement_missing",
+    "improve_scope_missing",
+    "internal_error",
+    # Planner-emitted (handoff-driven control flow)
+    "dev_impact:stop_domain_task_contracts",
+})
+
+# Closed enumeration of skip reason codes (DECLARATIVE_TRUNCATION).
+_VALID_SKIP_REASONS: frozenset[str] = frozenset({
+    "implementation_only_no_spec_change",
+    "targeted_mode_step_not_in_scope",
+    "phase_short_circuit",
+})
+
 
 def _validate_event_data(event_type: str, data: dict[str, Any]) -> None:
     """Validates required fields in event data. Raises EventValidationError."""
@@ -410,6 +463,20 @@ def _validate_event_data(event_type: str, data: dict[str, Any]) -> None:
         if tier is not None and tier not in _VALID_TIERS:
             raise EventValidationError(
                 f"task_created: tier {tier!r} must be one of {sorted(_VALID_TIERS)}"
+            )
+    if event_type in (EventType.TASK_FAILED.value, EventType.TASK_DLQ.value):
+        reason = data.get("reason")
+        if reason is not None and reason not in _VALID_FAILURE_REASONS:
+            raise EventValidationError(
+                f"{event_type}: reason {reason!r} must be one of "
+                f"{sorted(_VALID_FAILURE_REASONS)}"
+            )
+    if event_type == EventType.TASK_SKIPPED.value:
+        reason = data.get("reason")
+        if reason is not None and reason not in _VALID_SKIP_REASONS:
+            raise EventValidationError(
+                f"task_skipped: reason {reason!r} must be one of "
+                f"{sorted(_VALID_SKIP_REASONS)}"
             )
 
 
@@ -1118,10 +1185,14 @@ class OrchState:
 # ---------------------------------------------------------------------------
 
 def _deps_complete(task: TaskState, state: OrchState) -> bool:
-    """Returns True if all deps are completed. Returns False for missing or non-terminal deps."""
+    """Returns True if all deps are in a terminal-acceptable state for promotion.
+
+    Per STEP_DEPENDENCIES principle, both COMPLETED and SKIPPED are valid terminal
+    states for dependency evaluation. Returns False for missing, DLQ, or non-terminal deps.
+    """
     return all(
         state.tasks.get(dep_id) is not None
-        and state.tasks[dep_id].status == TaskStatus.COMPLETED
+        and state.tasks[dep_id].status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)
         for dep_id in task.deps
     )
 
@@ -1281,7 +1352,7 @@ def _handle_task_completed(state: OrchState, event: Event) -> None:
     task = state.tasks[task_id]
     # C2: Idempotency — if already terminal, no-op. Prevents TOCTOU duplicate from
     # on_subagent_stop hook and orchestrator Step 6.4 racing on the same task.
-    if task.status in (TaskStatus.COMPLETED, TaskStatus.DLQ):
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.DLQ):
         return
     if task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
@@ -1292,6 +1363,28 @@ def _handle_task_completed(state: OrchState, event: Event) -> None:
     artifacts = event.data.get("artifacts", [])
     if artifacts:
         task.artifacts.extend(artifacts)
+    task.evidence.append(event.seq)
+    _promote_pending_tasks(state)
+
+
+def _handle_task_skipped(state: OrchState, event: Event) -> None:
+    """Task is declared skipped by the orchestrator (DECLARATIVE_TRUNCATION).
+
+    Skipped is terminal for dependency evaluation; downstream tasks may proceed.
+    Allowed source statuses: PENDING, READY (task was created but not yet dispatched).
+    """
+    task_id = event.task_id
+    if task_id is None or task_id not in state.tasks:
+        return
+    task = state.tasks[task_id]
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.DLQ):
+        return
+    if task.status not in (TaskStatus.PENDING, TaskStatus.READY):
+        raise IllegalTransition(
+            f"task_skipped: task {task_id!r} is {task.status!r}, expected pending or ready"
+        )
+    task.status = TaskStatus.SKIPPED
+    task.last_event_at = event.ts
     task.evidence.append(event.seq)
     _promote_pending_tasks(state)
 
@@ -1400,6 +1493,7 @@ _HANDLERS: dict[str, Any] = {
     EventType.TASK_CREATED: _handle_task_created,
     EventType.TASK_CLAIMED: _handle_task_claimed,
     EventType.TASK_COMPLETED: _handle_task_completed,
+    EventType.TASK_SKIPPED: _handle_task_skipped,
     EventType.TASK_FAILED: _handle_task_failed,
     EventType.TASK_SCHEDULED_RETRY: _handle_task_scheduled_retry,
     EventType.TASK_RETRIED: _handle_task_retried,
@@ -2234,4 +2328,13 @@ __all__ = [
     "get_active_workers",
     # Report validation
     "validate_orchestrator_report",
+    # Failure / skip reason enumerations
+    "VALID_FAILURE_REASONS",
+    "VALID_SKIP_REASONS",
 ]
+
+
+# Public aliases — orchestrators and workers should reference these to stay in sync
+# with the validator. Adding a new reason: update the frozenset above.
+VALID_FAILURE_REASONS: frozenset[str] = _VALID_FAILURE_REASONS
+VALID_SKIP_REASONS: frozenset[str] = _VALID_SKIP_REASONS

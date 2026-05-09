@@ -21,22 +21,24 @@ import sys
 
 PHASE_NAME = "dev"
 DEFAULT_WORKER = "u-be-developer"
-VALID_STACKS = {"be", "fe", "fullstack"}
+VALID_STACKS = {"be", "fe", "fullstack", "fullstack_be", "fullstack_fe"}
 
-# (task_type, stack) → worker. Missing stack falls back to "be".
-# NOTE: "fullstack" routes to BE workers by design — the dev phase processes one stack
-# per invocation. For fullstack projects, run the dev phase twice: first with stack=be,
-# then with stack=fe. The orchestrator-dev derives the stack from handoff-manifest.yaml.
+# (task_type, stack) → worker.
+# For fullstack projects, orchestrator-dev spawns two planning tasks with explicit split
+# stacks (fullstack_be and fullstack_fe) so both planners run in parallel. The legacy
+# "fullstack" key is kept as a safe fallback for resume cycles on pre-existing sessions.
 ROUTING_TABLE: dict[tuple[str, str], str] = {
-    ("planning", "be"):        "u-be-planner",
-    ("planning", "fe"):        "u-fe-planner",
-    ("planning", "fullstack"): "u-be-planner",
-    ("impl", "be"):            "u-be-developer",
-    ("impl", "fe"):            "u-fe-developer",
-    ("impl", "fullstack"):     "u-be-developer",
-    ("spec", "be"):            "u-be-developer",
-    ("spec", "fe"):            "u-fe-spec-writer",
-    ("spec", "fullstack"):     "u-fe-spec-writer",
+    ("planning", "be"):           "u-be-planner",
+    ("planning", "fe"):           "u-fe-planner",
+    ("planning", "fullstack_be"): "u-be-planner",
+    ("planning", "fullstack_fe"): "u-fe-planner",
+    ("planning", "fullstack"):    "u-be-planner",   # legacy fallback only
+    ("impl", "be"):               "u-be-developer",
+    ("impl", "fe"):               "u-fe-developer",
+    ("impl", "fullstack"):        "u-be-developer",
+    ("spec", "be"):               "u-be-developer",
+    ("spec", "fe"):               "u-fe-spec-writer",
+    ("spec", "fullstack"):        "u-fe-spec-writer",
 }
 
 

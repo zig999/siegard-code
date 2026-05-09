@@ -13,19 +13,18 @@ Environment:
     ORCH_PROJECT_DIR  — project root (default: .)
     SPECS_DIR         — specs directory, relative to ORCH_PROJECT_DIR (default: specs)
 
-Output (exit 0):
-    {"criterion": "all_domains_validated", "met": bool, "evidence": {...}}
-
-Output (exit 1):
-    {"status": "error", "reason": "<code>", "detail": "<message>"}
+Output (exit 0 when status=ok, exit 1 when status=blocked):
+    {"status": "ok" | "blocked", "check": "all_domains_validated",
+     "timestamp": "<ISO-8601>", "evidence": {...}}
 """
 import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-CRITERION_ID = "all_domains_validated"
+CHECK_ID = "all_domains_validated"
 
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 _SPECS_DIR = _PROJECT_DIR / os.environ.get("SPECS_DIR", "specs")
@@ -34,11 +33,18 @@ _VALIDATION_DIR = _SPECS_DIR / "_validation"
 _STATUS_RE = re.compile(r"^\s*[Ss]tatus\s*:\s*(\S+)", re.MULTILINE)
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def evaluate() -> dict:
     if not _VALIDATION_DIR.exists():
         return {
-            "criterion": CRITERION_ID,
+            "status": "blocked",
+            "check": CHECK_ID,
+            "criterion": CHECK_ID,
             "met": False,
+            "timestamp": _now_iso(),
             "evidence": {
                 "validation_dir": str(_VALIDATION_DIR),
                 "exists": False,
@@ -52,8 +58,11 @@ def evaluate() -> dict:
 
     if not files:
         return {
-            "criterion": CRITERION_ID,
+            "status": "blocked",
+            "check": CHECK_ID,
+            "criterion": CHECK_ID,
             "met": False,
+            "timestamp": _now_iso(),
             "evidence": {
                 "validation_dir": str(_VALIDATION_DIR),
                 "exists": True,
@@ -81,9 +90,13 @@ def evaluate() -> dict:
         else:
             passing_count += 1
 
+    met = len(failing) == 0
     return {
-        "criterion": CRITERION_ID,
-        "met": len(failing) == 0,
+        "status": "ok" if met else "blocked",
+        "check": CHECK_ID,
+        "criterion": CHECK_ID,
+        "met": met,
+        "timestamp": _now_iso(),
         "evidence": {
             "validation_dir": str(_VALIDATION_DIR),
             "exists": True,
@@ -94,17 +107,20 @@ def evaluate() -> dict:
     }
 
 
-def main() -> None:
-    print(json.dumps(evaluate()))
+def main() -> int:
+    result = evaluate()
+    print(json.dumps(result))
+    return 0 if result["status"] == "ok" else 1
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except Exception as exc:
         print(json.dumps({
-            "status": "error",
-            "reason": "internal_error",
-            "detail": str(exc),
+            "status": "blocked",
+            "check": CHECK_ID,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "evidence": {"error": "internal_error", "detail": str(exc)},
         }), file=sys.stderr)
         sys.exit(1)

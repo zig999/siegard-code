@@ -19,14 +19,13 @@ frontmatter:
 
     verdict:
       type: string
-      enum: [approved, approved_with_reservations, rejected]
+      enum: [approved, rejected]
       description: >
         Overall QA verdict for this task.
-        - approved: all acceptance criteria met, no blocking issues
-        - approved_with_reservations: minor issues noted but does not block delivery
-        - rejected: blocking issues found; task must be reworked
+        - approved: all acceptance criteria met; no critical or high findings (low/medium findings are recorded but do not block)
+        - rejected: at least one critical or high finding; task must be reworked
         Checked by regex: ^\s*verdict\s*:\s*(\S+)
-        Values checked against: {approved, approved_with_reservations}
+        Values checked against: {approved}
 
     documentation_verified:
       type: boolean

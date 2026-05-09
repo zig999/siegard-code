@@ -14,16 +14,24 @@ Usage:
 Environment:
     ORCH_PROJECT_DIR  — project root used to resolve artifact paths (default: .)
 
-Output (exit 0):
-    {"criterion": "all_deliveries_qa_ready", "met": bool, "evidence": {...}}
+Output schema (per GATE_SCHEMA_UNIFORMITY in specs/principles.md):
+  Always emits {status, check, timestamp} for uniform gate consumption.
+  Legacy fields {criterion, met, evidence} preserved for orchestrator-dev compatibility.
 
-Output (exit 1):
+Output (exit 0 when met):
+    {"status": "ok", "check": "all_deliveries_qa_ready", "timestamp": "<ISO8601>",
+     "criterion": "all_deliveries_qa_ready", "met": true, "evidence": {...}}
+
+Output (exit 1 when blocked or error):
+    {"status": "blocked", "check": "all_deliveries_qa_ready", "timestamp": "<ISO8601>",
+     "criterion": "all_deliveries_qa_ready", "met": false, "evidence": {...}}
     {"status": "error", "reason": "<code>", "detail": "<message>"}
 """
 import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _CLAUDE_DIR = Path(__file__).resolve().parents[3]
@@ -64,9 +72,13 @@ def _collect_delivery_paths(state) -> list[str]:
 def evaluate() -> dict:
     state = reduce_all()
     delivery_paths = _collect_delivery_paths(state)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     if not delivery_paths:
         return {
+            "status": "blocked",
+            "check": CRITERION_ID,
+            "timestamp": timestamp,
             "criterion": CRITERION_ID,
             "met": False,
             "evidence": {"total": 0, "ready": 0, "not_ready": []},
@@ -91,9 +103,13 @@ def evaluate() -> dict:
         else:
             not_ready.append({"artifact": rel_path, "reason": "qa_ready_not_true"})
 
+    met = len(not_ready) == 0
     return {
+        "status": "ok" if met else "blocked",
+        "check": CRITERION_ID,
+        "timestamp": timestamp,
         "criterion": CRITERION_ID,
-        "met": len(not_ready) == 0,
+        "met": met,
         "evidence": {
             "total": len(delivery_paths),
             "ready": ready_count,
@@ -103,7 +119,10 @@ def evaluate() -> dict:
 
 
 def main() -> None:
-    print(json.dumps(evaluate()))
+    result = evaluate()
+    print(json.dumps(result))
+    if result.get("status") == "blocked":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

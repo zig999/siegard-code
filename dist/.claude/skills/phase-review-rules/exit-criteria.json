@@ -4,7 +4,7 @@
   "criteria": [
     {
       "id": "all_qa_verdicts_approved",
-      "description": "Every QA verdict artifact from completed review tasks has verdict: approved or approved_with_reservations",
+      "description": "Every QA verdict artifact from completed review tasks has verdict: approved",
       "script": "scripts/check_all_qa_verdicts_approved.py",
       "required": true,
       "blocking": true

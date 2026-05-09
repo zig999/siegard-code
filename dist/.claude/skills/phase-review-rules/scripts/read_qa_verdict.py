@@ -12,7 +12,7 @@ Usage:
 
 Output (exit 0):
     JSON array: [{"artifact": "<path>", "verdict": "<verdict>"}, ...]
-    verdict values: approved | approved_with_reservations | rejected | file_not_found | unknown
+    verdict values: approved | rejected | file_not_found | unknown
 
 Output (exit 1):
     {"status": "error", "reason": "internal_error", "detail": "<message>"}
@@ -24,7 +24,7 @@ import re
 import sys
 from pathlib import Path
 
-VALID_VERDICTS = {"approved", "approved_with_reservations", "rejected"}
+VALID_VERDICTS = {"approved", "rejected"}
 
 
 def read_verdict(path: Path) -> str:

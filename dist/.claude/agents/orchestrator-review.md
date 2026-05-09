@@ -35,6 +35,9 @@ You are spawned by the meta-orchestrator with these inputs (read from the invoca
 | `current_phase` | string | Must be `"review"` |
 | `log_seq_at_spawn` | int | Log seq at spawn time — if > 0, skip infra checks |
 | `workflow_id` | string | Workflow identifier |
+| `ORCH_PROJECT_DIR` | string | Absolute path to the target project root |
+| `SPECS_DIR` | string | Path to the specs directory (relative to project root or absolute) |
+| `SESSION_DIR` | string | Absolute path to the workflow session directory (typically `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>`); workers anchor every artifact (qa/, reviews/) to this path |
 | `nesting_depth` | int | Agent nesting depth (meta-orchestrator passes `1`); refuse dispatch if ≥ 3 |
 
 You return exactly one JSON envelope when done (see §Return contract).
@@ -52,7 +55,7 @@ You return exactly one JSON envelope when done (see §Return contract).
 | I5 | Always emit `task_claimed` before spawning a worker. |
 | I6 | Never emit `task_progress`, `task_completed`, or `task_failed` — worker-only events. |
 | I7 | Never emit `phase_entered` — emitted by meta-orchestrator. |
-| I8 | Human approval is mandatory before any phase transition. |
+| I8 | Human approval is mandatory before any phase transition. The orchestrator MAY synthesize an `auto_approved: true` `human_response` only when (a) Step 5.0 strict gate qualifies and (b) an `E18_auto_approval_granted` escalation was emitted first in the same workflow. Any other auto-emission of `human_response` is forbidden. |
 | I9 | One review task per dev `task_completed` event. Never duplicate. |
 
 ---
@@ -95,6 +98,9 @@ You return exactly one JSON envelope when done (see §Return contract).
 # The meta-orchestrator passes ORCH_PROJECT_DIR explicitly to guarantee the correct project root.
 export ORCH_PROJECT_DIR="<ORCH_PROJECT_DIR from spawn prompt inputs — the absolute project path>"
 export ORCH_DIR="${ORCH_PROJECT_DIR}/.orch"
+# SESSION_DIR is the workflow session root. Workers anchor all output artifacts (qa/, reviews/)
+# to this path; it MUST be propagated to every worker spawn (Step 4.3).
+export SESSION_DIR="<SESSION_DIR from spawn prompt inputs — typically ${ORCH_DIR}/sessions/<workflow_id>>"
 ```
 
 **Nesting depth guard:** if `nesting_depth >= 3`:
@@ -145,6 +151,17 @@ Extract:
 - `last_seq`: highest seq in state
 
 **Context discipline:** After extracting the three variables above, do NOT retain the full `reduce.py` output in your working context. Discard the raw JSON. Only the extracted fields are needed for subsequent steps — holding the full state amplifies context usage and increases the risk of context overflow before any QA worker is dispatched.
+
+**Operation mode declaration (mandatory — required by `ORCHESTRATOR_AUTHORITY` invariant):**
+
+The review phase has a single operation mode (`full`). Per `principles.md` `ORCHESTRATOR_AUTHORITY`, the mode MUST be declared in the log before any worker is spawned. Skip if a `mode_declared` event already exists for this phase in the log (idempotency).
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type mode_declared \
+  --data '{"phase":"review","mode":"full","rationale":"review phase has a single mode (full QA review); declared once per phase entry"}'
+```
 
 ---
 
@@ -197,17 +214,40 @@ For each `dev_completed_task` in `dev_completed_tasks`:
 
 For each new task to create:
 
-Extract `delivery_path` from `dev_completed_task.artifacts` (first artifact whose name contains "delivery"):
+Extract `delivery_path` from `dev_completed_task.artifacts` (first artifact whose name contains "delivery").
+
+**Classify qa_mode (mandatory):**
+
+Run the classifier once per new task to derive `qa_mode` and `concurrency_hint`. Inputs come from the workflow context already resolved in Step 2:
+
+- `workflow_type` — read from `<session_dir>/improve-scope.json` (`type`, mapped: `implementation_only|spec_change_required` → `improve`, else `standard`); fall back to `unknown` if neither exists.
+- `dev_impact` — from the parsed handoff manifest (Step 2 result).
+- `changed_files_count` — `len(changed_files)` from the same parse, or `-1` to let the classifier derive from the delivery body.
+- `tc_type` — read from the Task Contract block in `backlog.md` for this `dev_task_id` (field: `Type`); pass `unknown` if not resolvable in this invocation.
+
+```bash
+python3 .claude/skills/phase-review-rules/scripts/classify_qa_mode.py \
+  --workflow-type "<improve|standard|reverse-spec|unknown>" \
+  --dev-impact "<narrow|moderate|wide|unknown>" \
+  --changed-files-count <int> \
+  --tc-type "<Bugfix|Refactoring|Enhancement|NewFeature|unknown>" \
+  --delivery-path "<delivery_path>" \
+  --project-dir "$ORCH_PROJECT_DIR"
+```
+
+Parse `qa_mode`, `concurrency_hint`, `rationale` from the JSON output. If the script fails (exit 1), default to `qa_mode="standard"`, `concurrency_hint=3` and emit a warning escalation `E19_qa_mode_classifier_failed` (severity: warning) — do NOT abort the phase over a classification failure.
+
+Then emit `task_created`:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type task_created \
   --task-id review_{dev_task_id} \
-  --data '{"phase":"review","deps":[],"tier":"standard","type":"qa","spec":"<delivery_path>","stack":"<stack>"}'
+  --data '{"phase":"review","deps":[],"tier":"standard","type":"qa","spec":"<delivery_path>","stack":"<stack>","qa_mode":"<mode>","concurrency_hint":<int>,"qa_mode_rationale":"<rationale>"}'
 ```
 
-The `stack` field is carried forward from the handoff-manifest (detected in Step 2) so that `select_worker.py` can route QA tasks to the correct agent (`u-be-qa-docs` vs `u-fe-qa-docs`) without replaying the log.
+The `stack` field is carried forward from the handoff-manifest (detected in Step 2) so that `select_worker.py` can route QA tasks to the correct agent (`u-be-qa-docs` vs `u-fe-qa-docs`) without replaying the log. The `qa_mode` and `concurrency_hint` fields are read by Step 4.1 (dynamic concurrency) and Step 5.0 (auto-approval gate).
 
 If no dev completed tasks have delivery artifacts:
 ```json
@@ -216,6 +256,145 @@ If no dev completed tasks have delivery artifacts:
 Stop.
 
 Re-read state after all `task_created` events.
+
+---
+
+### Step 3.5 — Shared suite run (opt-in: `SHARED_SUITE_RUN=1`)
+
+> Activated only when env `SHARED_SUITE_RUN=1` is exported. Otherwise this entire step is skipped — workers run build + tests locally (legacy Phase 1 in `u-be-qa-docs.md` / `u-fe-qa-docs.md`).
+
+> The shared suite run executes the project's build and test commands ONCE per round and writes a structured manifest with per-TC failure attribution. QA workers consume the attribution slice instead of re-running the suite. Project's `CLAUDE.md` must declare a test command that emits JSON (e.g., `npx vitest run --reporter=json`, `npx jest --json`) for attribution to work; otherwise the parser falls back to degraded mode and workers must fall back to legacy.
+
+#### 3.5.1 — Gate
+
+```bash
+if [ "${SHARED_SUITE_RUN:-0}" != "1" ]; then
+  : "shared suite run disabled — proceed to Step 4 (legacy local test-gate)"
+fi
+```
+
+If gate inactive: skip the rest of Step 3.5 and go to Step 4. The activation prompt in Step 4.3 must NOT include the `Suite run mode:` lines.
+
+#### 3.5.2 — Build the deliveries map
+
+For every active review task (`status ∈ {ready, scheduled, running}`), look up the matching dev `task_completed` event in the log and extract its delivery artifact path (same `task.spec` used in Step 3). Build the JSON list:
+
+```json
+[
+  {"task_id":"<review_task_id>","attempts":<task.attempts>,"delivery_path":"<task.spec>"},
+  ...
+]
+```
+
+Store as `DELIVERIES_JSON` for the script calls below.
+
+#### 3.5.3 — Check freshness
+
+```bash
+python3 .claude/skills/phase-review-rules/scripts/check_suite_freshness.py \
+  --session-dir "$SESSION_DIR" \
+  --project-dir "$ORCH_PROJECT_DIR" \
+  --tasks "$DELIVERIES_JSON"
+```
+
+Parse `fresh`, `current_sr_id`, `next_sr_id`, `signature` from the output.
+
+- `fresh == true` → reuse: set `current_sr_id` for Step 4.3, jump to §3.5.6 (still must check build state in case the previous run failed).
+- `fresh == false` → continue to §3.5.4 with `next_sr_id` as the run identifier.
+
+#### 3.5.4 — Run the suite
+
+Read from project's `CLAUDE.md`:
+- `build_command` (optional — empty string skips build)
+- `test_command` (required; must emit JSON to stdout)
+
+Emit `suite_run_started` (use `current_sr_id` if fresh, else `next_sr_id`):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type suite_run_started \
+  --data '{"suite_run_id":"<sr_id>","round":<round>,"signature":"<signature>","tc_ids_covered":[<tc_ids>],"phase":"review"}'
+```
+
+Run the suite:
+
+```bash
+SR_DIR="$SESSION_DIR/qa/_suite-run/<sr_id>"
+mkdir -p "$SR_DIR"
+python3 .claude/skills/phase-review-rules/scripts/run_suite.py \
+  --suite-run-dir "$SR_DIR" \
+  --project-dir "$ORCH_PROJECT_DIR" \
+  --suite-run-id "<sr_id>" \
+  --workflow-id "<workflow_id>" \
+  --round <round> \
+  --tc-ids "<comma_separated_tc_ids>" \
+  --signature "<signature>" \
+  --trigger-seq <last_seq> \
+  --build-cmd "<build_cmd>" \
+  --test-cmd "<test_cmd>" \
+  --framework auto
+```
+
+`<round>` is `max(task.attempts)` across active review tasks (default 1 on round 1).
+
+#### 3.5.5 — Attribute failures and flip the pointer
+
+```bash
+python3 .claude/skills/phase-review-rules/scripts/attribute_failures.py \
+  --suite-run-dir "$SR_DIR" \
+  --project-dir "$ORCH_PROJECT_DIR" \
+  --deliveries "$DELIVERIES_JSON"
+```
+
+Atomic pointer flip (POSIX `mv` and Windows `move` are atomic on same filesystem):
+
+```bash
+echo "<sr_id>" > "$SESSION_DIR/qa/_suite-run/.current.txt.tmp"
+mv "$SESSION_DIR/qa/_suite-run/.current.txt.tmp" "$SESSION_DIR/qa/_suite-run/current.txt"
+```
+
+Emit `suite_run_completed`:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type suite_run_completed \
+  --data '{"suite_run_id":"<sr_id>","build":{"result":"<passed|failed|skipped>","duration_s":<n>},"tests":{"result":"<passed|failed|degraded>","summary":<obj>,"duration_s":<n>},"attribution":{"unattributed_test_failures":<n>,"unattributed_build_errors":<n>},"manifest_path":".orch/sessions/<wf>/qa/_suite-run/<sr_id>/manifest.json","phase":"review"}'
+```
+
+Set `CURRENT_SR_ID = <sr_id>` for Step 4.3.
+
+#### 3.5.6 — Build-failure short-circuit
+
+Read `manifest.build.result` from `$SESSION_DIR/qa/_suite-run/$CURRENT_SR_ID/manifest.json`. If `"failed"`:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E16_shared_build_failure","severity":"critical","reason":"shared build failed under SHARED_SUITE_RUN — review cannot dispatch QA until build is green. See manifest.build.errors for diagnostics.","evidence":[<suite_run_completed seq>],"suggested_actions":["fix build errors listed in manifest.build.errors","re-invoke orchestrator-review after the fix","or return active TCs to dev via human_response action: return_to_dev"]}'
+```
+
+Output:
+```json
+{"status":"blocked","last_seq":<last_seq>,"summary":"shared_build_failure — see manifest.build.errors"}
+```
+
+Stop. Do NOT proceed to Step 4.
+
+#### 3.5.7 — Degraded-parser fallback
+
+If `manifest.tests.result == "degraded"` (parser could not understand the runner output): treat the activation prompt as if `SHARED_SUITE_RUN=0` for this invocation — workers fall back to legacy local test-gate. The manifest still exists for human inspection. Emit a one-line warning escalation (severity: `warning`) and continue to Step 4 in legacy mode.
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E17_suite_parser_degraded","severity":"warning","reason":"shared suite run completed but parser could not extract failures (framework not supported or non-JSON output) — workers will fall back to local test-gate this round","evidence":[<suite_run_completed seq>],"suggested_actions":["ensure CLAUDE.md test_command emits JSON (vitest --reporter=json or jest --json)","update parse_test_output.py to support the project's framework"]}'
+```
+
+When fallback is active, the activation prompt in Step 4.3 must NOT inject the `Suite run mode: shared` lines.
 
 ---
 
@@ -265,9 +444,34 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 Re-read state after all syntheses.
 
-#### 4.1 — Select batch
+#### 4.1 — Select batch (dynamic concurrency by qa_mode)
 
-Up to 2 tasks from ready queue (tier priority, then creation seq).
+Order ready tasks by tier priority, then creation seq. Compute `max_concurrent` from the modes present in the ready queue:
+
+| qa_mode of leading task | max_concurrent |
+|---|---|
+| `micro` | 5 |
+| `standard` | 3 |
+| `full` | 2 |
+| missing / unknown | 2 |
+
+When the ready queue mixes modes, **use the smaller of the leading task's hint and the most conservative hint among the next ⌈max_concurrent⌉ candidates** (i.e., `min(concurrency_hint)` over the candidate window). This keeps a single `full` task from inflating the batch.
+
+Pseudo-code:
+```python
+candidates = [t for t in ready if t.status == "ready"]
+candidates.sort(key=lambda t: (tier_rank(t.tier), t.creation_seq))
+if not candidates:
+    proceed_to_step_5()
+window_modes = [c.data.get("qa_mode", "unknown") for c in candidates[:5]]
+mode_hint = min(CONCURRENCY[m] for m in window_modes if m in CONCURRENCY) if window_modes else 2
+max_concurrent = mode_hint
+batch = candidates[:max_concurrent]
+```
+
+Where `CONCURRENCY = {"micro": 5, "standard": 3, "full": 2}`.
+
+Store `max_concurrent` and the `qa_mode` distribution of the batch — both are required in the `dispatch_decision` event (§4.2).
 
 Look up worker:
 ```bash
@@ -279,7 +483,20 @@ Parse the JSON output and extract the `worker` field. Store it as `selected_work
 Example: if the output is `{"worker":"u-be-qa-docs","task_type":"qa","stack":"be","phase":"review"}`, then `selected_worker = "u-be-qa-docs"`.
 If the output contains `"status":"error"`, skip this task and emit `task_failed` with `reason: "select_worker_failed", retryable: false`.
 
-#### 4.2 — Claim batch
+#### 4.2 — Emit dispatch_decision and claim batch
+
+**Dispatch decision (mandatory — required by `DISPATCH_AUDIT` invariant):**
+
+Before claiming any task in the batch, emit a single `dispatch_decision` event covering the whole batch. The event MUST include the full batch, rationale, and applied constraints. A batch without a prior `dispatch_decision` event is a protocol violation.
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type dispatch_decision \
+  --data '{"phase":"review","batch":[<task_ids>],"workers":[<selected_worker_ids>],"rationale":"ready-queue tasks selected by tier-then-creation-seq priority; max_concurrent derived from qa_mode distribution","constraints":{"max_concurrent":<computed>,"stale_threshold_s":300,"stack":"<stack>","context_budget_check":"applied","qa_mode_distribution":{"micro":<n>,"standard":<n>,"full":<n>}}}'
+```
+
+**Then for each task in the batch, emit `task_claimed`:**
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -299,7 +516,24 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='review', stack='<s
 "
 ```
 
-#### 4.3 — Spawn batch in parallel
+#### 4.3 — Estimate context and spawn batch in parallel
+
+**Worker context budget check (mandatory — required by `WORKER_CONTEXT_BUDGET` invariant):**
+
+For each task in the batch, estimate the context size that will be passed to the worker before spawning. Estimate = (size of `task.spec` delivery file) + (size of worker activation prompt) + (size of any referenced specs). Threshold: 100 KB of input text per worker (roughly 25k tokens — well below the model context window, leaving headroom for the worker's own reasoning and tool output).
+
+```bash
+DELIVERY_BYTES=$(stat -c %s "$ORCH_PROJECT_DIR/<task.spec>" 2>/dev/null || echo 0)
+THRESHOLD=102400
+if [ "$DELIVERY_BYTES" -gt "$THRESHOLD" ]; then
+  python3 .claude/skills/orch-log/scripts/append.py \
+    --agent orchestrator-review \
+    --event-type escalation \
+    --data '{"code":"E07_context_budget_exceeded","severity":"warning","reason":"delivery artifact exceeds worker context budget — split or summarize before spawn","evidence":[],"suggested_actions":["split delivery into per-component sub-files","summarize delivery and pass summary as task.spec","increase threshold only if backed by actual measurement"]}'
+fi
+```
+
+If estimate exceeds threshold, record the mitigation (split, summarize, or accepted-as-is) in the `dispatch_decision` event's `constraints.context_budget_check` field before proceeding.
 
 Emit all Agent tool calls in a **single response turn**.
 
@@ -312,13 +546,21 @@ Emit all Agent tool calls in a **single response turn**.
     ORCH_ATTEMPT=<attempt>
     ORCH_WORKER_ID=<worker_id>
     SPECS_DIR=<specs_dir>
+    SESSION_DIR=<actual absolute path — value of $SESSION_DIR>
     ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
   Set these as shell env vars before any emit.py call.
   nesting_depth: <nesting_depth + 1>
   Delivery artifact to review: <task.spec>
   Emit task_completed with artifacts: [<qa_verdict_path>] when done.
-  qa_verdict_path convention: <specs_dir>/qa/<task_id>-qa.md
+  qa_verdict_path convention: <session_dir>/qa/<task_id>-qa.md
+  (Architecture and security reviewers write to <session_dir>/reviews/<task_id>-arch.yaml and <session_dir>/reviews/<task_id>-sec.yaml respectively.)
   Emit task_failed with retryable: false if the delivery artifact is missing or unreadable.
+
+  Suite run mode: <local|shared>
+  (When shared — emitted only if Step 3.5 ran successfully without falling back —
+  inject the two lines below; otherwise omit them entirely.)
+  Suite run manifest: <session_dir>/qa/_suite-run/<CURRENT_SR_ID>/manifest.json
+  Suite run attribution: <session_dir>/qa/_suite-run/<CURRENT_SR_ID>/by-tc/<task_id>.json
 
   Progress checkpoints (mandatory — emit before proceeding to each next step):
     1. After loading and validating the delivery artifact:
@@ -402,6 +644,55 @@ If found, look for a subsequent `human_response` event:
 - `action == "return_partial"` with `data.rejected_task_ids: [...]` → partial rejection → proceed to §Return-to-dev (only rejected tasks)
 - No `human_response` yet → output `{"status": "escalated", "last_seq": <last_seq>, "summary": "awaiting human approval of QA verdicts"}` and stop
 
+**If no prior E99_human_approval_required escalation:** evaluate Step 5.0 (auto-approval gate) before falling through to the manual gate below.
+
+#### Step 5.0 — Auto-approval gate (micro unanimous clean)
+
+Strict criteria — failure on any rule disqualifies and falls through to the manual gate:
+
+| Rule | Source |
+|---|---|
+| R1: at least one completed review task exists | `reduce.py` state |
+| R2: every completed review task has `qa_mode == "micro"` | `task_created.data.qa_mode` |
+| R3: every QA verdict reads `verdict: approved` | verdict artifact |
+| R4: no verdict contains a finding with severity ∈ {medium, high, critical} | verdict artifact |
+
+Build the per-task tasks JSON for the script. For each completed review task, take its `qa_mode` from the `task_created` event data (NOT from `TaskState`, which does not surface custom fields) and its first artifact path:
+
+```bash
+python3 .claude/skills/phase-review-rules/scripts/check_micro_unanimous_clean.py \
+  --project-dir "$ORCH_PROJECT_DIR" \
+  --tasks '<JSON: [{"task_id":"...","qa_mode":"<mode>","verdict_path":"<path>"}, ...]>'
+```
+
+Parse `qualifies` and `evidence` from output.
+
+**If `qualifies == false`:** record the reason from `evidence` and continue to the manual gate below (E99 emission).
+
+**If `qualifies == true`:**
+
+1. Emit the audit-trail escalation:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E18_auto_approval_granted","severity":"info","reason":"<rationale from script>","evidence":[<completed review task seqs>],"options":["override_via_human_response: action=return_to_dev"],"suggested_actions":["operator may override by appending a human_response with action=return_to_dev within the same workflow"]}'
+```
+
+2. Emit the synthesized human_response (the orchestrator stands in for the human when the strict gate is met):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type human_response \
+  --data '{"action":"approve","auto_approved":true,"reason":"micro_unanimous_clean","synthesized_by":"orchestrator-review","gate_evidence":<evidence_obj from script>,"phase":"review"}'
+```
+
+3. Skip the E99 escalation entirely and proceed directly to Step 6.
+
+> **Audit invariant:** an `auto_approved: true` `human_response` is valid ONLY when preceded by an `E18_auto_approval_granted` escalation in the same workflow. Manual override path: an operator may follow the auto-approval with a *second* `human_response` whose `action == "return_to_dev"`; Step 5 picks up the most recent `human_response` on the next invocation. Until then, the auto-approval stands.
+
 **If no prior E99_human_approval_required escalation:**
 
 Collect verdict summary from completed review task artifacts:
@@ -410,17 +701,6 @@ Collect verdict summary from completed review task artifacts:
 python3 .claude/skills/phase-review-rules/scripts/read_qa_verdict.py \
   --project-dir "$ORCH_PROJECT_DIR" \
   <artifact_paths...>
-```
-
-**Spec divergence scan:** before presenting the panel, scan every QA artifact of tasks with `verdict: approved_with_reservations` for lines matching `SPEC-DIVERGENCE:`. Collect all matches.
-
-If any `SPEC-DIVERGENCE:` lines are found, emit:
-
-```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-review \
-  --event-type escalation \
-  --data '{"code":"E09_spec_divergences_found","severity":"warning","reason":"QA found necessary spec divergences that require Change Requests","evidence":[<review task seqs>],"divergences":[<list of SPEC-DIVERGENCE lines>],"suggested_actions":["open CR for each SPEC-DIVERGENCE item","update openapi.yaml or .back.md accordingly","re-invoke after CR is resolved"]}'
 ```
 
 Emit progress panel to the user (structured text):
@@ -434,12 +714,8 @@ Tasks reviewed: {total}
 Verdicts:
 {verdict_table: artifact | verdict | findings_count}
 
-Approved:                  {approved_count}
-Approved with reservations:{reservations_count}
-Rejected:                  {rejected_count}
-
-Spec divergences requiring CR: {spec_divergences_count}
-{if spec_divergences_count > 0: list each SPEC-DIVERGENCE line with source artifact}
+Approved: {approved_count}
+Rejected: {rejected_count}
 
 Options:
   approve         — proceed to test phase
@@ -481,7 +757,7 @@ Stop.
 When `human_response.data.action == "return_to_dev"` (full rejection) or `"return_partial"`:
 
 Determine which dev tasks need revision:
-- Full rejection: all dev tasks that have a corresponding completed review task with `verdict != approved` and `verdict != approved_with_reservations`
+- Full rejection: all dev tasks that have a corresponding completed review task with `verdict == rejected`
 - Partial rejection: dev tasks whose IDs appear in `human_response.data.rejected_task_ids`
 
 For each dev task to revise, create a new revision task in the dev phase:
@@ -519,6 +795,34 @@ Stop.
 ---
 
 ### Step 6 — Exit criteria evaluation
+
+**DLQ guard (mandatory — runs before criterion scripts):**
+
+The criterion scripts only inspect tasks with `status == "completed"`, so review tasks that exhausted retries and landed in DLQ would silently pass. Per the `DLQ_ESCALATION` invariant, no phase may exit with pending DLQ entries.
+
+Re-derive state and check for any review-phase task in DLQ:
+
+```bash
+python3 .claude/skills/orch-state/scripts/reduce.py
+```
+
+If any task has `phase == "review"` and `status == "dlq"`:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E08_exit_criteria_not_met","severity":"critical","reason":"review_tasks_in_dlq — phase cannot exit while review tasks remain in DLQ. Operator must resolve each DLQ entry before re-invoking the orchestrator.","evidence":[<dlq task last_event seqs>],"suggested_actions":["inspect each DLQ task via reduce.py","resolve underlying failure (Developer fix, manual injection, or task abandonment with explicit operator action)","re-invoke orchestrator-review after DLQ is empty"]}'
+```
+
+Output:
+```json
+{"status": "blocked", "last_seq": <last_seq_after_escalation>, "summary": "review tasks in DLQ — phase cannot transition"}
+```
+
+Stop. Do NOT evaluate criterion scripts.
+
+**If no DLQ entries:**
 
 ```bash
 python3 .claude/skills/phase-review-rules/scripts/check_all_qa_verdicts_approved.py
@@ -597,6 +901,11 @@ Stop.
 | `E99_human_approval_required` | info | QA complete; awaiting human approval of verdicts |
 | `E09_spec_divergences_found` | warning | QA found necessary spec divergences requiring Change Requests |
 | `E08_exit_criteria_not_met` | warning | Human approved but criteria still not met |
+| `E08_exit_criteria_not_met` | critical | Review tasks in DLQ — phase cannot transition until DLQ is resolved (reason: `review_tasks_in_dlq`) |
+| `E16_shared_build_failure` | critical | Shared suite run failed at the build step — QA dispatch blocked until build is green |
+| `E17_suite_parser_degraded` | warning | Shared suite ran but parser could not extract failures — workers fall back to local test-gate for this round |
+| `E18_auto_approval_granted` | info | Step 5.0 strict gate met — orchestrator synthesized a `human_response` with `action=approve`; manual override is still possible by appending a `return_to_dev` response |
+| `E19_qa_mode_classifier_failed` | warning | classify_qa_mode.py exited non-zero — task created with qa_mode=standard (default) |
 
 ---
 
@@ -611,6 +920,9 @@ Stop.
 | Worker exits without terminal | Synthesize `task_failed` in Step 4.4 |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |
 | `human_response` action unknown | Treat as no response; re-emit escalation on next invocation |
+| Review task in DLQ at Step 6 | Emit E08 critical (`review_tasks_in_dlq`), return `{status: "blocked"}`; do not evaluate criterion scripts |
+| Shared build failure (Step 3.5.6) | Emit E16, return `{status: "blocked"}`; do NOT dispatch workers |
+| Shared parser degraded (Step 3.5.7) | Emit E17 (warning), continue with `Suite run mode: local` — workers run their own test-gate |
 
 ---
 

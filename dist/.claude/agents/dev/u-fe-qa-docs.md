@@ -139,8 +139,7 @@ Before running the test suite, invoke `/u-fe-validate` against the files listed 
 | Outcome | Action |
 |---|---|
 | `verdict: rejected` (critical or high findings) | Return blocked-report — do not proceed to Phase 1. Attach `fe-validate-{run_id}.yaml` path in the blocked-report `missing_inputs[].source` field. Developer must fix before QA re-runs. |
-| `verdict: approved_with_caveats` (medium/low only) | Log findings as pre-existing warnings. Proceed to Phase 1. Include `fe-validate-{run_id}.yaml` path in `tc-XX-qa.md` under `validate_report`. |
-| `verdict: approved` (zero findings) | Proceed to Phase 1. Record `fe-validate-{run_id}.yaml` path in `tc-XX-qa.md`. |
+| `verdict: approved` (zero findings or medium/low only) | Proceed to Phase 1. If medium/low findings are present, log them as pre-existing warnings and include `fe-validate-{run_id}.yaml` path in `tc-XX-qa.md` under `validate_report`. |
 
 > If `SPECS_DIR` is not available, run without token validation: `/u-fe-validate {modified_files_glob}`. Log the resulting `low` warning in the QA report.
 
@@ -149,6 +148,31 @@ Before running the test suite, invoke `/u-fe-validate` against the files listed 
 ### Phase 1 — Test-gate
 
 > Executed first. The sole objective is to ensure all tests pass before any qualitative analysis.
+
+### Step 0 — Mode selection (shared vs local)
+
+Look at the activation prompt for a line `Suite run mode: <mode>`.
+
+- `shared` (and a `Suite run attribution:` path is provided) → follow §1.S below. **Do NOT execute build or test commands yourself** — the orchestrator already ran them once for the whole round.
+- `local` or absent → fall through to Step 1 (legacy: run build + tests yourself).
+
+#### §1.S — Shared mode (read attribution slice)
+
+1. Read the attribution slice file at the path supplied in `Suite run attribution:`. If the file does not exist, log a warning and fall through to Step 1 (legacy).
+
+2. Inspect `test_gate_result`:
+
+| `test_gate_result` | Action |
+|---|---|
+| `passed` | Phase 1 passes. Use `tests.summary` from the suite manifest as the authoritative test result. Proceed to Phase 2. |
+| `failed` | Phase 1 fails. Build the diagnosis output from `test_attribution.failures_attributed[]` (each item already has `diagnosis.probable_cause` and `diagnosis.suggested_action`) and `build_attribution.build_errors_in_my_files[]`. Validate the diagnoses against your understanding before reporting; do not blindly forward them. |
+| `blocked_by_unattributed_failure` | Phase 1 fails with `cause: shared_environment`. Emit a blocked-report referencing the suite manifest's `attribution.unattributed_failures`. Do NOT attempt to investigate or fix shared environment issues — flag to the Orchestrator. |
+
+3. **Tests declared but not executed:** if `test_attribution.tests_declared_but_not_executed[]` is non-empty, append a `Quality BUG (severity Medium)` for each — the developer declared a test file in the delivery body but the runner did not execute it (likely glob mismatch or filename typo). Include this in the test-gate output regardless of overall verdict.
+
+4. **Output (shared mode):** use the same Test-gate output formats below (Passed / Rejected), but do not include locally-measured "Tests executed" numbers — use the manifest's global summary and explicitly cite the suite_run_id.
+
+5. After producing the Phase 1 output, proceed to Phase 2 only if `test_gate_result == "passed"`.
 
 ### Step 1 — Run build
 
@@ -273,9 +297,9 @@ If any mandatory item is missing, record as `Quality BUG` (severity Low).
 
 ---
 
-### Phase 3 — Non-Functional, Observability, and Dependency Checks (conditional)
+### Phase 3 — Non-Functional, Observability, and Dependency Checks (conditional & scope-driven)
 
-Execute only when the conditions below are met.
+Each check is independent. Execute only when **both** conditions hold: the global flag (in `CLAUDE.md`) AND the TC's delivery actually touches files in the relevant scope. A check whose scope is not touched is skipped — its booleans are inherited from the previous green run. Record skipped scopes in the QA report under "Phase 3 skipped scopes".
 
 **NFR validation** — when the Task Contract has `non_functional_requirements`:
 
@@ -287,20 +311,45 @@ For each NFR entry:
 
 > If the measurement command is not runnable, log as `Warning: NFR not measurable — {reason}` and skip.
 
-**Observability check** — when `CLAUDE.md` declares `observability_required: true`:
+NFR checks are intrinsically TC-scoped — no extra scope filter applies.
 
-- `structured_logging`: confirm error boundaries and async operations use structured logger (not `console.log`)
-- `trace_id_propagated`: confirm API calls forward trace ID in request headers
+**Observability check** — when **both** are true:
+1. `CLAUDE.md` declares `observability_required: true`
+2. The TC's delivery `files_created` ∪ `files_modified` contains at least one path matching the observability scope below.
+
+Observability scope (any file path matching — case-insensitive substring or glob):
+- `*logger*`, `*tracker*`, `*telemetry*`
+- Error boundaries / error pages: `*error-boundary*`, `*error-page*`, `error.tsx`, `not-found.tsx`
+- Routing roots: `routes*`, `pages/`, `app/`, `_app.tsx`, `_document.tsx`, `layout.tsx`, `root.tsx`
+- API client / fetcher layer: `*api-client*`, `*http-client*`, `*fetcher*`
+- Application entry: `main.tsx`, `index.tsx`, `bootstrap.tsx`
+
+If none match, **skip the observability check** and write `delivery-gate.observability = "skipped: out_of_scope"`.
+
+If at least one matches, evaluate (limited to matching files):
+- `structured_logging`: confirm error boundaries and async operations in touched files use a structured logger (not `console.log`)
+- `trace_id_propagated`: confirm API calls in touched files forward trace ID in request headers
 - For new routes/pages: confirm error tracking SDK is initialized
 
 Log missing items as **Quality BUG** (severity Medium). Write boolean results to `delivery-gate.observability`.
 
-**Dependency audit** — when `CLAUDE.md` declares `dependency_audit: true`:
+**Dependency audit** — when **both** are true:
+1. `CLAUDE.md` declares `dependency_audit: true`
+2. The TC's delivery `files_modified` ∪ `files_created` contains at least one dependency manifest or lockfile.
 
+Dependency manifest scope (exact filename match at any depth):
+- Node: `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`
+- Bundler config when it pins versions: `bun.lockb`
+
+If none match, **skip the dependency audit** and write `delivery-gate.dependency_audit = "skipped: dependencies_unchanged"`.
+
+If at least one match, run the audit:
 1. Run the audit command from `delivery-gate.dependency_audit.command`
 2. Critical/high vulnerabilities: **Security BUG** (Critical/High) — block TC
 3. Medium vulnerabilities: **Quality BUG** (Medium)
 4. Write counts to `delivery-gate.dependency_audit`
+
+> **Skipped-scope visibility:** in the QA report, list every Phase 3 scope that was skipped due to "out of scope" with the rule that triggered the skip. Do NOT silently omit them.
 
 ---
 

@@ -30,6 +30,7 @@ Resolved from the activation prompt set by the Orchestrator-Dev:
 |---|---|---|
 | `ORCH_TASK_ID` | Activation prompt | `dev_planning` |
 | `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_WORKER_ID` | Activation prompt | `u-be-planner-dev_planning` |
 | `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
 | `SPECS_DIR` | Activation prompt | `specs` |
 | `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
@@ -64,6 +65,18 @@ If any of these files do not exist (except backlog.md and {SPECS_DIR}), ask befo
 ---
 
 ## Execution process
+
+### Step −1 — Idempotency check (mandatory on retry)
+
+If `$ORCH_ATTEMPT > 1` AND the backlog filename declared in the activation prompt (`<backlog_filename>` — typically `backlog.json` or `backlog_be.json`) already exists in `$SESSION_DIR/backlog/`, rename it to `<basename>.attempt-<N>.bak` before any write. `<N>` is the previous attempt number. This preserves the failed attempt for audit and prevents partial JSON from corrupting downstream merge.
+
+```bash
+file="$SESSION_DIR/backlog/<backlog_filename>"
+if [ "$ORCH_ATTEMPT" -gt 1 ] && [ -f "$file" ]; then
+  prev=$(($ORCH_ATTEMPT - 1))
+  mv "$file" "${file%.json}.attempt-$prev.bak"
+fi
+```
 
 ### Step 0 — Determine operating mode
 
@@ -134,12 +147,14 @@ Before saving, verify:
 
 Save the result to:
 - `$SESSION_DIR/backlog/backlog.md` — Markdown backlog (human-readable, full content)
-- `$SESSION_DIR/backlog/backlog.json` — JSON index for the orchestrator (schema: `backlog.schema.yaml`)
+- `$SESSION_DIR/backlog/<backlog_filename>` — JSON index for the orchestrator (schema: `backlog.schema.yaml`)
 - `$SESSION_DIR/backlog/tc-NNN.md` — individual Task Contract files (one per TC, zero-padded)
 
-The `backlog.json` must list every Task Contract with fields: `task_id` (`dev_tc_001`, `dev_tc_002`, …), `spec` (relative path to the TC file from `$ORCH_PROJECT_DIR`), `deps` (array of `dev_tc_NNN` IDs), `tier` (`standard` or `critical`), `type` (`impl`), `stack` (`be`), and `title`.
+> **`<backlog_filename>` resolution:** the activation prompt declares the exact filename via `Write backlog.json to: <path>`. In single-stack runs this is `backlog.json`. In fullstack runs the BE planner is instructed to write `backlog_be.json` (FE planner writes `backlog_fe.json`); the orchestrator merges them into `backlog.json` after both planners return. **Always honour the path in the activation prompt — never hardcode `backlog.json`.**
 
-Emit `task_completed` with `artifacts: ["$SESSION_DIR/backlog/backlog.json"]`.
+The backlog file must list every Task Contract with fields: `task_id` (`dev_tc_001`, `dev_tc_002`, …), `spec` (relative path to the TC file from `$ORCH_PROJECT_DIR`), `deps` (array of `dev_tc_NNN` IDs), `tier` (`standard` or `critical`), `type` (`impl`), `stack` (`be`), and `title`.
+
+Emit `task_completed` with `artifacts: ["$SESSION_DIR/backlog/<backlog_filename>"]` — using the same filename declared in the activation prompt.
 
 When finished, inform the **Orchestrator-Dev** that the backlog is ready.
 
@@ -552,7 +567,7 @@ python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "dev", "summary": "<one-line summary of output>", "artifacts": ["$SESSION_DIR/backlog/backlog.json"]}'
+  --data '{"phase": "dev", "summary": "<one-line summary of output>", "artifacts": ["$SESSION_DIR/backlog/<backlog_filename>"]}'
 ```
 
 **On failure or unresolvable block:**

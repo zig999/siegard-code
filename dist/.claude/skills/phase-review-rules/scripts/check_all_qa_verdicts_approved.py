@@ -4,7 +4,7 @@ check_all_qa_verdicts_approved.py — Exit criterion: review / all_qa_verdicts_a
 
 Criterion met when:
   - At least one QA verdict artifact exists from completed review-phase tasks
-  - Every verdict artifact contains verdict: approved or verdict: approved_with_reservations
+  - Every verdict artifact contains verdict: approved
 
 Artifact paths are resolved relative to ORCH_PROJECT_DIR (env var, default: ".").
 
@@ -45,28 +45,47 @@ PHASE_NAME = "review"
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 
 _VERDICT_RE = re.compile(r"^\s*verdict\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
-_APPROVED_VALUES = {"approved", "approved_with_reservations"}
+_APPROVED_VALUES = {"approved"}
 
 
-def _collect_artifact_paths(state) -> list[str]:
-    paths: list[str] = []
-    for task in state.tasks.values():
-        if task.phase != PHASE_NAME or task.status != TaskStatus.COMPLETED:
-            continue
-        paths.extend(task.artifacts)
-    return paths
+def _collect_completed_tasks(state) -> list:
+    return [
+        task for task in state.tasks.values()
+        if task.phase == PHASE_NAME and task.status == TaskStatus.COMPLETED
+    ]
 
 
 def evaluate() -> dict:
     state = reduce_all()
-    artifact_paths = _collect_artifact_paths(state)
+    completed_tasks = _collect_completed_tasks(state)
 
-    if not artifact_paths:
+    if not completed_tasks:
         return {
             "criterion": CRITERION_ID,
             "met": False,
             "evidence": {"total": 0, "approved": 0, "not_approved": []},
         }
+
+    # Tasks that completed without registering any artifact are blocking:
+    # no evidence means the criterion cannot be satisfied, not vacuously passed.
+    no_artifacts = [t.task_id for t in completed_tasks if not t.artifacts]
+    if no_artifacts:
+        return {
+            "criterion": CRITERION_ID,
+            "met": False,
+            "evidence": {
+                "total": len(completed_tasks),
+                "approved": 0,
+                "not_approved": [
+                    {"artifact": tid, "reason": "no_artifacts_registered"}
+                    for tid in no_artifacts
+                ],
+            },
+        }
+
+    artifact_paths: list[str] = []
+    for task in completed_tasks:
+        artifact_paths.extend(task.artifacts)
 
     not_approved = []
     approved_count = 0

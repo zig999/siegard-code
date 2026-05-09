@@ -97,6 +97,31 @@ Only proceed to Phase 1 when `qa_ready: true`, `tests.last_local_run: passed`, a
 
 > Executed first. The sole objective is to ensure all tests pass before any qualitative analysis.
 
+### Step 0 — Mode selection (shared vs local)
+
+Look at the activation prompt for a line `Suite run mode: <mode>`.
+
+- `shared` (and a `Suite run attribution:` path is provided) → follow §1.S below. **Do NOT execute build or test commands yourself** — the orchestrator already ran them once for the whole round.
+- `local` or absent → fall through to Step 1 (legacy: run build + tests yourself).
+
+#### §1.S — Shared mode (read attribution slice)
+
+1. Read the attribution slice file at the path supplied in `Suite run attribution:`. If the file does not exist, log a warning and fall through to Step 1 (legacy).
+
+2. Inspect `test_gate_result`:
+
+| `test_gate_result` | Action |
+|---|---|
+| `passed` | Phase 1 passes. Use `tests.summary` from the suite manifest as the authoritative test result. Proceed to Phase 2. |
+| `failed` | Phase 1 fails. Build the diagnosis output from `test_attribution.failures_attributed[]` (each item already has `diagnosis.probable_cause` and `diagnosis.suggested_action`) and `build_attribution.build_errors_in_my_files[]`. Validate the diagnoses against your understanding before reporting; do not blindly forward them. |
+| `blocked_by_unattributed_failure` | Phase 1 fails with `cause: shared_environment`. Emit a blocked-report referencing the suite manifest's `attribution.unattributed_failures`. Do NOT attempt to investigate or fix shared environment issues — flag to the Orchestrator. |
+
+3. **Tests declared but not executed:** if `test_attribution.tests_declared_but_not_executed[]` is non-empty, append a `Quality BUG (severity Medium)` for each — the developer declared a test file in the delivery body but the runner did not execute it (likely glob mismatch or filename typo). Include this in the test-gate output regardless of overall verdict.
+
+4. **Output (shared mode):** use the same Test-gate output formats below (Passed / Failed), but do not include "Tests executed: N passed, 0 failed" with locally-measured numbers — use the manifest's global summary and explicitly cite the suite_run_id.
+
+5. After producing the Phase 1 output, proceed to Phase 2 only if `test_gate_result == "passed"`.
+
 ### Step 1 — Run build
 
 Run the build/type-check command defined in the project's `CLAUDE.md` (e.g., `tsc --noEmit`, `npx tsc --noEmit`).
@@ -209,9 +234,9 @@ If any mandatory item is missing, log as `Quality BUG` (severity Low).
 
 ---
 
-### Phase 3 — Non-Functional, Observability, and Dependency Checks (conditional)
+### Phase 3 — Non-Functional, Observability, and Dependency Checks (conditional & scope-driven)
 
-Execute only when the conditions below are met. All three checks are independent — run whichever conditions are satisfied.
+Each check is independent. Execute only when **both** conditions hold: the global flag (in `CLAUDE.md`) AND the TC's delivery actually touches files in the relevant scope. A check whose scope is not touched by this TC is skipped — its booleans are inherited from the previous green run, not re-validated. Record the skip rationale in the QA report under "Phase 3 skipped scopes".
 
 **NFR validation** — when the Task Contract has `non_functional_requirements`:
 
@@ -223,21 +248,49 @@ For each NFR entry:
 
 > If the measurement command is not runnable in the current environment, log as `Warning: NFR not measurable — {reason}` and skip.
 
-**Observability check** — when `CLAUDE.md` declares `observability_required: true`:
+NFR checks are intrinsically TC-scoped (the TC carries the requirement) — no extra scope filter applies.
 
-For each file in `tc-XX-delivery.md` `files_created` and `files_modified`:
-- `structured_logging`: confirm logger is called with a structured object (not string concatenation) in every catch block and significant state transition
-- `trace_id_propagated`: confirm trace ID is forwarded in outbound HTTP/service calls (not dropped at service boundaries)
-- `health_endpoint_present`: if TC creates a new service entry point, confirm a `/health` or `/ready` endpoint exists
+**Observability check** — when **both** are true:
+1. `CLAUDE.md` declares `observability_required: true`
+2. The TC's delivery `files_created` ∪ `files_modified` contains at least one path matching the observability scope below.
+
+Observability scope (any file path matching is sufficient — case-insensitive substring or glob):
+- `*logger*`, `*logging*`
+- `*middleware*`
+- `*health*`, `*readiness*`, `*liveness*`
+- Route/HTTP-entry layer: `*controller*`, `*route*`, `*router*`, `*handler*`
+- Service entry points: `index.ts`, `index.js`, `app.ts`, `server.ts`, `main.ts`, `bootstrap.ts`
+- Error/exception filters: `*exception*`, `*error-handler*`
+
+If the TC touches none of the above, **skip the observability check** and write `delivery-gate.observability = "skipped: out_of_scope"`. Do NOT re-evaluate booleans against unchanged files.
+
+If at least one path matches, evaluate (limited to the matching files):
+- `structured_logging`: confirm logger is called with a structured object (not string concatenation) in every catch block and significant state transition within the touched files
+- `trace_id_propagated`: confirm trace ID is forwarded in outbound HTTP/service calls within the touched files (not dropped at service boundaries)
+- `health_endpoint_present`: only if a touched file matches a service entry point pattern — confirm a `/health` or `/ready` endpoint exists
 
 Log missing items as **Quality BUG** (severity Medium). Write boolean results to `delivery-gate.observability`.
 
-**Dependency audit** — when `CLAUDE.md` declares `dependency_audit: true`:
+**Dependency audit** — when **both** are true:
+1. `CLAUDE.md` declares `dependency_audit: true`
+2. The TC's delivery `files_modified` ∪ `files_created` contains at least one dependency manifest or lockfile.
 
+Dependency manifest scope (exact filename match at any depth):
+- Node: `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`
+- Python: `pyproject.toml`, `requirements.txt`, `requirements-*.txt`, `Pipfile`, `Pipfile.lock`, `poetry.lock`
+- Go: `go.mod`, `go.sum`
+- Rust: `Cargo.toml`, `Cargo.lock`
+- Ruby: `Gemfile`, `Gemfile.lock`
+
+If the TC touches none of these, **skip the dependency audit** and write `delivery-gate.dependency_audit = "skipped: dependencies_unchanged"`. The audit result is unchanged since the previous green TC; re-running adds no signal.
+
+If at least one match, run the audit:
 1. Run the audit command from `delivery-gate.dependency_audit.command`
 2. If `vulnerabilities_critical > 0` or `vulnerabilities_high > 0`: log as **Security BUG** (severity Critical or High) — block TC
 3. If `vulnerabilities_medium > 0`: log as **Quality BUG** (severity Medium)
 4. Write counts to `delivery-gate.dependency_audit`
+
+> **Skipped-scope visibility:** in the QA report, list every Phase 3 scope that was skipped due to "out of scope" with the rule that triggered the skip, so a reviewer can audit the decision. Do NOT silently omit them.
 
 ---
 
@@ -246,7 +299,7 @@ Log missing items as **Quality BUG** (severity Medium). Write boolean results to
 Generate the `$ORCH_TASK_ID-qa.md` file at `$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md` using the full template from SKILL.md.
 
 Upon completion, notify the **Orchestrator-Dev** with:
-- Verdict: Approved | Approved with reservations | Rejected
+- Verdict: Approved | Rejected
 - Current round
 
 ---
@@ -668,7 +721,9 @@ escalation_trigger:
 Compact reminder contents:
 - Test-gate command from `CLAUDE.md`
 - Acceptance criteria list from the Task Contract
-- Verdict format (approved | rejected | approved_with_reservations)
+- Verdict format (approved | rejected)
+  - approved: all findings are severity low or informational; implementation is shippable
+  - rejected: at least one finding is severity critical or high; low/medium findings are listed regardless
 
 > **Short mode is activated by the Orchestrator** — stated in the activation prompt ("Round N — short mode").
 

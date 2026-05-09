@@ -1,59 +1,107 @@
 #!/usr/bin/env python3
-"""Exit criterion: no test report artifact contains severity: critical failures."""
+"""
+check_no_critical_failures.py — Exit criterion: test / no_critical_failures.
+
+Criterion met when:
+  - No test report artifact from completed test-phase tasks contains "severity: critical".
+
+Artifact paths are resolved relative to ORCH_PROJECT_DIR (env var, default: ".").
+
+Usage:
+    python3 .claude/skills/phase-test-rules/scripts/check_no_critical_failures.py
+
+Environment:
+    ORCH_PROJECT_DIR  — project root used to resolve artifact paths (default: .)
+
+Output (exit 0):
+    {"criterion": "no_critical_failures", "met": bool, "evidence": {...}}
+
+Output (exit 1, stderr):
+    {"status": "error", "reason": "<code>", "detail": "<message>"}
+"""
 import json
 import os
 import re
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "lib"))
+_CLAUDE_DIR = Path(__file__).resolve().parents[3]
+_LIB = _CLAUDE_DIR / "lib"
+sys.path.insert(0, str(_LIB))
 
-from orch_core import reduce_all, TaskStatus
+try:
+    from orch_core import TaskStatus, reduce_all
+except ImportError as exc:
+    print(json.dumps({
+        "status": "error",
+        "reason": "internal_error",
+        "detail": f"cannot import orch_core: {exc}",
+    }), file=sys.stderr)
+    sys.exit(1)
 
-CRITICAL_PATTERN = re.compile(r"severity\s*:\s*critical", re.IGNORECASE)
+CRITERION_ID = "no_critical_failures"
+PHASE_NAME = "test"
+_PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
+
+_CRITICAL_RE = re.compile(r"^\s*severity\s*:\s*critical\s*$", re.MULTILINE | re.IGNORECASE)
 
 
-def _has_critical(path: str) -> bool:
-    try:
-        return bool(CRITICAL_PATTERN.search(open(path, encoding="utf-8").read()))
-    except OSError:
-        return False
-
-
-def main() -> None:
-    orch_dir = os.path.join(os.environ.get("ORCH_PROJECT_DIR", "."), ".orch")
-    log_path = os.path.join(orch_dir, "log.jsonl")
-
-    if not os.path.exists(log_path):
-        print(json.dumps({"status": "error", "reason": "log_missing", "detail": log_path}))
-        sys.exit(1)
-
+def evaluate() -> dict:
     state = reduce_all()
     completed = [
         t for t in state.tasks.values()
-        if t.phase == "test" and t.status == TaskStatus.COMPLETED and t.artifacts
+        if t.phase == PHASE_NAME and t.status == TaskStatus.COMPLETED and t.artifacts
     ]
 
     with_critical = []
-    for task in completed:
-        for artifact in task.artifacts:
-            if _has_critical(artifact):
-                with_critical.append({"task_id": task.task_id, "artifact": artifact})
+    clean_count = 0
 
-    print(json.dumps({
-        "criterion": "no_critical_failures",
+    for task in completed:
+        for rel_path in task.artifacts:
+            full_path = _PROJECT_DIR / rel_path
+            if not full_path.exists():
+                with_critical.append({"task_id": task.task_id, "artifact": rel_path, "reason": "file_not_found"})
+                continue
+            try:
+                content = full_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                with_critical.append({"task_id": task.task_id, "artifact": rel_path, "reason": f"unreadable: {exc}"})
+                continue
+
+            if _CRITICAL_RE.search(content):
+                with_critical.append({"task_id": task.task_id, "artifact": rel_path, "reason": "critical_failure_present"})
+            else:
+                clean_count += 1
+
+    return {
+        "criterion": CRITERION_ID,
         "met": len(with_critical) == 0,
         "evidence": {
             "total": len(completed),
-            "clean": len(completed) - len(with_critical),
+            "clean": clean_count,
             "with_critical": with_critical,
         },
-    }))
-    sys.exit(0)
+    }
+
+
+def main() -> None:
+    print(json.dumps(evaluate()))
 
 
 if __name__ == "__main__":
     try:
         main()
+    except FileNotFoundError:
+        print(json.dumps({
+            "status": "error",
+            "reason": "log_missing",
+            "detail": "orchestration log not found — run orchestrator first",
+        }), file=sys.stderr)
+        sys.exit(1)
     except Exception as exc:
-        print(json.dumps({"status": "error", "reason": "internal_error", "detail": str(exc)}))
+        print(json.dumps({
+            "status": "error",
+            "reason": "internal_error",
+            "detail": str(exc),
+        }), file=sys.stderr)
         sys.exit(1)

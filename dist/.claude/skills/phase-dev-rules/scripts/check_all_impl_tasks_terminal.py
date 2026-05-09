@@ -9,14 +9,22 @@ Criterion met when:
 Usage:
     python3 .claude/skills/phase-dev-rules/scripts/check_all_impl_tasks_terminal.py
 
-Output (exit 0):
-    {"criterion": "all_impl_tasks_terminal", "met": bool, "evidence": {...}}
+Output schema (per GATE_SCHEMA_UNIFORMITY in specs/principles.md):
+  Always emits {status, check, timestamp} for uniform gate consumption.
+  Legacy fields {criterion, met, evidence} preserved for orchestrator-dev compatibility.
 
-Output (exit 1):
+Output (exit 0 when met):
+    {"status": "ok", "check": "all_impl_tasks_terminal", "timestamp": "<ISO8601>",
+     "criterion": "all_impl_tasks_terminal", "met": true, "evidence": {...}}
+
+Output (exit 1 when blocked or error):
+    {"status": "blocked", "check": "all_impl_tasks_terminal", "timestamp": "<ISO8601>",
+     "criterion": "all_impl_tasks_terminal", "met": false, "evidence": {...}}
     {"status": "error", "reason": "<code>", "detail": "<message>"}
 """
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _CLAUDE_DIR = Path(__file__).resolve().parents[3]
@@ -35,41 +43,63 @@ except ImportError as exc:
 
 CRITERION_ID = "all_impl_tasks_terminal"
 PHASE_NAME = "dev"
-TERMINAL = {TaskStatus.COMPLETED, TaskStatus.DLQ}
+TERMINAL = {TaskStatus.COMPLETED}
+DLQ_STATES = {TaskStatus.DLQ}
 
 
 def evaluate() -> dict:
     state = reduce_all()
 
     dev_tasks = [t for t in state.tasks.values() if t.phase == PHASE_NAME]
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     if not dev_tasks:
         return {
+            "status": "blocked",
+            "check": CRITERION_ID,
+            "timestamp": timestamp,
             "criterion": CRITERION_ID,
             "met": False,
-            "evidence": {"total": 0, "terminal": 0, "non_terminal": []},
+            "evidence": {"total": 0, "terminal": 0, "non_terminal": [], "dlq": []},
         }
 
+    dlq_tasks = [
+        {"task_id": t.task_id, "status": t.status}
+        for t in dev_tasks
+        if t.status in DLQ_STATES
+    ]
     non_terminal = [
         {"task_id": t.task_id, "status": t.status}
         for t in dev_tasks
-        if t.status not in TERMINAL
+        if t.status not in TERMINAL and t.status not in DLQ_STATES
     ]
-    terminal_count = len(dev_tasks) - len(non_terminal)
+    terminal_count = len(dev_tasks) - len(non_terminal) - len(dlq_tasks)
+
+    # Criterion met when zero non-terminal tasks remain.
+    # DLQ is a terminal state — no further retries occur; orchestrator escalates separately.
+    met = len(non_terminal) == 0
 
     return {
+        "status": "ok" if met else "blocked",
+        "check": CRITERION_ID,
+        "timestamp": timestamp,
         "criterion": CRITERION_ID,
-        "met": len(non_terminal) == 0,
+        "met": met,
         "evidence": {
             "total": len(dev_tasks),
             "terminal": terminal_count,
             "non_terminal": non_terminal,
+            "dlq": dlq_tasks,
+            "dlq_blocks_criterion": len(dlq_tasks) > 0,
         },
     }
 
 
 def main() -> None:
-    print(json.dumps(evaluate()))
+    result = evaluate()
+    print(json.dumps(result))
+    if result.get("status") == "blocked":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

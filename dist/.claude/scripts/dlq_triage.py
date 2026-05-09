@@ -59,7 +59,7 @@ _BUCKET_RULES: list[tuple[str, list[str]]] = [
     ("input_issue", [
         "spec_unclear", "spec unclear", "missing_input", "missing input",
         "invalid_schema", "schema", "bad_input", "unclear",
-        "ambiguous", "incomplete_spec",
+        "ambiguous", "incomplete_spec", "validation_failed", "requirement_missing",
     ]),
     ("code_issue", [
         "unhandled", "assertion", "traceback", "exception", "syntax_error",

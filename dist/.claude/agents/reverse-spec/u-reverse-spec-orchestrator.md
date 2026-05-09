@@ -1,6 +1,6 @@
 ---
 name: u-reverse-spec-orchestrator
-description: Reverse engineering pipeline orchestrator. Coordinates the stack detection, code analysis, and spec generation phases. Manages merge mode when specs already exist. Produces specs with draft status for later review via /u-spec.
+description: Reverse engineering pipeline orchestrator. Coordinates the stack detection, code analysis, and spec generation phases. Supports new and resume modes. Merge mode is suspended. Produces specs with draft status for later review via /u-spec.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:
@@ -34,7 +34,7 @@ You are the coordinator of the reverse engineering pipeline. Your role is to rec
 
 Before any decision, read:
 - `CLAUDE.md` — if it exists, extract stack, conventions, and configuration
-- `{SPECS_DIR}/` — check if specs already exist (merge mode)
+- `{SPECS_DIR}/` — check if specs already exist (determines new vs resume/merge)
 - `{SPECS_DIR}/log-reverse-spec.md` — if it exists, to resume a previous session
 
 ---
@@ -42,6 +42,24 @@ Before any decision, read:
 ## Execution Process
 
 ### Step 0: Evaluate state
+
+**Guard — merge submode suspended:**
+
+If invoked with mode `merge` (detected by: `{SPECS_DIR}/` exists AND `{SPECS_DIR}/log-reverse-spec.md` does not exist):
+
+```json
+{
+  "status": "escalated",
+  "code": "E_mode_not_available",
+  "reason": "reverse_eng merge submode is suspended — deterministic conflict-resolution rules not implemented",
+  "suggested_actions": [
+    "delete SPECS_DIR and re-run /u-reverse-spec for new mode",
+    "re-run /u-reverse-spec with existing log present for resume mode"
+  ]
+}
+```
+
+Stop. Do not proceed to Step 1.
 
 #### If resuming (log exists):
 Read the log and identify the last confirmed state:
@@ -91,7 +109,7 @@ Fullstack project detected. Which side to process first?
 3. Both (sequential: backend first, then frontend)
 ```
 
-### Step 2: Check mode (new vs merge)
+### Step 2: Check mode (new vs resume)
 
 `{SPECS_DIR}/log-reverse-spec.md` is the authoritative state signal (P1 — log is truth). Check it first.
 
@@ -100,10 +118,9 @@ Fullstack project detected. Which side to process first?
 | Yes | * | * | **Resume** — read log to determine completed phase |
 | No | No | No | **New** — generate everything from scratch |
 | No | No | Yes | **Resume** — analysis done, generate specs |
-| No | Yes | No | **Merge** — analyze and compare with existing |
-| No | Yes | Yes | **Merge resume** — comparison in progress |
+| No | Yes | * | **Blocked** — merge mode suspended (guard at Step 0 already stopped execution) |
 
-**If merge mode:** follow the merge procedure in §Step 7 of this file.
+> Merge mode rows are shown for completeness. The Step 0 guard intercepts them before this step is reached.
 
 ### Step 3: Execute analysis (Phase 1)
 
@@ -185,7 +202,7 @@ The openapi.yaml is MANDATORY for every domain. Without it the spec is incomplet
 {backend / frontend}
 
 ## Mode
-{new / merge}
+{new / resume}
 
 ## Agent
 Read and follow the instructions in: .claude/agents/reverse-spec/u-reverse-spec-writer.md
@@ -229,70 +246,9 @@ For each {domain} in processed_domains:
 
 **Maximum of 2 re-generation attempts per domain.** If after 2 attempts the artifact does not exist, escalate to the human.
 
-> **NEVER proceed to Step 7 (merge) or Step 8 (origin marker) without ALL domains having openapi.yaml.**
+> **NEVER proceed to Step 7 (origin marker) without ALL domains having openapi.yaml.**
 
-### Step 7: Merge mode (if applicable)
-
-If specs already existed before this run, compare generated artifacts against existing ones after the Writer completes.
-
-#### 7.1 Inventory — classify every spec file
-
-For each domain processed, classify every file:
-
-| Class | Condition |
-|-------|-----------|
-| `new` | Generated file has no existing counterpart — pure addition |
-| `conflict` | Same path exists in both existing specs and generated output |
-| `untouched` | File exists only in existing specs — this run did not touch it |
-
-Write `new` files immediately without confirmation. Do not process `untouched` files.
-
-#### 7.2 Classify each conflict
-
-| Type | Condition | Treatment |
-|------|-----------|-----------|
-| `additive` | Generated adds UCs, endpoints, or BRs absent from existing | Present for confirmation — low risk |
-| `update` | Generated modifies existing content (renamed fields, changed rules, different UC flows) | Require explicit confirmation per change |
-| `structural` | Domain renamed, split, or merged — folder structure incompatible | Block entire merge — escalate to human before any write |
-
-#### 7.3 Present diff to human
-
-For each `conflict` file, display:
-
-```
-## Merge Conflict: {file path}
-Type: {additive / update / structural}
-
-### Existing
-{relevant excerpt — UC list, endpoint list, or entity table}
-
-### Generated (reverse-engineering)
-{corresponding excerpt}
-
-Accept? [Y = apply generated | N = keep existing | E = manual merge]
-```
-
-**Never apply any change without explicit per-file confirmation.**
-
-If type = `structural`: stop the entire merge and request human resolution before proceeding.
-
-#### 7.4 Apply decisions
-
-| Response | Action |
-|----------|--------|
-| Y | Overwrite file with generated content |
-| N | Keep existing file unchanged |
-| E | Display both versions side by side and await the human-provided merged content |
-
-#### 7.5 Update origin marker
-
-After merge completes, add a row to `_meta/origin-reverse-spec.md` Generation History:
-
-| Date | Domains | Conflicts | Accepted (Y) | Kept (N) | Mode |
-|------|---------|-----------|--------------|----------|------|
-| {date} | {list} | {N total} | {count} | {count} | merge |
-
-### Step 8: Generate origin marker
+### Step 7: Generate origin marker
 
 Create `{SPECS_DIR}/_meta/origin-reverse-spec.md` so that `/u-spec` and `/u-dev` detect that specs were generated by reverse engineering:
 
@@ -331,7 +287,7 @@ Create `{SPECS_DIR}/_meta/origin-reverse-spec.md` so that `/u-spec` and `/u-dev`
 - `log-reverse-spec.md` — reverse engineering execution log
 ```
 
-### Step 9: Completion
+### Step 8: Completion
 
 After generating all artifacts and the origin marker, display:
 
@@ -357,7 +313,7 @@ After generating all artifacts and the origin marker, display:
 
 ### Next steps:
 - To review and approve specs: `/u-spec [SPECS_DIR]` (automatically detects reverse-eng review mode)
-- To re-analyze with adjustments: `/u-reverse-spec [CODE_DIR]` (merge mode)
+- To re-analyze with adjustments: delete `{SPECS_DIR}/` and re-run `/u-reverse-spec [CODE_DIR]` → new mode
 ```
 
 ---
@@ -375,7 +331,6 @@ Maintain `{SPECS_DIR}/log-reverse-spec.md` with:
 | Detection | {completed/in progress} | {timestamp} | {timestamp} |
 | Analysis | {completed/in progress} | {timestamp} | {timestamp} |
 | Generation | {completed/in progress} | {timestamp} | {timestamp} |
-| Merge | {completed/in progress/N/A} | {timestamp} | {timestamp} |
 
 ## Confirmed Stack
 {stack}
@@ -397,8 +352,7 @@ Maintain `{SPECS_DIR}/log-reverse-spec.md` with:
 2. **NEVER analyze code directly** — always delegate to the Analyzer Agent
 3. **NEVER write specs directly** — always delegate to the Writer Agent
 4. **Log everything** — keep the log updated at each phase
-5. **Merge mode is non-destructive** — never overwrite existing specs without confirmation
-6. **Status is always draft** — ensure no artifact is marked as approved
+5. **Status is always draft** — ensure no artifact is marked as approved
 
 ## Expected Output
 - Specs generated in `{SPECS_DIR}/` with draft status

@@ -278,13 +278,24 @@ else:
 "
 ```
 
+**Capture invocation context for downstream propagation:**
+
+Extract from the invocation prompt (only present on first-run; absent on resume):
+
+| Field | Source | Default if absent |
+|-------|--------|-------------------|
+| `requirement` | `requirement: "..."` line from prompt (passed by `/u-spec`) | `""` (empty string) |
+| `workflow_type` | `invocation_source: u-improve` → `"improve"`; otherwise → `"standard"` | `"standard"` |
+
+These values are persisted in `phase_declared` so subsequent invocations (resume) can recover them via the log without re-parsing the original prompt.
+
 Emit `phase_declared`:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator \
   --event-type phase_declared \
-  --data '{"workflow_id":"<workflow_id>","phases":<phases_array>}'
+  --data '{"workflow_id":"<workflow_id>","phases":<phases_array>,"workflow_type":"<workflow_type>","requirement":"<requirement>"}'
 ```
 
 Inspect the output of `append.py`. If it contains `"status": "error"`:
@@ -339,7 +350,7 @@ Look up phase orchestrator from routing table using `current_phase`.
 If `current_phase` is not in the routing table:
 Output `{"status": "error", "reason": "unknown_phase", "detail": "<current_phase> has no entry in routing table", "last_seq": <n>}` and stop.
 
-Derive `workflow_type` from the `phase_declared` event before spawning:
+Derive `workflow_type` and `requirement` from the `phase_declared` event before spawning:
 
 ```bash
 python3 -c "
@@ -348,18 +359,23 @@ sys.path.insert(0, '.claude/lib')
 try:
     from orch_core import read_events_filtered, EventType
     events = read_events_filtered(event_type=EventType.PHASE_DECLARED.value)
-    wt = events[0].data.get('workflow_type', 'standard') if events else 'standard'
+    data = events[0].data if events else {}
+    wt = data.get('workflow_type', 'standard')
     if not isinstance(wt, str) or not wt:
         wt = 'standard'
+    req = data.get('requirement', '')
+    if not isinstance(req, str):
+        req = ''
 except Exception:
     wt = 'standard'
-print(json.dumps({'workflow_type': wt}))
+    req = ''
+print(json.dumps({'workflow_type': wt, 'requirement': req}))
 "
 ```
 
-If the script exits non-zero or the output is not valid JSON: use `workflow_type = 'standard'` and continue — do not stop.
+If the script exits non-zero or the output is not valid JSON: use `workflow_type = 'standard'` and `requirement = ''` and continue — do not stop.
 
-Store result as `workflow_type` (pass explicitly to phase orchestrator so sub-agents never need to re-derive it from the log).
+Store results as `workflow_type` and `requirement` (pass explicitly to phase orchestrator so sub-agents never need to re-derive them from the log).
 
 Spawn via Agent tool:
 - `subagent_type`: phase orchestrator name from routing table
@@ -372,6 +388,7 @@ Spawn via Agent tool:
     log_seq_at_spawn: {last_seq}
     workflow_id:      {workflow_id}
     workflow_type:    {workflow_type}
+    requirement:      {requirement}
     nesting_depth:    1
     ORCH_PROJECT_DIR: {ORCH_PROJECT_DIR}
     SPECS_DIR:        {SPECS_DIR}

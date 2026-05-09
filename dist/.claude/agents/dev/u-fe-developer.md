@@ -31,6 +31,7 @@ Resolved from the activation prompt set by the Orchestrator-Dev:
 |---|---|---|
 | `ORCH_TASK_ID` | Activation prompt | `dev_tc_001` |
 | `ORCH_ATTEMPT` | Activation prompt | `1` |
+| `ORCH_WORKER_ID` | Activation prompt | `u-fe-developer-dev_tc_001` |
 | `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
 | `SPECS_DIR` | Activation prompt | `specs` |
 | `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
@@ -51,6 +52,9 @@ Resolved from the activation prompt set by the Orchestrator-Dev:
 
 The Orchestrator-Dev delivers pre-extracted context in the activation prompt. Before writing any code, use:
 - `CLAUDE.md` — architecture, patterns, naming conventions, stack
+- `Task spec` — path to the Task Contract file (e.g. `<session_dir>/backlog/tc-001.md`); read at activation
+- `Delivery path` — destination file you must write (e.g. `<session_dir>/delivery/<task_id>-delivery.md`)
+- `QA verdict path` — `<specs_dir>/qa/<task_id>-qa.md`. In correction mode, read this file to consume the QA bug list before re-implementing. In first-pass mode, the file does not exist yet and is written later by the QA worker
 - `## Target Task Contract` — Task Contract block copied from backlog.md by the Orchestrator (acceptance criteria, type, affected components)
 - `execution_contract` (YAML block in the Task Contract) — parse fields: `exec_type` determines task type; `input.references` lists pre-declared spec sections to consume (do not re-derive); `input.known_context` contains pre-loaded facts requiring no file reads; `input.assumptions_allowed` declares permitted inference types; `constraints` lists task-contract-specific rules beyond CLAUDE.md; `validation.criteria` are technical checks to run before setting `qa_ready: true`. If any required input is missing: return `blocked` using `.claude/skills/u-shared-templates/blocked-report.yaml` — do not invent missing data. Record all inferences NOT in `assumptions_allowed` in `inference_log` in the delivery-body YAML.
 - `## UI Spec — screens for this Task Contract` — screen sections from ui-epic-XX.md relevant to this Task Contract, extracted by the Orchestrator (mandatory when available; do not implement without them)
@@ -141,7 +145,17 @@ If all gates pass: continue to Step 2.
 ---
 
 ### Step 2 — Plan before coding
-Before creating any file, create `$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.md` using the template defined in `SKILL.md` (section "Delivery file template"), initially filling in only the execution plan. The file will be expanded at the end of implementation.
+
+**Idempotency check (mandatory on retry):** if `$ORCH_ATTEMPT > 1` AND `$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.md` already exists, rename it to `$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.attempt-<N>.bak` before any write — `<N>` is the previous attempt number. This preserves audit trail of the failed attempt and prevents partial-content carryover.
+
+```bash
+if [ "$ORCH_ATTEMPT" -gt 1 ] && [ -f "$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.md" ]; then
+  prev=$(($ORCH_ATTEMPT - 1))
+  mv "$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.md" "$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.attempt-$prev.bak"
+fi
+```
+
+Then create `$SESSION_DIR/delivery/$ORCH_TASK_ID-delivery.md` using the template defined in `SKILL.md` (section "Delivery file template"), initially filling in only the execution plan. The file will be expanded at the end of implementation.
 
 ### Step 2B — Confirm Task Contract branch
 
@@ -440,7 +454,7 @@ Generate the file `$SESSION_DIR/pending/$ORCH_TASK_ID-backend-pending.md` whenev
 
 - [ ] Pre-flight gate (Step 1C) completed — all 3 gates passed or Orchestrator accepted risk
 - [ ] All acceptance criteria have been addressed (even unimplemented ones, with justification)
-- [ ] None of the explicit prohibitions were violated
+- [ ] None of the explicit prohibitions were violated — declare via `prohibition_violations: []` in the delivery gate (or list each unavoidable violation with rule/location/reason/remediation)
 - [ ] Mandatory edge cases have been handled
 - [ ] **Each acceptance criterion has at least one corresponding test**
 - [ ] **Edge cases handled in code have a corresponding test**

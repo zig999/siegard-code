@@ -1,3 +1,9 @@
+---
+name: phase-sdd-rules
+description: Exit criteria checkers and worker routing table for the sdd (Specification-Driven Development) phase. Consumed by orchestrator-sdd.md to dispatch spec workers via select_worker.py and evaluate phase transition gates (check_handoff_manifest_approved, check_all_domains_validated, check_error_codes_synced). Includes check_structural_diff.py to determine if spec changes require domain worker dispatch during improve flows. Not user-invocable — orchestrators call scripts directly.
+user-invocable: false
+---
+
 # phase-sdd-rules
 
 Phase rules skill for the `sdd` (Specification-Driven Development) phase.
@@ -7,17 +13,6 @@ Provides exit criteria checkers and worker routing table consumed by `orchestrat
 
 The orchestrator calls this skill's scripts directly. No inter-skill communication envelope needed.
 Every script returns a JSON object to stdout and exits 0 on success or 1 on error.
-
----
-
-## allowed-tools
-
-```
-Bash(python3 *)
-Read
-Glob
-Grep
-```
 
 ---
 
@@ -32,12 +27,26 @@ Grep
 
 ---
 
+## Concurrency ceiling (RESOURCE_LIMITS)
+
+The orchestrator MUST enforce these per-batch ceilings before each dispatch in Step 5.1:
+
+| `effective_mode` | Max concurrent workers per batch |
+|------------------|----------------------------------|
+| `standard` | `2` |
+| `targeted` | `1` |
+
+The ceiling is enforced as a hard cap — the orchestrator may dispatch FEWER than the cap (e.g., if only one task is ready) but MUST NOT exceed it. Violation is a protocol violation per RESOURCE_LIMITS.
+
+---
+
 ## Worker routing table
 
 Maps `task.type` to worker sub-agent. Consumed by the orchestrator dispatcher.
 
 | task.type | worker subagent_type |
 |-----------|----------------------|
+| `spec-triage` | `u-spec-triage` |
 | `spec-writer` | `u-spec-writer` |
 | `spec-reviewer` | `u-spec-reviewer` |
 | `spec-back` | `u-spec-back` |
@@ -65,7 +74,7 @@ python3 .claude/skills/phase-sdd-rules/scripts/select_worker.py \
 {"worker": "u-spec-writer", "task_type": "spec-writer", "phase": "sdd"}
 ```
 
-### Error (exit 1)
+### Error (exit 1, stderr)
 
 ```json
 {"status": "error", "reason": "internal_error", "detail": "<message>"}
@@ -75,7 +84,7 @@ python3 .claude/skills/phase-sdd-rules/scripts/select_worker.py \
 
 ## Exit criteria
 
-Three criteria must all be met before the sdd phase can transition.
+All three criteria must be met before the sdd phase can transition.
 Evaluated by `orchestrator-sdd.md` at the end of each cycle.
 
 | Criterion | Script | Description |
@@ -169,3 +178,36 @@ Output schema:
   }
 }
 ```
+
+---
+
+## scripts/check_structural_diff.py
+
+Utility (not an exit criterion): determines whether a spec change requires dispatching a domain
+worker. Used by `orchestrator-sdd.md` during improve flows to decide if structural sections were
+modified (endpoints, schemas, auth_rules, data_models, etc.) and a domain worker must run.
+
+Safe fallback: if `improve-scope.json` is missing or the spec is not listed in scope, returns
+`domain_worker_required: true` to avoid skipping required work.
+
+### Usage
+
+```bash
+ORCH_PROJECT_DIR=<path> python3 .claude/skills/phase-sdd-rules/scripts/check_structural_diff.py \
+  --workflow-id <wid> \
+  --spec-path <relative-path-to-spec>
+```
+
+### Output (exit 0)
+
+```json
+{
+  "domain_worker_required": true,
+  "changed_sections": ["endpoints", "schemas"],
+  "structural_sections_found": ["endpoints", "schemas"]
+}
+```
+
+Structural sections that trigger `domain_worker_required: true`:
+`endpoints`, `schemas`, `error_codes`, `component_props`, `state_contracts`,
+`data_models`, `auth_rules`, `event_types`, `api_contracts`

@@ -37,6 +37,9 @@ def _detect_orphaned_phase(state) -> dict | None:
         return None
     if state.escalation is not None:
         return None
+    # If the workflow has no tasks at all it is "empty", not orphaned.
+    if not state.tasks:
+        return None
     phase_tasks = [t for t in state.tasks.values() if t.phase == state.current_phase]
     if phase_tasks:
         return None
@@ -159,6 +162,69 @@ def _compute_metrics(state=None) -> dict:
     }
 
 
+def _detect_stale_orchestrator(state, events: list) -> dict | None:
+    """
+    Returns a diagnostic when a phase is active and has pending tasks but no
+    ORCHESTRATOR_HEARTBEAT was emitted within the stale threshold.
+
+    Indicates the orchestrator LLM was alive (no crash) but stopped making
+    progress — typically caused by emitting narrative text instead of events.
+    """
+    if state.current_phase is None:
+        return None
+    phase = state.phases.get(state.current_phase)
+    if not phase or phase.status.value != "active":
+        return None
+
+    pending = [
+        t for t in state.tasks.values()
+        if t.phase == state.current_phase
+        and t.status.value not in ("completed", "dlq", "skipped")
+    ]
+    if not pending:
+        return None
+
+    STALE_THRESHOLD_SECONDS = 900  # 15 minutes
+    heartbeats = [
+        e for e in events
+        if e.event_type == "orchestrator_heartbeat"
+        and e.data.get("phase") == state.current_phase
+    ]
+    if heartbeats:
+        last_hb = max(heartbeats, key=lambda e: e.seq)
+        try:
+            age = (parse_iso(now_iso()) - parse_iso(last_hb.timestamp)).total_seconds()
+            if age < STALE_THRESHOLD_SECONDS:
+                return None
+        except Exception:
+            pass
+
+    return {
+        "stale_orchestrator": state.current_phase,
+        "pending_tasks": len(pending),
+        "pending_task_ids": [t.task_id for t in pending],
+        "last_heartbeat": heartbeats[-1].timestamp if heartbeats else None,
+        "action_required": (
+            "Orchestrator stopped making progress with active tasks remaining. "
+            "Re-invoke /u-orchestrator — the log is intact and execution will resume "
+            "from the current state."
+        ),
+        "command": "/u-orchestrator",
+    }
+
+
+def _write_stale_orchestrator_alert(stale: dict, metrics: dict) -> None:
+    payload = {
+        "generated_at": now_iso(),
+        "workflow_id": metrics.get("workflow_id"),
+        "run_status": "stale_orchestrator",
+        "last_seq": metrics.get("last_seq"),
+        "diagnostic": stale,
+    }
+    out_path = ORCH_DIR / "last_error.json"
+    out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def _detect_worker_stopped_failures(state) -> dict | None:
     """
     Returns a structured recovery diagnostic when the session ended with
@@ -203,9 +269,10 @@ _ERROR_EVENT_TYPES = frozenset({
 })
 
 
-def _write_last_error(metrics: dict) -> None:
+def _write_last_error(metrics: dict, events: list | None = None) -> None:
     """Writes .orch/last_error.json with the last error-related event from the log."""
-    events = list(read_events_filtered(event_type=None))
+    if events is None:
+        events = list(read_events_filtered(event_type=None))
     error_events = [e for e in events if e.event_type in _ERROR_EVENT_TYPES]
     if not error_events:
         return
@@ -262,6 +329,7 @@ def main() -> None:
         except Exception:
             pass
 
+        events = list(read_events_filtered(event_type=None))
         state = reduce_all()
         metrics = _compute_metrics(state)
         metrics["orphaned_phase"] = None
@@ -279,6 +347,14 @@ def main() -> None:
             if metrics.get("run_status") not in ("orphaned_phase",):
                 metrics["run_status"] = "stuck_improve_spec"
             _write_stuck_improve_alert(stuck, metrics)
+
+        metrics["stale_orchestrator"] = None
+        stale = _detect_stale_orchestrator(state, events)
+        if stale:
+            metrics["stale_orchestrator"] = stale["stale_orchestrator"]
+            if metrics.get("run_status") not in ("orphaned_phase", "stuck_improve_spec"):
+                metrics["run_status"] = "stale_orchestrator"
+            _write_stale_orchestrator_alert(stale, metrics)
 
         # Detect tasks that failed via on_subagent_stop synthesis and need
         # orchestrator re-invocation to retry. Surfaces recovery instructions
@@ -299,7 +375,7 @@ def main() -> None:
             or metrics.get("circuit_breaker_tripped")
             or metrics.get("escalations", 0) > 0
         ):
-            _write_last_error(metrics)
+            _write_last_error(metrics, events)
     except Exception:
         pass  # Hook must never block shutdown
 

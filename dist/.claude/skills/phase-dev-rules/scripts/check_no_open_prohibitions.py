@@ -17,16 +17,24 @@ Usage:
 Environment:
     ORCH_PROJECT_DIR  — project root used to resolve artifact paths (default: .)
 
-Output (exit 0):
-    {"criterion": "no_open_prohibitions", "met": bool, "evidence": {...}}
+Output schema (per GATE_SCHEMA_UNIFORMITY in specs/principles.md):
+  Always emits {status, check, timestamp} for uniform gate consumption.
+  Legacy fields {criterion, met, evidence} preserved for orchestrator-dev compatibility.
 
-Output (exit 1):
+Output (exit 0 when met):
+    {"status": "ok", "check": "no_open_prohibitions", "timestamp": "<ISO8601>",
+     "criterion": "no_open_prohibitions", "met": true, "evidence": {...}}
+
+Output (exit 1 when blocked or error):
+    {"status": "blocked", "check": "no_open_prohibitions", "timestamp": "<ISO8601>",
+     "criterion": "no_open_prohibitions", "met": false, "evidence": {...}}
     {"status": "error", "reason": "<code>", "detail": "<message>"}
 """
 import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _CLAUDE_DIR = Path(__file__).resolve().parents[3]
@@ -70,6 +78,7 @@ def _collect_delivery_paths(state) -> list[str]:
 def evaluate() -> dict:
     state = reduce_all()
     delivery_paths = _collect_delivery_paths(state)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     violations: list[dict] = []
     clean_count = 0
@@ -90,9 +99,13 @@ def evaluate() -> dict:
         else:
             clean_count += 1
 
+    met = len(violations) == 0
     return {
+        "status": "ok" if met else "blocked",
+        "check": CRITERION_ID,
+        "timestamp": timestamp,
         "criterion": CRITERION_ID,
-        "met": len(violations) == 0,
+        "met": met,
         "evidence": {
             "total": len(delivery_paths),
             "clean": clean_count,
@@ -102,7 +115,10 @@ def evaluate() -> dict:
 
 
 def main() -> None:
-    print(json.dumps(evaluate()))
+    result = evaluate()
+    print(json.dumps(result))
+    if result.get("status") == "blocked":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

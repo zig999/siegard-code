@@ -38,6 +38,15 @@ spec_divergences:
 tech_debt:
   count: <int>
 
+prohibition_violations: []
+# Mandatory list (empty = clean). Each entry must declare a violation of the rules in
+# u-be-development.md "Explicit prohibitions" (e.g., temporary console.log, hardcoded
+# value awaiting token, suppressed test). Format per item:
+#   - rule: "<rule name>"
+#     location: "<path/file:line>"
+#     reason: "<why it could not be removed in this TC>"
+#     remediation: "<follow-up TC id or next step>"
+
 qa_ready: true | false
 qa_notes: ""
 ```

@@ -44,8 +44,24 @@ Check for the existence of `{SPECS_DIR}/log-reverse-spec.md` and `{SPECS_DIR}/`:
 | Yes | * | **Resume** — previous session interrupted |
 
 - **New mode:** follow full initialization below
-- **Merge mode:** follow initialization with merge protocol
+- **Merge mode:** SUSPENDED — see block below
 - **Resume mode:** load the Orchestrator with instruction to read the log and resume
+
+**If mode == "merge": stop immediately.**
+
+The merge submode is suspended. Deterministic conflict-resolution rules are not yet
+implemented — running merge risks silently overwriting valid spec content with stale
+code-derived content, with no auditable resolution trail.
+
+Inform the user:
+
+> **reverse_eng merge is currently unavailable.**
+> Deterministic conflict-resolution rules have not yet been implemented.
+> Available alternatives:
+> - Delete the existing `{SPECS_DIR}/` and re-run `/u-reverse-spec {CODE_DIR}` → triggers **new** mode
+> - If a prior session was interrupted, re-run `/u-reverse-spec {CODE_DIR}` with the existing log → triggers **resume** mode
+
+Do not invoke `u-reverse-spec-orchestrator`. Do not modify any file. Stop.
 
 ## Initialization (new mode)
 
