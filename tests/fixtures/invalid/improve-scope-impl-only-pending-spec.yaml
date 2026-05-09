@@ -1,0 +1,8 @@
+improve_scope:
+  description: "Fix date formatting — invalid combination"
+  type: implementation_only
+  spec_change_status: pending_spec
+  affected_specs: []
+  estimated_task_contracts: 1
+  planner_required: false
+  planner_skip_reason: "One-liner fix"

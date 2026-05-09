@@ -1,0 +1,11 @@
+improve_scope:
+  description: "Add pagination to user list — spec update in progress"
+  type: spec_change_required
+  spec_change_status: pending_spec
+  affected_specs:
+    - path: "front/features/users.feature.spec.md"
+      sections: ["§1", "§2"]
+      change_summary: "Pagination controls and empty state for user list"
+  estimated_task_contracts: 1
+  planner_required: false
+  planner_skip_reason: "Single targeted UI change"

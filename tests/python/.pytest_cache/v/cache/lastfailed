@@ -1,7 +1,0 @@
-{
-  "test_integration.py::TestEscalationFlow::test_escalation_followed_by_human_response": true,
-  "test_reducer.py::TestSnapshot::test_updates_last_snapshot_seq": true,
-  "test_reducer.py::TestIdempotency::test_duplicate_task_created_is_noop": true,
-  "test_scripts.py::TestCircuitBreaker::test_reset_without_confirm_exits_2": true,
-  "test_scripts.py::TestCircuitBreaker::test_reset_without_operator_exits_3": true
-}
