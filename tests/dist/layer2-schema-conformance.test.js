@@ -5,7 +5,7 @@ import { getAllSchemaFiles, loadFixture } from './helpers/load.js'
 import { loadAndCompile, validate, compileAllSchemas } from './helpers/schema.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const SCHEMA_DIR = resolve(__dirname, '../../dist/skills/u-shared-templates')
+const SCHEMA_DIR = resolve(__dirname, '../../dist/.claude/skills/u-shared-templates')
 
 // Maps each schema to its valid fixture and any invalid fixtures that must fail it
 const SCHEMA_FIXTURE_MAP = {

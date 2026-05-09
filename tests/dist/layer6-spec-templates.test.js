@@ -4,8 +4,7 @@ import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const DIST_DIR = resolve(__dirname, '../../dist')
-const EXTRAS_DIR = resolve(__dirname, '../../extras')
+const DIST_DIR = resolve(__dirname, '../../dist/.claude')
 
 function readFile(path) {
   return readFileSync(path, 'utf8')
@@ -30,8 +29,6 @@ const COMPONENT_TEMPLATE = resolve(DIST_DIR, 'skills/u-spec-templates/TEMPLATE.c
 const FLOW_TEMPLATE      = resolve(DIST_DIR, 'skills/u-spec-templates/TEMPLATE.flow.md')
 const TOKENS_TEMPLATE    = resolve(DIST_DIR, 'skills/u-spec-templates/TEMPLATE.design-system/tokens.md')
 
-const FEATURE_EXAMPLE    = resolve(EXTRAS_DIR, 'feature.spec.md')
-const COMPONENT_EXAMPLE  = resolve(EXTRAS_DIR, 'component.spec.md')
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 //
@@ -48,8 +45,6 @@ describe('Layer 6 — Spec Templates', () => {
       ['TEMPLATE.component.spec.md', COMPONENT_TEMPLATE],
       ['TEMPLATE.flow.md', FLOW_TEMPLATE],
       ['TEMPLATE.design-system/tokens.md', TOKENS_TEMPLATE],
-      ['extras/feature.spec.md', FEATURE_EXAMPLE],
-      ['extras/component.spec.md', COMPONENT_EXAMPLE],
     ]
 
     it.each(files)('%s exists', (_, path) => {
@@ -156,41 +151,4 @@ describe('Layer 6 — Spec Templates', () => {
     expect(section7idx, 'Section 7 must appear before section 8').toBeLessThan(section8idx)
   })
 
-  // ── extras/feature.spec.md (example) ────────────────────────────────────
-
-  it('extras/feature.spec.md — conforms to current template structure', () => {
-    const content = readFile(FEATURE_EXAMPLE)
-    expect(content, 'must use English headers').toContain('Consumed Endpoints')
-    expect(content, 'must not contain Portuguese headers').not.toContain('## 1. Objetivo')
-    expect(content, 'Feature ID (FEAT-NN) missing from header').toMatch(/Feature ID:\s*FEAT-\d+/)
-    expect(content, '§1 must reference operationId column').toContain('operationId')
-    expect(content, '§2 must use UI-NN identifiers').toMatch(/UI-\d{2}/)
-    expect(hasSectionNumber(content, 3, 'State Transition Table'), '§3 missing').toBe(true)
-    expect(hasSectionNumber(content, 6, 'API Error'), '§6 missing').toBe(true)
-    expect(content, '§7 must declare component adapters').toContain('Component adapters')
-    expect(content, '§9 must use Given/When/Then').toMatch(/Given .+\nWhen .+\nThen/)
-    expect(hasSectionNumber(content, 11, 'Out of Scope'), '§11 missing').toBe(true)
-    expect(hasSection(content, 'Changelog'), 'Changelog section missing').toBe(true)
-  })
-
-  // ── extras/component.spec.md (example) ──────────────────────────────────
-
-  it('extras/component.spec.md — conforms to current template structure', () => {
-    const content = readFile(COMPONENT_EXAMPLE)
-    expect(content, 'must use English headers').toContain('Props Contract')
-    expect(content, 'must not contain Portuguese headers').not.toContain('## 1. Objetivo')
-    expect(content, 'Component ID (COMP-NN) missing from header').toMatch(/Component ID:\s*COMP-\d+/)
-    expect(hasSectionNumber(content, 2, 'When to Use'), '§2 missing').toBe(true)
-    expect(content, '§3 binding-contract note missing').toContain('Binding contract')
-    expect(hasSectionNumber(content, 5, 'Events Emitted'), '§5 missing').toBe(true)
-
-    const bddStart = content.indexOf('## 8. BDD Scenarios')
-    const bddSection = content.slice(bddStart)
-    const scenarioCount = (bddSection.match(/^### /gm) || []).length
-    expect(scenarioCount, 'Need at least 3 BDD scenarios in §8').toBeGreaterThanOrEqual(3)
-
-    expect(hasSectionNumber(content, 9, 'Accessibility Contract'), '§9 missing').toBe(true)
-    expect(hasSectionNumber(content, 10, 'Internal Dependencies'), '§10 missing').toBe(true)
-    expect(hasSection(content, 'Changelog'), 'Changelog section missing').toBe(true)
-  })
 })

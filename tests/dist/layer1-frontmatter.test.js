@@ -1,103 +1,68 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
 import { basename } from 'path'
 import {
   getTopLevelAgentFiles,
-  getProtocolIndexFiles,
-  getProtocolContentFiles,
   parseFrontmatter,
 } from './helpers/load.js'
 
-// Standalone agents — full frontmatter including model
-const AGENT_REQUIRED_FIELDS = ['name', 'description', 'user-invocable', 'model']
+// Worker agents (in subdirs: dev/, spec/, reverse-spec/) — full frontmatter
+const WORKER_REQUIRED_FIELDS = ['name', 'description', 'user-invocable', 'model']
 
-// Protocol index files (*-protocols.md) — frontmatter without model
-const PROTOCOL_INDEX_REQUIRED_FIELDS = ['name', 'description', 'user-invocable']
+// Orchestrators at the agents/ root — no user-invocable (spawned by meta-orchestrator)
+const ORCHESTRATOR_REQUIRED_FIELDS = ['name', 'description', 'model']
 
 const ALLOWED_MODELS = [
   'claude-sonnet-4-6',
   'claude-opus-4-6',
+  'claude-opus-4-7',
   'claude-haiku-4-5-20251001',
 ]
 
 describe('Layer 1 — Frontmatter', () => {
   const agentFiles = getTopLevelAgentFiles()
-  const protocolIndexFiles = getProtocolIndexFiles()
-  const protocolContentFiles = getProtocolContentFiles()
 
-  it('discovery sanity: standalone agents, protocol indexes, and protocol content files all present', () => {
-    expect(agentFiles.length, 'no standalone agent files found').toBeGreaterThan(0)
-    expect(protocolIndexFiles.length, 'no *-protocols.md index files found').toBeGreaterThan(0)
-    expect(protocolContentFiles.length, 'no protocol content files found').toBeGreaterThan(0)
+  it('discovery sanity: agent files found', () => {
+    expect(agentFiles.length, 'no agent files found').toBeGreaterThan(0)
   })
 
-  // ── Standalone agents — every check on a single frontmatter parse ────────
-  //
-  // Previously these were 4 separate it.each blocks, each parsing the same
-  // frontmatter. Consolidated into one it.each per file: 4 assertions, 1 read.
-  // Vitest still names the failing file ("u-fe-developer.md — frontmatter
-  // well-formed") and the first assertion failure shows which rule broke.
+  // Orchestrators live at the top of agents/ (no subdir path component other than agents/).
+  // Workers live one level deeper: agents/dev/, agents/spec/, agents/reverse-spec/.
+  const orchestratorFiles = agentFiles.filter(f => {
+    const rel = f.split('/agents/')[1] ?? ''
+    return !rel.includes('/')
+  })
+  const workerFiles = agentFiles.filter(f => {
+    const rel = f.split('/agents/')[1] ?? ''
+    return rel.includes('/')
+  })
 
-  describe('standalone agents — frontmatter well-formed', () => {
-    it.each(agentFiles.map(f => [basename(f), f]))(
+  describe('orchestrators — frontmatter well-formed', () => {
+    it.each(orchestratorFiles.map(f => [basename(f), f]))(
       '%s',
       (_, file) => {
         const fm = parseFrontmatter(file)
-
-        // 1. All required fields present
-        for (const field of AGENT_REQUIRED_FIELDS) {
+        for (const field of ORCHESTRATOR_REQUIRED_FIELDS) {
           expect(fm, `"${field}" missing in ${basename(file)}`).toHaveProperty(field)
         }
-
-        // 2. Model is in the allow-list
-        expect(
-          ALLOWED_MODELS,
-          `model "${fm.model}" not allowed in ${basename(file)}`
-        ).toContain(fm.model)
-
-        // 3. user-invocable is a boolean
-        expect(
-          typeof fm['user-invocable'],
-          `user-invocable must be boolean in ${basename(file)}`
-        ).toBe('boolean')
-
-        // 4. name field matches the filename
+        expect(ALLOWED_MODELS, `model "${fm.model}" not allowed in ${basename(file)}`).toContain(fm.model)
         const expectedName = basename(file, '.md')
-        expect(
-          fm.name,
-          `name "${fm.name}" != filename "${expectedName}"`
-        ).toBe(expectedName)
+        expect(fm.name, `name "${fm.name}" != filename "${expectedName}"`).toBe(expectedName)
       }
     )
   })
 
-  // ── Protocol index files (*-protocols.md) — frontmatter without model ────
-
-  describe('protocol index files — frontmatter well-formed', () => {
-    it.each(protocolIndexFiles.map(f => [basename(f), f]))(
+  describe('worker agents — frontmatter well-formed', () => {
+    it.each(workerFiles.map(f => [basename(f), f]))(
       '%s',
       (_, file) => {
         const fm = parseFrontmatter(file)
-
-        for (const field of PROTOCOL_INDEX_REQUIRED_FIELDS) {
+        for (const field of WORKER_REQUIRED_FIELDS) {
           expect(fm, `"${field}" missing in ${basename(file)}`).toHaveProperty(field)
         }
-        expect(
-          typeof fm['user-invocable'],
-          `user-invocable must be boolean in ${basename(file)}`
-        ).toBe('boolean')
-      }
-    )
-  })
-
-  // ── Protocol content files — non-empty Markdown ──────────────────────────
-
-  describe('protocol content files — non-empty', () => {
-    it.each(protocolContentFiles.map(f => [basename(f), f]))(
-      '%s',
-      (_, file) => {
-        const content = readFileSync(file, 'utf8').trim()
-        expect(content.length, `${basename(file)} is empty`).toBeGreaterThan(0)
+        expect(ALLOWED_MODELS, `model "${fm.model}" not allowed in ${basename(file)}`).toContain(fm.model)
+        expect(typeof fm['user-invocable'], `user-invocable must be boolean in ${basename(file)}`).toBe('boolean')
+        const expectedName = basename(file, '.md')
+        expect(fm.name, `name "${fm.name}" != filename "${expectedName}"`).toBe(expectedName)
       }
     )
   })

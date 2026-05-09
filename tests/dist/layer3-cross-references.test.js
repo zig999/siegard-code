@@ -47,7 +47,14 @@ describe('Layer 3 — Cross References', () => {
   })
 
   describe('each schema file has a matching template', () => {
-    const schemaFiles = getAllSchemaFiles()
+    // Internal-only schemas used for event/log validation — no human-facing template required
+    const SKIP_TEMPLATE_SCHEMAS = new Set([
+      'backlog.schema.yaml',
+      'delivery.schema.yaml',
+      'qa-verdict.schema.yaml',
+    ])
+
+    const schemaFiles = getAllSchemaFiles().filter(f => !SKIP_TEMPLATE_SCHEMAS.has(basename(f)))
 
     it('finds schema files', () => {
       expect(schemaFiles.length).toBeGreaterThan(0)

@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url)
 const matter = require('gray-matter')
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const DIST_DIR = resolve(__dirname, '../../../dist')
+const DIST_DIR = resolve(__dirname, '../../../dist/.claude')
 
 export function getDistDir() {
   return DIST_DIR

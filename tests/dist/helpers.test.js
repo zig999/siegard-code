@@ -18,9 +18,9 @@ import { validate, compileAllSchemas } from './helpers/schema.js'
 // the helper itself before the cascade of layer failures masks the root cause.
 
 describe('helpers — smoke tests', () => {
-  it('getDistDir() returns the dist/ directory and it exists', () => {
+  it('getDistDir() returns the dist/.claude directory and it exists', () => {
     const dir = getDistDir()
-    expect(dir).toMatch(/\/dist$/)
+    expect(dir).toMatch(/\/dist\/\.claude$/)
     expect(getAllAgentFiles().length).toBeGreaterThan(10)
   })
 
