@@ -1,0 +1,610 @@
+# CLAUDE.md — {PROJECT_NAME}
+
+## Project
+
+### Description
+
+**{PROJECT_NAME}** is {ONE_LINE_DESCRIPTION}.
+
+#### Problem solved
+
+{PROBLEM_STATEMENT — 2 to 4 sentences explaining what is lost or broken without this tool}
+
+#### Core concepts
+
+- **{Concept1}** — {definition and role in the system}
+- **{Concept2}** — {definition and role in the system}
+- **{Concept3}** — {definition and role in the system}
+
+#### Technical flow [REMOVE IF NOT APPLICABLE]
+
+<!-- Only include if the inter-system communication sequence has direct implications
+     for architecture decisions (e.g. multi-step auth affecting middleware layering). -->
+
+1. {SYSTEM_STEP_1 — e.g. Client sends JWT to BFF → BFF validates via Supabase service key}
+2. {SYSTEM_STEP_2}
+3. {SYSTEM_STEP_3}
+
+---
+
+## Golden Rules
+
+These rules apply to every task in this project unless explicitly overridden.
+Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.
+
+**Rule 1 — Think Before Coding**
+State assumptions explicitly. If uncertain, ask rather than guess.
+Present multiple interpretations when ambiguity exists.
+Push back when a simpler approach exists.
+Stop when confused. Name what's unclear.
+
+**Rule 2 — Simplicity First**
+Minimum code that solves the problem. Nothing speculative.
+No features beyond what was asked. No abstractions for single-use code.
+Test: would a senior engineer say this is overcomplicated? If yes, simplify.
+
+**Rule 3 — Surgical Changes**
+Touch only what you must. Clean up only your own mess.
+Don't "improve" adjacent code, comments, or formatting.
+Don't refactor what isn't broken. Match existing style.
+
+**Rule 4 — Goal-Driven Execution**
+Define success criteria. Loop until verified.
+Don't follow steps. Define success and iterate.
+Strong success criteria let you loop independently.
+
+**Rule 5 — Use the Model Only for Judgment Calls**
+Use the model for: classification, drafting, summarization, extraction.
+Do NOT use the model for: routing, retries, deterministic transforms.
+If code can answer, code answers.
+
+**Rule 6 — Token Budgets Are Not Advisory**
+Per-task: 4,000 tokens. Per-session: 30,000 tokens.
+If approaching budget, summarize and start fresh.
+Surface the breach. Do not silently overrun.
+
+**Rule 7 — Surface Conflicts, Don't Average Them**
+If two patterns contradict, pick one (more recent / more tested).
+Explain why. Flag the other for cleanup.
+Don't blend conflicting patterns.
+
+**Rule 8 — Read Before You Write**
+Before adding code, read exports, immediate callers, shared utilities.
+"Looks orthogonal" is dangerous. If unsure why code is structured a way, ask.
+
+**Rule 9 — Tests Verify Intent, Not Just Behavior**
+Tests must encode WHY behavior matters, not just WHAT it does.
+A test that can't fail when business logic changes is wrong.
+
+**Rule 10 — Checkpoint After Every Significant Step**
+Summarize what was done, what's verified, what's left.
+Don't continue from a state you can't describe back.
+If you lose track, stop and restate.
+
+**Rule 11 — Match the Codebase's Conventions, Even If You Disagree**
+Conformance > taste inside the codebase.
+If you genuinely think a convention is harmful, surface it. Don't fork silently.
+
+**Rule 12 — Fail Loud**
+"Completed" is wrong if anything was skipped silently.
+"Tests pass" is wrong if any were skipped.
+Default to surfacing uncertainty, not hiding it.
+
+---
+
+## Configuration
+
+<!-- MACHINE-PARSED — read via regex by orchestrator-dev and u-spec/u-dev.
+     These two fields are required. Do not rename or nest them. -->
+domain: {frontend|backend|fullstack}
+specs_dir: {e.g. docs/specs}
+
+<!-- CONTEXT — read as LLM context by workers. Not parsed mechanically. -->
+
+# --- Infrastructure ---
+stack:
+  frontend: {e.g. React 19, TypeScript 5, Tailwind CSS v4, Zustand v5, @tanstack/react-query v5, Vitest, Playwright}
+  backend: {e.g. Node.js 20, TypeScript 5.7, Fastify, PostgreSQL 17, Vitest}
+apps:
+  frontend:
+    path: {e.g. frontend}/
+    dev: {e.g. npm --filter frontend dev}
+    build: {e.g. npm --filter frontend build}
+  backend:
+    path: {e.g. backend}/
+    dev: {e.g. npm --filter backend dev}
+    build: {e.g. npm --filter backend build}
+sessions_dir: {e.g. docs/sessions}
+runtime_dir: {e.g. docs/runtime/logs}
+
+# --- Review phase (orchestrator-review) ---
+# test_command must emit JSON: vitest --reporter=json | jest --json | pytest --tb=json
+test_command: {e.g. npx vitest run --reporter=json}
+build_command: {e.g. npm run build}   # empty string "" skips build step
+
+# --- Backend config (u-be-developer, u-be-qa-docs, u-be-standards) ---
+# All fields are optional. Agents use stated defaults when absent.
+di_strategy: {manual-factory|nestjs-ioc|inversify}       # default: manual-factory
+validation_library: {zod|joi|class-validator}             # default: zod
+folder_structure: {feature-based|modules}                 # default: feature-based
+api_versioning_strategy: {none|url-prefix|header}         # default: none — informs u-spec-writing and u-be-developer
+pagination:
+  strategy: {offset|cursor}   # default: offset
+  default_limit: {e.g. 20}
+  max_limit: {e.g. 100}
+
+# --- Orchestration concurrency (orchestrator-dev worker dispatch) ---
+# Controls how many workers run in parallel per phase. Lower values reduce token burn.
+# Missing = orchestrator decides (typically 2 for fullstack, 1 for single-domain).
+max_parallel_workers: {e.g. 2}
+
+# --- Frontend config (u-fe-developer, u-fe-qa-docs) ---
+i18n: {true|false}   # default: false — enables hardcoded-string checks in QA
+accessibility: {none|wcag-2.1-aa|wcag-2.2-aa}   # default: none
+
+# --- QA feature flags (BE and FE — activates extra checks in qa phase) ---
+observability_required: {true|false}   # default: false
+dependency_audit: {true|false}         # default: false
+
+# --- Git conventions (used by agents creating branches and PRs) ---
+git_conventions:
+  branch_pattern: {e.g. feat/|fix/|chore/}
+  commit_format: {conventional-commits|free-form}   # default: conventional-commits
+  pr_target: {main|develop}                          # default: main
+
+# --- Docs and changelog policy ---
+changelog_required: {true|false}         # default: false
+docs_update_policy: {on-pr|on-merge|manual}   # default: manual
+
+# --- Compliance (u-spec-compliance — omit section if no regulatory requirements) ---
+# Accepted values: gdpr, pci_dss, hipaa, sox, lgpd
+compliance: []   # e.g. [gdpr, lgpd]
+
+# --- Design system (u-ui-design) ---
+design_system:
+  tailwind_integration: {theme}   # "theme" = CSS-first config via @theme in theme.css
+
+---
+
+## Environment
+
+- Node: {e.g. v20 LTS}
+- OS: {e.g. Windows + WSL | macOS | Linux}
+- Package manager: {e.g. npm (workspaces) | pnpm | yarn}
+- Linter: {e.g. ESLint + @typescript-eslint}
+- Formatter: {e.g. Prettier + prettier-plugin-tailwindcss}
+- CI: {e.g. GitHub Actions | none}
+- Dev server: {e.g. tsx watch (backend) / vite (frontend)}
+- Container: {none | Docker}
+
+---
+
+## Commands
+
+| Task      | Command                                 |
+|-----------|-----------------------------------------|
+| dev (fe)  | {e.g. npm --filter frontend dev}        |
+| dev (be)  | {e.g. npm --filter backend dev}         |
+| build     | {e.g. npm run build}                    |
+| test      | {e.g. npm run test}                     |
+| lint      | {e.g. npm run lint}                     |
+| typecheck | {e.g. npx tsc --noEmit}                 |
+| migrate   | {e.g. npx supabase db push \| skip}     |
+
+---
+
+## Directory Structure
+
+```
+{specs_dir}/
+  _global/                #   conventions.md, error-codes.md, glossary.md
+  _validation/            #   validation-result.yaml + validation.md per domain
+  domains/{domain}/       #   openapi.yaml, {domain}.spec.md, back/{domain}.back.md
+  front/                  #   front.md, features/, components/, _flows/, design-system/
+  handoff-manifest.yaml   # Delivery contract read by orchestrator-dev — see Handoff Manifest section
+  decisions.md            # Active architectural decisions
+
+{sessions_dir}/{session}/
+  backlog.md              #   Epics and Task Contracts (written by u-planning)
+  log-orchestrator-dev.md #   Dev orchestrator session log
+  tc-XX-delivery.md       #   Developer delivery (includes delivery-gate YAML block)
+  us-XX-qa.md             #   QA report (written by u-be-qa-docs / u-fe-qa-docs)
+  session-decisions.md    #   Cross-session persistent decisions
+  triage.json             #   Written by u-spec-triage; read by orchestrator-sdd for dispatch routing
+  improve-scope.json      #   Written by /u-improve; read by orchestrator-dev for improve flow
+  _temp/                  #   Consumed inputs moved here after processing (not deleted)
+
+.orch/                    # Orchestration engine state — NOT committed (add to .gitignore)
+  log.jsonl               #   Append-only event log — source of truth for all phase state
+  config.json             #   Optional: retry policy and circuit breaker overrides (see Orchestration Engine)
+  workflow.json           #   Optional: override default phase sequence
+  workers/{id}.json       #   Worker registry entries (written by hooks, consumed by on_subagent_stop)
+  metrics/current.json    #   Written by on_stop hook — diagnosis of last session
+
+{runtime_dir}/
+  *.yaml                  #   Ephemeral traces — NOT committed to repo
+```
+
+**.gitignore rules (add to project root):**
+```
+# Orchestration engine runtime state — never commit
+.orch/
+
+# Replace with the root dir of runtime_dir (e.g. docs/runtime/)
+{runtime_dir_root}/
+```
+
+---
+
+## Orchestration Engine
+
+<!-- This section documents how the siegard orchestration engine behaves in this project.
+     Modify .orch/config.json and .orch/workflow.json to tune behavior without touching CLAUDE.md. -->
+
+### Entry points
+
+| Command      | When to use                                              |
+|--------------|----------------------------------------------------------|
+| `/u-spec`    | New feature or domain — runs full SDD → Dev → Review     |
+| `/u-dev`     | Skip spec phase — goes directly to Dev → Review          |
+| `/u-improve` | Incremental change to an existing spec or behavior       |
+
+### Retry policy (`.orch/config.json`)
+
+The engine uses exponential backoff with per-tier defaults. Override when project needs differ:
+
+```json
+{
+  "retry_policy": {
+    "defaults_by_tier": {
+      "critical": { "max_attempts": 5, "base_delay_s": 15, "cap_s": 600 },
+      "standard": { "max_attempts": 3, "base_delay_s": 30, "cap_s": 600 },
+      "bulk":     { "max_attempts": 1, "base_delay_s": 0,  "cap_s": 0   }
+    },
+    "overrides_by_task_type": {
+      "{task_type}": { "max_attempts": 2, "base_delay_s": 10, "cap_s": 120 }
+    }
+  }
+}
+```
+
+### Circuit breaker (`.orch/config.json`)
+
+Trips when failure rate exceeds threshold within the rolling window. Defaults:
+
+```json
+{
+  "circuit_breaker": {
+    "enabled": true,
+    "window_minutes": 10,
+    "failure_threshold": 50,
+    "scope": "workflow",
+    "cooldown_minutes": 30,
+    "reset_on_success_count": 5
+  }
+}
+```
+
+### Phase override (`.orch/workflow.json`)
+
+Override the default phase sequence before first `/u-spec` invocation. Once the log exists, phase sequence is derived from events — `workflow.json` is ignored.
+
+```json
+{
+  "phases": ["sdd", "dev", "review"]
+}
+```
+
+### Worker recursion limit
+
+Orchestrators refuse to spawn if `nesting_depth >= 3`. If this error appears, the call chain has a cycle — investigate the orchestrator that is re-spawning itself.
+
+### Diagnosing a stuck session
+
+1. Read `.orch/metrics/current.json` — written by `on_stop` hook after each session.
+2. Check `.orch/last_error.json` — written when an orphaned phase or stuck improve workflow is detected.
+3. Run `/orch-state` to derive the current phase and pending task list from the log.
+
+---
+
+## Handoff Manifest
+
+<!-- handoff-manifest.yaml is the delivery contract between the SDD phase and the Dev phase.
+     orchestrator-dev reads it at Step 2 to route workers and decide whether to proceed.
+     Missing or incorrect fields here cause silent wrong-stack dispatch or vacuous completion. -->
+
+**File location:** `{specs_dir}/handoff-manifest.yaml`
+
+**Required fields consumed by orchestrator-dev:**
+
+```yaml
+# Determines worker dispatch: "be" → u-be-*, "fe" → u-fe-*, "fullstack" → both in parallel.
+# CRITICAL: missing defaults to "be" — fullstack projects silently lose all FE workers.
+stack: {be|fe|fullstack}
+
+handoff:
+  # Describes the delivery type — informs task scoping in u-planning.
+  type: {new_domain|enhancement|bugfix|refactor}
+
+  # Controls whether the dev phase proceeds or short-circuits.
+  # "no_action" causes the phase to complete with zero tasks (vacuous success).
+  # Ensure this is correct before invoking /u-dev.
+  dev_impact: {proceed|no_action}
+
+  # Scopes the developer to specific files. Empty list = full spec scope.
+  changed_files:
+    - {e.g. backend/src/modules/auth/service/auth.service.ts}
+    - {e.g. frontend/src/features/login/hooks/useLogin.ts}
+
+# Set by u-handoff-validator after approval. Dev orchestrator refuses to run without this.
+approval_status: approved
+```
+
+**Failure modes:**
+
+| Missing field | Symptom | Recovery |
+|---|---|---|
+| `stack` | Defaults to "be"; FE workers never dispatched | Add field; re-run `/u-dev` |
+| `dev_impact: no_action` | Phase completes instantly with zero tasks | Correct impact; re-run `/u-dev` |
+| `approval_status` missing or not "approved" | Dev phase refuses to start | Run `/u-spec` review gate or set manually |
+| `changed_files` empty | Developers use full spec scope (slower, less focused) | Populate with affected file paths |
+
+---
+
+## Architecture
+
+### Frontend [REMOVE IF NOT APPLICABLE]
+
+- Rendering strategy: {SPA | SSR | SSG | hybrid}
+- Routing: {e.g. React Router DOM v7}
+- Shared UI: `{e.g. frontend/src/components/ui/}`
+- Data fetching: {e.g. @tanstack/react-query v5}
+- Client state: {e.g. Zustand v5}
+- Authentication: {e.g. Supabase Auth — login/signup via supabase-js, JWT sent to BFF}
+- direct_{service}_access: {true|false} — {e.g. direct_db_access: false — all data access goes through BFF}
+
+### Backend [REMOVE IF NOT APPLICABLE]
+
+<!-- "Style" is read by orchestrator-sdd and u-spec-writing to determine domain boundaries.
+     monolith-modular = single deployable, feature modules; microservices = per-service workers. -->
+- Style: {monolith-modular | microservices | serverless}
+- API: {REST | GraphQL | tRPC} — {tooling, e.g. OpenAPI via @fastify/swagger}
+- Layering: {e.g. Controller → Service → Repository}
+- Primary database: {e.g. PostgreSQL 17 via Supabase Cloud}
+- Auth: {e.g. Supabase Auth — JWT validation in BFF middleware}
+- direct_{service}_access: {true|false} — {e.g. direct_db_access: false — single entry point for all business logic}
+- Cache: {none | Redis | in-memory}
+- Background jobs: {none | e.g. pg-boss — queues: reminders, recurrence}
+
+### Database [REMOVE IF NOT APPLICABLE]
+
+- Platform: {e.g. Supabase Cloud | AWS RDS | PlanetScale}
+- Database: {e.g. PostgreSQL 17}
+- Migrations: {e.g. SQL nativo (`supabase/migrations/`)}
+- Seeds: {e.g. `supabase/seed.sql` for development data}
+- Business logic: {in application layer | in DB functions/procedures}
+- Naming: {snake_case | camelCase} for tables and columns
+- Audit timestamps: {all tables have `created_at` and `updated_at` | specify exceptions}
+
+**Safety Rule — Database Changes Require Explicit Approval**
+
+No database change may be executed without the user's explicit approval. This covers: migration files, schema-altering commands, seed files, tables/columns/indexes/functions/triggers/policies.
+
+Required protocol:
+1. Present the proposed SQL or migration to the user.
+2. Explain the impact (which tables/columns are affected, whether it is reversible).
+3. Wait for explicit confirmation before executing.
+
+**Forbidden:** using `--force`, skipping confirmation, or executing in the background without prior notice.
+
+### {External Service / Infrastructure} [REMOVE IF NOT APPLICABLE]
+
+- role: {e.g. infrastructure-only — DB, auth, storage}
+- rls: {enabled | disabled} — {justify: e.g. security centralized in BFF service layer}
+
+### Repository Layer [REMOVE IF NOT APPLICABLE]
+
+- interfaces: {e.g. IUserRepository, ISubjectRepository} — contracts defined in service layer
+- adapters: {e.g. SupabaseUserRepository} — swappable implementations
+- swap_cost: repository-layer-only — replacing the DB = replacing only the adapters
+
+### MCP Server [REMOVE IF NOT APPLICABLE]
+
+- role: {e.g. BFF client — consumes the same REST routes as the frontend}
+- auth: {e.g. JWT in Authorization: Bearer header}
+- contract: {e.g. tools generated from BFF openapi.yaml}
+- direct_supabase_access: false
+
+---
+
+## Stack — Frontend [REMOVE IF NOT APPLICABLE]
+
+### {CSS Framework — e.g. Tailwind CSS v4}
+
+- {Rule 1 — e.g. CSS-first config via @theme in theme.css. No tailwind.config.ts.}
+- {Rule 2 — e.g. Never hardcode values — always reference a design token.}
+- Breakpoints: {e.g. mobile-first — `sm:` ≥640px, `md:` ≥768px, `lg:` ≥1024px. Layout collapses to single column below sm.}
+
+**Forbidden:**
+- {Forbidden pattern 1 — e.g. arbitrary values: p-[13px], gap-[7px]}
+- {Forbidden pattern 2}
+
+### {Component Library — e.g. shadcn/ui (Radix UI)}
+
+- {Rule 1 — e.g. Own generated files in components/ui/ — modify with intent, not via CLI overwrite.}
+- {Rule 2 — e.g. Use cn() for className merging — never string concatenation.}
+
+### {Forms Library — e.g. React Hook Form v7 + Zod v4}
+
+- {Rule 1 — e.g. Always use zodResolver. Never write manual validate functions.}
+- {Rule 2 — e.g. Wrap all controlled inputs with Controller.}
+
+### {Animation — e.g. Framer Motion}
+
+- {Rule 1}
+
+### {Notifications — e.g. sonner}
+
+- {Rule 1 — e.g. Single Toaster at app root. Never render multiple instances.}
+
+### {Icons — e.g. lucide-react}
+
+- {Rule 1 — e.g. Named imports only. Never default import.}
+
+### {Build — e.g. Vite 6}
+
+---
+
+## Stack — Backend [REMOVE IF NOT APPLICABLE]
+
+### Validation
+
+{e.g. Zod v4 — DTOs validated at runtime in controllers}
+
+### Logging
+
+{e.g. pino — structured JSON output (native Fastify integration via pino-http)}
+
+### Authentication
+
+{e.g. Supabase Auth — JWT issued by Supabase, validated in BFF middleware via @supabase/supabase-js (service key)}
+
+---
+
+## Testing
+
+### Frontend [REMOVE IF NOT APPLICABLE]
+
+- Unit: {e.g. Vitest}
+- E2E: {e.g. Playwright under `frontend/e2e/`}
+- API mocking: {e.g. MSW (Mock Service Worker) — network-level intercepts, shared between Vitest and Playwright}
+
+### Backend [REMOVE IF NOT APPLICABLE]
+
+- Unit: {e.g. Vitest}
+- Integration: {e.g. Vitest + real DB under `backend/test/integration/`}
+
+---
+
+## Performance Budgets [REMOVE IF NOT APPLICABLE]
+
+<!-- Only include if the project has enforceable performance targets.
+     Agents must flag violations during QA phase. -->
+
+### Frontend
+
+- LCP: {e.g. < 2.5s}
+- FID / INP: {e.g. < 100ms}
+- Bundle size (initial, gzipped): {e.g. < 300kb}
+- Lighthouse score (CI gate): {e.g. ≥ 85 performance, ≥ 90 accessibility}
+
+### Backend
+
+- API response p50: {e.g. < 80ms}
+- API response p95: {e.g. < 200ms}
+- DB query p95: {e.g. < 50ms}
+
+---
+
+## Conventions
+
+- Language: {e.g. TypeScript strict mode (both layers)}
+- Frontend folder: `{e.g. frontend/src/features/{feature}/}` with `{subfolders, e.g. hooks/, types.ts, api/}`
+- Backend folder: `{e.g. backend/src/modules/{domain}/}` with `{subfolders, e.g. controller/, service/, repository/, dto/, entity/}`
+- All endpoints return standardized response shape: `{ data, meta, errors }`
+- {NON-OBVIOUS RULE — e.g. Controllers never call Repository directly — always go through Service}
+- {NON-OBVIOUS RULE — e.g. All DB queries must have an explicit LIMIT — never unbounded selects}
+- {NON-OBVIOUS RULE — e.g. Never import from a sibling feature — only from shared/ or own feature}
+
+---
+
+## Anti-patterns
+
+<!-- Structural and design patterns explicitly forbidden in this project.
+     Add entries here (not scattered across sections) for discoverability.
+     For tool/operational traps, use Known Gotchas instead. -->
+
+### Architecture
+
+- {e.g. Never call Repository directly from Controller — always go through Service}
+- {e.g. Never import from a sibling feature — only from shared/ or own feature}
+- {e.g. Never use `any` type — use `unknown` and narrow explicitly}
+
+### Data
+
+- {e.g. Never run unbounded queries — all DB selects must have an explicit LIMIT}
+- {e.g. Never use string concatenation for SQL — parameterized queries only}
+
+### Frontend
+
+- {e.g. Never use inline styles — use Tailwind tokens only}
+- {e.g. Never access localStorage directly — use the storage abstraction in lib/storage}
+
+### Tooling
+
+- {e.g. Never run `supabase db push` without a migration file — see Database Safety Rule}
+- {e.g. Never run shadcn CLI to regenerate components/ui/ — files are owned}
+
+---
+
+## Known Gotchas
+
+<!-- Operational traps specific to this project's tools and setup.
+     Errors the agent tends to make without explicit guidance.
+     Add entries as you discover recurring mistakes during development.
+     For structural/design prohibitions, use Anti-patterns instead. -->
+
+- {e.g. Never run `supabase db push` directly — use migration files only}
+- {e.g. `components/ui/` is generated but owned — do not run shadcn CLI to regenerate it}
+- {e.g. `runtime_dir/` must never be committed — verify .gitignore before first push}
+- {e.g. `cn()` from `lib/utils` is the only approved className merge utility — never string concat}
+
+---
+
+## Security
+
+<!-- Critical section — agents must enforce these rules without exception. -->
+
+**Never commit:**
+- `.env`, `*.pem`, `secrets.*`, `credentials.*`, `*.key`, `*.p12`
+
+**Secrets management:** {e.g. doppler | AWS Secrets Manager | .env.local (gitignored, never committed)}
+
+**Forbidden patterns:**
+- Hardcoded API keys, tokens, or passwords in source code
+- SQL string concatenation — use parameterized queries only
+- Logging sensitive fields (passwords, tokens, PII) at any log level
+- {project-specific forbidden pattern — e.g. direct Supabase service key usage outside BFF}
+
+**Required before any secret-adjacent change:**
+1. Confirm the change does not expose secrets in logs, responses, or committed files.
+2. Verify `.gitignore` covers all generated secret-containing paths.
+
+---
+
+## Agent Behavior
+
+<!-- Controls how agents interact with the user and each other across this project. -->
+
+- confirmation_style: {ask-before-destructive|ask-always|autonomous}   # default: ask-before-destructive
+- response_language: {pt-BR|en-US}                                     # default: en-US
+- verbosity: {terse|normal|verbose}                                    # default: normal
+- preferred_model: {claude-sonnet-4-6|claude-opus-4-7}                 # default: claude-sonnet-4-6
+
+---
+
+## Architectural Decisions (ADR inline)
+
+### ADR-001: {TITLE}
+
+**Decision:** {What was decided — one sentence.}
+**Justification:** {Why — constraint, incident, or tradeoff that drove the decision.}
+**Risk accepted:** {What could go wrong and under what conditions.}
+**Revisit when:** {Specific trigger — e.g. before expanding to multi-tenant, when traffic exceeds X.}
+
+### ADR-002: {TITLE}
+
+**Decision:** {What was decided — one sentence.}
+**Justification:** {Why — constraint, incident, or tradeoff that drove the decision.}
+**Risk accepted:** {What could go wrong and under what conditions.}
+**Revisit when:** {Specific trigger — e.g. before expanding to multi-tenant, when traffic exceeds X.}
