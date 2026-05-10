@@ -19,11 +19,20 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from orch_core import Action, StateMachine  # noqa: E402
+from orch_core import (  # noqa: E402
+    Action,
+    StateMachine,
+    TEST_TRANSITIONS,
+    TestPhaseStateMachine,
+)
 
-# Populated by tasks 01..09 of the sm-refactor plan. Each entry:
-#   {"machine": StateMachine, "initial_state": str}
-REGISTERED_MACHINES: dict[str, dict] = {}
+# Each entry: {"machine": StateMachine, "initial_state": str}
+REGISTERED_MACHINES: dict[str, dict] = {
+    "test": {
+        "machine": TestPhaseStateMachine(TEST_TRANSITIONS),
+        "initial_state": "entry",
+    },
+}
 
 
 def main() -> int:

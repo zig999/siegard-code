@@ -98,7 +98,15 @@ Execute these steps in order on every invocation. Never skip a step.
 export ORCH_PROJECT_DIR="$(pwd)"
 ```
 
-**Nesting depth guard:** if `nesting_depth >= 3`:
+**Nesting depth guard (T1, via state machine):**
+
+```bash
+ACTION=$(python3 .claude/lib/sm_runner.py --machine test --state entry \
+  --inputs "{\"nesting_depth\": <nesting_depth>, \"log_seq_at_spawn\": <log_seq_at_spawn>}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+If `$ACTION == "block"`:
 ```json
 {"status": "blocked", "last_seq": 0, "summary": "nesting_depth_exceeded: dispatch refused at depth >= 3"}
 ```
@@ -126,10 +134,19 @@ If `log_seq_at_spawn` is a positive integer (`> 0`): skip infra script calls.
 
 ```bash
 python3 .claude/skills/orch-state/scripts/reduce.py
+REDUCE_EXIT=$?
 python3 .claude/skills/orch-state/scripts/current_phase.py
 ```
 
-**If `reduce.py` exits with code 1:** emit E12 and stop — do NOT proceed to Step 2.
+**Reduce error gate (T2, via state machine):**
+
+```bash
+ACTION=$(python3 .claude/lib/sm_runner.py --machine test --state post_infra \
+  --inputs "{\"reduce_exit_code\": $REDUCE_EXIT, \"nesting_depth\": <nesting_depth>}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+If `$ACTION == "escalate_e12"`: emit E12 and stop — do NOT proceed to Step 2.
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -189,7 +206,16 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"test","deps":[],"tier":"standard","type":"test-run","spec":"<delivery_path>","stack":"<stack>"}'
 ```
 
-If no dev completed tasks have delivery artifacts:
+**Delivery artifacts gate (T3, via state machine):**
+
+```bash
+DELIVERY_COUNT=<count of dev_completed_tasks with delivery artifacts>
+ACTION=$(python3 .claude/lib/sm_runner.py --machine test --state post_state \
+  --inputs "{\"dev_completed_tasks_with_delivery\": $DELIVERY_COUNT, \"nesting_depth\": <nesting_depth>}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+If `$ACTION == "block"`:
 ```json
 {"status": "blocked", "last_seq": <last_seq>, "summary": "no delivery artifacts found — dev phase must complete before test"}
 ```
@@ -247,10 +273,17 @@ Re-read state after all syntheses.
 
 Up to 2 tasks from ready queue (tier priority, then creation seq).
 
-Look up worker:
+Look up worker (T4 — state machine routes the dispatch decision; `select_worker.py` resolves the actual subagent name):
+
 ```bash
-python3 .claude/skills/phase-test-rules/scripts/select_worker.py \
-  --task-type <task.task_type> --stack <stack>
+ACTION=$(python3 .claude/lib/sm_runner.py --machine test --state dispatch \
+  --inputs "{\"task_type\": \"<task.task_type>\", \"stack\": \"<stack>\", \"nesting_depth\": 1}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+
+if [ "$ACTION" = "select_worker" ]; then
+  python3 .claude/skills/phase-test-rules/scripts/select_worker.py \
+    --task-type <task.task_type> --stack <stack>
+fi
 ```
 
 Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.

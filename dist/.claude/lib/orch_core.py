@@ -2341,6 +2341,8 @@ __all__ = [
     # State machine (sm-refactor)
     "Action",
     "StateMachine",
+    "TEST_TRANSITIONS",
+    "TestPhaseStateMachine",
 ]
 
 
@@ -2398,3 +2400,59 @@ class StateMachine:
             "no_match",
             {"state": state, "inputs_keys": sorted(inputs.keys())},
         )
+
+
+# ---------------------------------------------------------------------------
+# orchestrator-test transitions (T1-T4)
+# ---------------------------------------------------------------------------
+
+TEST_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
+    # T1 — nesting depth guard
+    ("entry", lambda i: i.get("nesting_depth", 0) >= 3):
+        Action("block", {"reason": "nesting_depth_exceeded", "code": "blocked"}),
+    ("entry", lambda i: True):
+        Action("proceed", {"to": "infra_check"}),
+
+    # T2 — state reduction E12
+    ("post_infra", lambda i: i.get("reduce_exit_code") == 1):
+        Action(
+            "escalate_e12",
+            {"code": "E12_state_reduction_failed", "severity": "critical"},
+        ),
+    ("post_infra", lambda i: True):
+        Action("proceed", {"to": "step_2_state"}),
+
+    # T3 — no delivery artifacts gate
+    ("post_state", lambda i: i.get("dev_completed_tasks_with_delivery", 0) == 0):
+        Action(
+            "block",
+            {"reason": "no_delivery_artifacts", "needs": "dev_phase_complete"},
+        ),
+    ("post_state", lambda i: True):
+        Action("proceed", {"to": "step_3_task_creation"}),
+
+    # T4 — stack worker routing (dynamic params populated by TestPhaseStateMachine)
+    (
+        "dispatch",
+        lambda i: i.get("task_type") and i.get("stack") in ("be", "fe", "fullstack"),
+    ):
+        Action("select_worker", {}),
+}
+
+
+class TestPhaseStateMachine(StateMachine):
+    """Subclass for orchestrator-test that populates T4's dynamic params."""
+
+    __test__ = False  # exclude from pytest collection (class name starts with 'Test')
+
+    def evaluate(self, state: str, inputs: dict) -> Action:
+        action = super().evaluate(state, inputs)
+        if state == "dispatch" and action.name == "select_worker":
+            return Action(
+                "select_worker",
+                {
+                    "task_type": inputs.get("task_type"),
+                    "stack": inputs.get("stack"),
+                },
+            )
+        return action
