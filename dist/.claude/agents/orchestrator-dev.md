@@ -433,9 +433,20 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "improve flow planner skip: triage.json unusable"}` and stop.
 
-**Stack-conditional planning dispatch:**
+**Stack-conditional planning dispatch (D8, via state machine):**
 
-**IF `stack == "fullstack"`:** spawn parallel BE and FE planners.
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine dev --state dispatch_planner_stack \
+  --inputs "{\"stack\": \"$stack\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+`$ACTION` is one of:
+- `dispatch_parallel_planners` — fullstack: spawn both `u-be-planner` and `u-fe-planner` in parallel
+- `dispatch_single_planner` — be|fe: spawn single planner; SM params include `worker` (`u-be-planner`|`u-fe-planner`) and `stack`
+- `error` — unknown stack value; emit error and stop
+
+**IF `$ACTION == "dispatch_parallel_planners"`:** spawn parallel BE and FE planners.
 
 If neither `dev_planning_be` nor `dev_planning_fe` task exists yet:
 
@@ -716,13 +727,24 @@ After all syntheses, re-read state.
 
 From ready queue (sorted by tier priority then creation seq), select up to **2 tasks**.
 
-Look up worker (use the **per-task stack** from `task.stack`, not the project-level stack — required for correct fullstack routing):
+Look up worker (D9 — state machine resolves task_stack vs project_stack fallback, then `select_worker.py` resolves the actual subagent name):
+
 ```bash
-python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
-  --task-type <task.task_type> --stack <task.stack>
+RESULT=$(python3 .claude/lib/sm_runner.py --machine dev --state dispatch_impl_task \
+  --inputs "{\"task_stack\": \"<task.stack | null>\", \"project_stack\": \"$stack\", \"task_type\": \"<task.task_type>\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+RESOLVED_STACK=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('stack',''))")
+
+if [ "$ACTION" = "select_worker" ]; then
+  python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
+    --task-type <task.task_type> --stack "$RESOLVED_STACK"
+fi
 ```
 
-If `task.stack` is null (legacy task created before stack propagation): fall back to the project-level `<stack>` from Step 2.
+The SM applies these rules:
+- `task.stack` in `(be, fe)` → use `task.stack`
+- otherwise (null, missing, or unknown value like `mobile`) → fall back to `project_stack`
+- both unresolvable → return `error` with reason `no_resolvable_stack`
 
 Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.
 Example: if the output is `{"worker":"u-be-developer","task_type":"impl","stack":"be","phase":"dev"}`, then `selected_worker = "u-be-developer"`.

@@ -24,6 +24,7 @@ from orch_core import (  # noqa: E402
     META_TRANSITIONS,
     TEST_TRANSITIONS,
     Action,
+    DevStateMachine,
     MetaStateMachine,
     StateMachine,
     TestPhaseStateMachine,
@@ -40,7 +41,7 @@ REGISTERED_MACHINES: dict[str, dict] = {
         "initial_state": "post_infra",
     },
     "dev": {
-        "machine": StateMachine(DEV_TRANSITIONS),
+        "machine": DevStateMachine(DEV_TRANSITIONS),
         "initial_state": "post_manifest",
     },
 }

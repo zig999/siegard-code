@@ -2346,6 +2346,7 @@ __all__ = [
     "META_TRANSITIONS",
     "MetaStateMachine",
     "DEV_TRANSITIONS",
+    "DevStateMachine",
 ]
 
 
@@ -2624,4 +2625,50 @@ DEV_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
         ),
     ("planning_dispatch", lambda i: True):
         Action("dispatch_planner", {}),
+
+    # D8 — Stack-conditional planning dispatch
+    ("dispatch_planner_stack", lambda i: i.get("stack") == "fullstack"):
+        Action(
+            "dispatch_parallel_planners",
+            {
+                "workers": ["u-be-planner", "u-fe-planner"],
+                "tasks": ["dev_planning_be", "dev_planning_fe"],
+            },
+        ),
+    ("dispatch_planner_stack", lambda i: i.get("stack") == "be"):
+        Action("dispatch_single_planner", {"stack": "be", "worker": "u-be-planner"}),
+    ("dispatch_planner_stack", lambda i: i.get("stack") == "fe"):
+        Action("dispatch_single_planner", {"stack": "fe", "worker": "u-fe-planner"}),
+    ("dispatch_planner_stack", lambda i: True):
+        Action("error", {"reason": "unknown_stack"}),  # stack populated by wrapper
+
+    # D9 — Stack propagation per task (params populated by DevStateMachine wrapper)
+    (
+        "dispatch_impl_task",
+        lambda i: i.get("task_stack") in ("be", "fe")
+                  or i.get("project_stack") in ("be", "fe"),
+    ):
+        Action("select_worker", {}),
+    ("dispatch_impl_task", lambda i: True):
+        Action("error", {"reason": "no_resolvable_stack"}),
 }
+
+
+class DevStateMachine(StateMachine):
+    """Subclass for orchestrator-dev that populates dynamic params for D8/D9."""
+
+    def evaluate(self, state: str, inputs: dict) -> Action:
+        action = super().evaluate(state, inputs)
+        if state == "dispatch_planner_stack" and action.name == "error":
+            return Action(
+                "error",
+                {"reason": "unknown_stack", "stack": inputs.get("stack")},
+            )
+        if state == "dispatch_impl_task" and action.name == "select_worker":
+            ts = inputs.get("task_stack")
+            stack = ts if ts in ("be", "fe") else inputs.get("project_stack")
+            return Action(
+                "select_worker",
+                {"stack": stack, "task_type": inputs.get("task_type")},
+            )
+        return action
