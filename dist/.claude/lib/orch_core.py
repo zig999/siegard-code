@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 
 # ---------------------------------------------------------------------------
@@ -2338,6 +2338,9 @@ __all__ = [
     # Failure / skip reason enumerations
     "VALID_FAILURE_REASONS",
     "VALID_SKIP_REASONS",
+    # State machine (sm-refactor)
+    "Action",
+    "StateMachine",
 ]
 
 
@@ -2345,3 +2348,53 @@ __all__ = [
 # with the validator. Adding a new reason: update the frozenset above.
 VALID_FAILURE_REASONS: frozenset[str] = _VALID_FAILURE_REASONS
 VALID_SKIP_REASONS: frozenset[str] = _VALID_SKIP_REASONS
+
+
+# ---------------------------------------------------------------------------
+# State Machine — pure-function routing decisions
+# ---------------------------------------------------------------------------
+# Orchestrators delegate all conditional routing to a StateMachine in this module.
+# Transition tables are dicts where each key is (state_str, predicate_fn) and the
+# value is the Action returned when the predicate matches. First match (in dict
+# insertion order) wins. Predicate signature: (inputs: dict) -> bool. If the
+# predicate raises (KeyError, TypeError, AttributeError), the transition is
+# silently skipped — protects against missing input fields.
+#
+# CLI entry point: dist/.claude/lib/sm_runner.py.
+
+@dataclass
+class Action:
+    """A routing decision produced by a StateMachine.
+
+    `name` is the action identifier consumed by the orchestrator.
+    `params` carries any data the orchestrator needs to execute the action.
+    """
+    name: str
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+class StateMachine:
+    """Pure-function state machine: (state, inputs) -> Action.
+
+    Transitions are evaluated in dict insertion order; first matching predicate
+    wins. Predicates that raise are skipped (treated as non-match). When no
+    transition matches, returns Action("no_match", {...diagnostic info}).
+    """
+
+    def __init__(self, transitions: dict[tuple[str, Callable[[dict], bool]], Action]):
+        self._transitions = transitions
+
+    def evaluate(self, state: str, inputs: dict) -> Action:
+        for (st, pred), action in self._transitions.items():
+            if st != state:
+                continue
+            try:
+                matched = pred(inputs)
+            except (KeyError, TypeError, AttributeError):
+                continue
+            if matched:
+                return action
+        return Action(
+            "no_match",
+            {"state": state, "inputs_keys": sorted(inputs.keys())},
+        )
