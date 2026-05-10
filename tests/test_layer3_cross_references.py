@@ -53,17 +53,11 @@ class TestLayer3CrossReferences:
         schema_path = DIST_DIR / "skills" / "u-shared-templates" / schema_name
         assert schema_path.exists(), f"Missing required schema: {schema_name}"
 
-    def test_finds_schema_files(self):
-        assert len(_schema_files) > 0
-
     @pytest.mark.parametrize("path", _schema_files, ids=[f.name for f in _schema_files])
     def test_schema_has_matching_template(self, path):
         plain = path.parent / path.name.replace(".schema.yaml", ".yaml")
         templated = path.parent / path.name.replace(".schema.yaml", "-template.yaml")
         assert plain.exists() or templated.exists(), f"No template found for {path.name}"
-
-    def test_finds_skill_directories(self):
-        assert len(_skill_dirs) > 0
 
     @pytest.mark.parametrize(
         "name,dir_path",

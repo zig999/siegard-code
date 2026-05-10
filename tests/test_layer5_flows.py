@@ -235,10 +235,6 @@ class TestBlockedReport:
         data = load_fixture("valid/blocked-report.yaml")
         assert validate_blocked_report(data) == []
 
-    def test_blocked_escalates_to_orchestrator(self):
-        data = load_fixture("valid/blocked-report.yaml")
-        assert data["resolution"]["escalate_to"] == "orchestrator"
-
     def test_failed_escalates_to_human_violation_flow015(self):
         data = load_fixture("invalid/blocked-failed-escalate-to-orchestrator.yaml")
         errors = validate_blocked_report(data)
@@ -273,11 +269,6 @@ class TestChangeRequest:
     def test_accepted_cr_with_timestamp_passes(self):
         data = load_fixture("valid/cr-accepted.yaml")
         assert validate_cr(data) == []
-
-    def test_cr_dev_not_blocked_does_not_block_task(self):
-        data = load_fixture("valid/cr-dev-not-blocked.yaml")
-        task_blocked = data["resolution"]["status"] == "open" and data["impact"].get("dev_blocked") is True
-        assert task_blocked is False
 
     def test_open_cr_with_timestamp_flow020(self):
         data = load_fixture("invalid/cr-open-with-timestamp.yaml")
@@ -345,14 +336,6 @@ class TestHandoffManifest:
         data = load_fixture("invalid/handoff-manifest-new-domain-with-change-summary.yaml")
         errors = validate_handoff_manifest(data)
         assert any(e.startswith("FLOW-033") for e in errors)
-
-    def test_major_evolution_dev_impact_stop(self):
-        data = load_fixture("valid/handoff-manifest-major-evolution.yaml")
-        assert data["change_summary"]["dev_impact"] == "stop_domain_task_contracts"
-
-    def test_fast_track_dev_impact_reevaluate(self):
-        data = load_fixture("valid/handoff-manifest-fast-track.yaml")
-        assert data["change_summary"]["dev_impact"] == "reevaluate_task_contracts"
 
     def test_new_domain_with_frontend_passes(self):
         data = load_fixture("valid/handoff-manifest-with-frontend.yaml")

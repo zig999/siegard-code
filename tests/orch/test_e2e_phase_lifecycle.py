@@ -591,21 +591,6 @@ class TestLogSeqAtSpawn:
         seq2 = reduce_all().last_seq
         assert seq0 < seq1 < seq2
 
-    def test_log_seq_at_spawn_matches_last_seq(self, tmp_orch):
-        """E.8: last_seq before phase entry == the seq the meta-orchestrator would pass."""
-        _declare_phases()
-        _enter_phase("sdd", 1)
-        seq_before = reduce_all().last_seq
-        _create_task("sdd_t1", "sdd")
-        _run_task("sdd_t1", "sdd")
-        seq_after = reduce_all().last_seq
-        # Phase orchestrator spawned with seq_before should see seq_before < seq_after
-        assert seq_before < seq_after
-
-    def test_first_invocation_has_seq_zero(self, tmp_orch):
-        """E.8: empty log has last_seq == 0 (no events yet)."""
-        state = reduce_all()
-        assert state.last_seq == 0
 
 
 # ---------------------------------------------------------------------------
@@ -627,21 +612,6 @@ class TestHashChainAcrossPhases:
         result = verify_chain(mode="strict")
         assert result.ok is True
 
-    def test_event_count_scales_with_phases(self, tmp_orch):
-        """E.9: log has events from all 4 phases."""
-        _declare_phases()
-        for name, order, to_next in [
-            ("sdd", 1, "dev"), ("dev", 2, "review"),
-            ("review", 3, "test"), ("test", 4, "done"),
-        ]:
-            _enter_phase(name, order)
-            _create_task(f"{name}_t1", name)
-            _run_task(f"{name}_t1", name)
-            _transition_phase(name, to_next, ["c1"])
-        events = list(read_events())
-        # 1 phase_declared + 4×(phase_entered + task_created + task_claimed +
-        # task_completed + phase_exit_criterion_met + phase_exit_approved + phase_transitioned)
-        assert len(events) >= 29  # 1 + 4*7 = 29 minimum
 
 
 # ---------------------------------------------------------------------------

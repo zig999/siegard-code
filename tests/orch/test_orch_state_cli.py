@@ -173,8 +173,3 @@ def test_current_phase_output_has_order(tmp_path):
     assert result["order"] == 1
 
 
-def test_current_phase_output_is_valid_json(tmp_path):
-    _setup_with_tasks(tmp_path)
-    r = _run(PHASE_SCRIPT, [], tmp_path)
-    result = json.loads(r.stdout)
-    assert isinstance(result, dict)

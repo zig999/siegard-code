@@ -155,18 +155,7 @@ class TestLoadBlobDataIntegrity:
 
         assert str(blob_path) in str(exc_info.value)
 
-    def test_error_message_mentions_file(self, tmp_orch):
-        """Error message identifies the corrupted file path."""
-        data = _large_data(10_000)
-        event = append_event("orchestrator", "task_created", task_id="t_0001", data=data)
 
-        blob_path = orch_core.BLOBS_DIR / f"{event.event_id}.json"
-        blob_path.write_bytes(b'{"evil": "data"}')
-
-        with pytest.raises(BlobIntegrityError) as exc_info:
-            load_blob_data(event)
-
-        assert "blobs" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------

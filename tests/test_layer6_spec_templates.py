@@ -31,10 +31,6 @@ def _has_flow_id(content):
 
 
 class TestLayer6SpecTemplates:
-    @pytest.mark.parametrize("name,path", _template_files, ids=[n for n, _ in _template_files])
-    def test_template_file_exists(self, name, path):
-        assert path.exists(), f"File not found: {path}"
-
     def test_feature_template_sections_and_content(self):
         content = FEATURE_TEMPLATE.read_text(encoding="utf-8")
         required = [

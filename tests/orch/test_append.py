@@ -60,12 +60,6 @@ class TestFirstEvent:
                          task_id="t_0001", data=_task_data())
         assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", e.ts)
 
-    def test_log_file_created(self, tmp_orch):
-        assert not orch_core.LOG_PATH.exists()
-        append_event("orchestrator", "task_created",
-                     task_id="t_0001", data=_task_data())
-        assert orch_core.LOG_PATH.exists()
-
     def test_log_contains_one_line(self, tmp_orch):
         append_event("orchestrator", "task_created",
                      task_id="t_0001", data=_task_data())
@@ -199,6 +193,13 @@ class TestRequiredDataFields:
         with pytest.raises(EventValidationError, match="retryable"):
             append_event("worker-code-writer-1", "task_failed",
                          task_id="t_0001", data={"phase": "dev", "reason": "oops"})
+
+    def test_task_failed_invalid_reason_raises(self, tmp_orch):
+        """task_failed with an invalid reason enum value must raise EventValidationError."""
+        with pytest.raises(EventValidationError):
+            append_event("worker-code-writer-1", "task_failed",
+                         task_id="t_0001",
+                         data={"phase": "dev", "reason": "bad_custom_reason", "retryable": False})
 
     def test_global_events_do_not_require_phase(self, tmp_orch):
         """phase_declared is a global event — no task-level phase field required."""

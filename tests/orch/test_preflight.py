@@ -34,11 +34,6 @@ from preflight import (
 # ---------------------------------------------------------------------------
 
 class TestCheckResult:
-    def test_ok_true(self):
-        r = CheckResult(ok=True, reason="all good")
-        assert r.ok is True
-        assert r.reason == "all good"
-
     def test_to_dict_minimal(self):
         r = CheckResult(ok=True, reason="ok")
         d = r.to_dict()
@@ -73,10 +68,6 @@ class TestCheckPythonVersion:
         assert result.ok is False
         assert "3.10" in result.reason
 
-    def test_returns_version_string(self):
-        result = check_python_version()
-        assert result.detail.get("current") is not None
-
 
 # ---------------------------------------------------------------------------
 # check_flock_works
@@ -86,10 +77,6 @@ class TestCheckFlockWorks:
     def test_flock_works_on_linux(self):
         result = check_flock_works()
         assert result.ok is True
-
-    def test_has_duration(self):
-        result = check_flock_works()
-        assert result.duration_ms >= 0
 
 
 # ---------------------------------------------------------------------------

@@ -772,3 +772,18 @@ class TestApplyEventNoOp:
                   data={"phase": "dev", "note": "x"}, seq=42)
         apply_event(state, ev)
         assert state.last_seq == 42
+
+
+# ---------------------------------------------------------------------------
+# task_skipped — migrated from root test_reducer.py (unique, not in orch suite)
+# ---------------------------------------------------------------------------
+
+class TestTaskSkipped:
+    def test_moves_status_to_skipped(self):
+        """task_skipped transitions a pending/ready task to SKIPPED (P1 state correctness)."""
+        state = fresh()
+        apply_event(state, _evt(EventType.TASK_CREATED, task_id="t_001",
+                                data=_task_data(deps=[])))
+        apply_event(state, _evt(EventType.TASK_SKIPPED, task_id="t_001",
+                                data={"phase": "dev", "reason": "implementation_only_no_spec_change"}))
+        assert state.tasks["t_001"].status == TaskStatus.SKIPPED

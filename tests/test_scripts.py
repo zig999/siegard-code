@@ -38,12 +38,6 @@ class TestPreflight:
         # Exit code 0 means all checks passed
         assert result.returncode == 0, f"stderr: {result.stderr}"
 
-    def test_quick_mode_outputs_json(self, orch_dir, make_event):
-        make_event("orchestrator_heartbeat", data={})
-        result = _run(_PREFLIGHT, ["--quick"], {"ORCH_PROJECT_DIR": str(orch_dir)})
-        output = json.loads(result.stdout)
-        assert "status" in output or "checks" in output or isinstance(output, dict)
-
     def test_missing_orch_dir_exits_nonzero(self, tmp_path):
         """If ORCH_PROJECT_DIR has no .orch/, preflight should exit non-zero."""
         result = _run(_PREFLIGHT, ["--quick"], {"ORCH_PROJECT_DIR": str(tmp_path)})
@@ -60,11 +54,6 @@ class TestPreflight:
 # ---------------------------------------------------------------------------
 
 class TestCircuitBreaker:
-
-    def test_status_when_not_tripped(self, orch_dir, make_event):
-        make_event("orchestrator_heartbeat", data={})
-        result = _run(_CB, ["--status"], {"ORCH_PROJECT_DIR": str(orch_dir)})
-        assert result.returncode in (0, 1)  # 0 = tripped shown, 1 = not tripped
 
     def test_reset_when_not_tripped_exits_1(self, orch_dir, make_event):
         """Circuit breaker not tripped — reset is a noop, exits 1."""

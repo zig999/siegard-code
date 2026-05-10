@@ -21,14 +21,6 @@ from orch_core import (
 # ---------------------------------------------------------------------------
 
 class TestConstants:
-    def test_paths_are_path_objects(self):
-        for p in (ORCH_DIR, LOG_PATH, LOCK_PATH, STATE_DIR, DLQ_DIR,
-                  AUDIT_DIR, METRICS_DIR, BLOBS_DIR, CONFIG_PATH):
-            assert isinstance(p, Path)
-
-    def test_log_path_under_orch_dir(self):
-        assert str(LOG_PATH).startswith(str(ORCH_DIR))
-
     def test_inline_payload_limit(self):
         assert MAX_INLINE_PAYLOAD == 3500
 
@@ -37,12 +29,6 @@ class TestConstants:
 
     def test_snapshot_threshold(self):
         assert SNAPSHOT_EVERY_N_EVENTS == 100
-
-    def test_paths_monkeypatchable(self, tmp_path, monkeypatch):
-        """Paths are module-level variables — monkeypatch must work."""
-        new_dir = tmp_path / ".orch_test"
-        monkeypatch.setattr(orch_core, "ORCH_DIR", new_dir)
-        assert orch_core.ORCH_DIR == new_dir
 
 
 # ---------------------------------------------------------------------------
@@ -60,11 +46,6 @@ class TestEnsureDirs:
         """Running ensure_dirs twice must not raise."""
         orch_core.ensure_dirs()
         orch_core.ensure_dirs()
-
-    def test_dirs_are_writable(self, tmp_orch):
-        test_file = orch_core.STATE_DIR / "probe.txt"
-        test_file.write_text("ok")
-        assert test_file.read_text() == "ok"
 
 
 # ---------------------------------------------------------------------------

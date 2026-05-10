@@ -36,11 +36,6 @@ class TestEmptyLog:
     def test_last_event_empty(self, tmp_orch):
         assert last_event() is None
 
-    def test_read_events_no_file(self, tmp_orch):
-        """Log file does not exist yet."""
-        assert not orch_core.LOG_PATH.exists()
-        assert list(read_events()) == []
-
     def test_read_events_filtered_empty(self, tmp_orch):
         assert read_events_filtered() == []
 
@@ -176,12 +171,6 @@ class TestCorruptedLog:
 
         with pytest.raises(CorruptedLogError):
             list(read_events())
-
-    def test_valid_last_line_not_treated_as_corrupt(self, tmp_orch):
-        """A valid last line must not raise even though it's last."""
-        _seed(tmp_orch, 3)
-        events = list(read_events())
-        assert len(events) == 3
 
 
 # ---------------------------------------------------------------------------

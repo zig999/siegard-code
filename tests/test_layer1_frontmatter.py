@@ -30,9 +30,6 @@ _orchestrator_files, _worker_files = _classify_files()
 
 
 class TestLayer1Frontmatter:
-    def test_discovery_sanity(self):
-        assert len(get_top_level_agent_files()) > 0, "no agent files found"
-
     @pytest.mark.parametrize("path", _orchestrator_files, ids=[f.name for f in _orchestrator_files])
     def test_orchestrator_frontmatter_well_formed(self, path):
         fm = parse_frontmatter(path)

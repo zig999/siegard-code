@@ -100,6 +100,30 @@ def test_metrics_with_dlq(tmp_path):
     assert m["run_status"] in ("completed_with_dlq",)
 
 
+def test_metrics_partial_run_status(tmp_path):
+    """Partial completion → run_status in ('partial', 'stale_orchestrator') when tasks incomplete."""
+    _append(tmp_path, "orchestrator", "phase_declared",
+            data={"workflow_id": "wf_partial", "phases": [{"name": "default", "order": 1, "required": True}]})
+    _append(tmp_path, "orchestrator", "phase_entered", data={"phase": "default", "order": 1, "workflow_id": "wf-fix"})
+    _append(tmp_path, "orchestrator", "task_created", "t_001",
+            data={"phase": "default", "deps": [], "tier": "standard", "type": "impl", "spec": "x"})
+    _append(tmp_path, "orchestrator", "task_claimed", "t_001",
+            data={"phase": "default", "worker_type": "test-worker", "worker_id": "w1"})
+    _emit(tmp_path, "w1", "completed", "t_001",
+          data={"phase": "default", "artifacts": [], "summary": "done"})
+    # t_002 created but not completed — workflow is incomplete
+    _append(tmp_path, "orchestrator", "task_created", "t_002",
+            data={"phase": "default", "deps": [], "tier": "standard", "type": "impl", "spec": "y"})
+
+    _run_hook(tmp_path)
+    m = _read_metrics(tmp_path)
+
+    # Hook may return "partial" or "stale_orchestrator" (no recent heartbeat) — both indicate incomplete
+    assert m["run_status"] in ("partial", "stale_orchestrator")
+    assert m["tasks_completed"] == 1
+    assert m["tasks_total"] >= 2
+
+
 def test_metrics_keys_present(tmp_path):
     """All required metric keys are present in output."""
     _append(tmp_path, "orchestrator", "phase_declared",

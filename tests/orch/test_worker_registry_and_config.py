@@ -14,6 +14,8 @@ from orch_core import (
     unregister_worker,
     get_active_workers,
     validate_orchestrator_report,
+    cleanup_stale_workers,
+    append_event,
 )
 
 
@@ -68,6 +70,80 @@ class TestWorkerRegistry:
         assert len(workers) == 1
         assert workers[0]["task_id"] == "t2"
         assert workers[0]["attempt"] == 2
+
+    def test_entry_contains_expected_fields(self, tmp_orch):
+        register_worker("w5", "task_02", 2, phase="dev", stack="be", task_type="impl")
+        data = json.loads((orch_core.WORKERS_DIR / "w5.json").read_text())
+        assert data["worker_id"] == "w5"
+        assert data["task_id"] == "task_02"
+        assert data["attempt"] == 2
+        assert data["phase"] == "dev"
+        assert data["stack"] == "be"
+        assert data["task_type"] == "impl"
+
+    def test_idempotent_same_task_and_attempt(self, tmp_orch):
+        """Re-registering same worker_id + task_id + attempt must not update registered_at."""
+        register_worker("w6", "task_03", 1)
+        first = json.loads((orch_core.WORKERS_DIR / "w6.json").read_text())
+        register_worker("w6", "task_03", 1)
+        second = json.loads((orch_core.WORKERS_DIR / "w6.json").read_text())
+        assert first["registered_at"] == second["registered_at"]
+
+    def test_different_attempt_overwrites(self, tmp_orch):
+        """New attempt on same worker_id must overwrite the entry."""
+        register_worker("w7", "task_04", 1)
+        register_worker("w7", "task_04", 2)
+        data = json.loads((orch_core.WORKERS_DIR / "w7.json").read_text())
+        assert data["attempt"] == 2
+
+    def test_optional_fields_omitted_when_none(self, tmp_orch):
+        """phase, stack, task_type must be absent when not provided."""
+        register_worker("w8", "task_05", 1)
+        data = json.loads((orch_core.WORKERS_DIR / "w8.json").read_text())
+        assert "phase" not in data
+        assert "stack" not in data
+        assert "task_type" not in data
+
+
+# ---------------------------------------------------------------------------
+# cleanup_stale_workers
+# ---------------------------------------------------------------------------
+
+
+def _task_data(**kw):
+    base = {"phase": "sdd", "tier": "standard", "type": "spec", "spec": "x", "deps": []}
+    base.update(kw)
+    return base
+
+
+class TestCleanupStaleWorkers:
+    def test_removes_worker_whose_task_is_completed(self, tmp_orch):
+        append_event("orchestrator", "phase_declared",
+                     data={"workflow_id": "wf", "phases": [{"name": "sdd", "order": 1, "required": True}]})
+        append_event("orchestrator", "phase_entered", data={"phase": "sdd", "order": 1, "workflow_id": "wf-fix"})
+        append_event("orchestrator", "task_created", task_id="t_07", data=_task_data())
+        append_event("orchestrator", "task_claimed", task_id="t_07",
+                     data={"phase": "sdd", "worker_type": "w", "worker_id": "wkr_07"})
+        append_event("orchestrator", "task_completed", task_id="t_07",
+                     data={"phase": "sdd", "artifacts": []})
+        register_worker("wkr_07", "t_07", 1)
+
+        removed = cleanup_stale_workers(max_age_seconds=3600)
+        assert "wkr_07" in removed
+        assert not (orch_core.WORKERS_DIR / "wkr_07.json").exists()
+
+    def test_does_not_remove_running_worker(self, tmp_orch):
+        append_event("orchestrator", "phase_declared",
+                     data={"workflow_id": "wf", "phases": [{"name": "sdd", "order": 1, "required": True}]})
+        append_event("orchestrator", "phase_entered", data={"phase": "sdd", "order": 1, "workflow_id": "wf-fix"})
+        append_event("orchestrator", "task_created", task_id="t_08", data=_task_data())
+        append_event("orchestrator", "task_claimed", task_id="t_08",
+                     data={"phase": "sdd", "worker_type": "w", "worker_id": "wkr_08"})
+        register_worker("wkr_08", "t_08", 1)
+
+        removed = cleanup_stale_workers(max_age_seconds=3600)
+        assert "wkr_08" not in removed
+        assert (orch_core.WORKERS_DIR / "wkr_08.json").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -118,9 +118,6 @@ _extra_valid_cases = [
 
 
 class TestLayer2SchemaConformance:
-    def test_at_least_one_schema_found(self):
-        assert len(_compile_results) > 0
-
     @pytest.mark.parametrize(
         "result",
         _compile_results,

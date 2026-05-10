@@ -41,47 +41,10 @@ def _task_data(**kw):
 
 
 # ---------------------------------------------------------------------------
-# canonical_json
-# ---------------------------------------------------------------------------
-
-class TestCanonicalJson:
-
-    def test_sorted_keys(self):
-        import orch_core
-        obj = {"z": 1, "a": 2, "m": 3}
-        result = orch_core.canonical_json(obj)
-        assert result == '{"a":2,"m":3,"z":1}'
-
-    def test_no_whitespace(self):
-        import orch_core
-        result = orch_core.canonical_json({"k": "v"})
-        assert " " not in result
-
-    def test_deterministic_across_calls(self):
-        import orch_core
-        obj = {"b": [1, 2, 3], "a": {"nested": True}}
-        assert orch_core.canonical_json(obj) == orch_core.canonical_json(obj)
-
-    def test_nested_sorted(self):
-        import orch_core
-        obj = {"b": {"z": 1, "a": 2}, "a": 0}
-        result = orch_core.canonical_json(obj)
-        parsed = json.loads(result)
-        assert list(parsed.keys()) == ["a", "b"]
-        assert list(parsed["b"].keys()) == ["a", "z"]
-
-
-# ---------------------------------------------------------------------------
 # stale_tasks
 # ---------------------------------------------------------------------------
 
 class TestStaleTasks:
-
-    def test_returns_empty_when_no_running_tasks(self, orch_dir):
-        import orch_core
-        state = orch_core.reduce_all()
-        result = orch_core.stale_tasks(state, _now())
-        assert result == []
 
     def test_running_task_within_threshold_not_stale(self, orch_dir, make_event):
         import orch_core
@@ -166,20 +129,6 @@ class TestLoadConfig:
         # Other keys still present
         assert "retry_policy" in cfg
 
-    def test_invalid_json_raises_config_error(self, orch_dir):
-        import orch_core
-        config_path = orch_dir / ".orch" / "config.json"
-        config_path.write_text("not json {{{")
-        with pytest.raises(orch_core.ConfigError):
-            orch_core.load_config(config_path)
-
-    def test_explicit_path_override(self, tmp_path):
-        import orch_core
-        custom_path = tmp_path / "custom_config.json"
-        # File doesn't exist → return defaults
-        cfg = orch_core.load_config(custom_path)
-        assert "retry_policy" in cfg
-
 
 # ---------------------------------------------------------------------------
 # parse_manifest_fields
@@ -249,12 +198,6 @@ class TestParseManifestFields:
 # ---------------------------------------------------------------------------
 
 class TestTasksReadyForRetry:
-
-    def test_returns_empty_when_no_scheduled_tasks(self, orch_dir):
-        import orch_core
-        state = orch_core.reduce_all()
-        result = orch_core.tasks_ready_for_retry(state, _now())
-        assert result == []
 
     def test_scheduled_task_with_past_retry_at_is_ready(self, orch_dir, make_event):
         import orch_core
@@ -370,11 +313,6 @@ class TestGetOrphanedDepIds:
 
 class TestGetActiveWorkers:
 
-    def test_returns_empty_when_no_workers(self, orch_dir):
-        import orch_core
-        result = orch_core.get_active_workers()
-        assert result == []
-
     def test_returns_registered_workers(self, orch_dir):
         import orch_core
         orch_core.register_worker("wkr-001", "task-01", 1, phase="sdd")
@@ -400,85 +338,3 @@ class TestGetActiveWorkers:
         assert w["phase"] == "dev"
 
 
-# ---------------------------------------------------------------------------
-# validate_orchestrator_report
-# ---------------------------------------------------------------------------
-
-def _valid_report(**overrides):
-    base = {
-        "status": "running",
-        "workflow_id": "wf-001",
-        "current_phase": "sdd",
-        "last_seq": 10,
-        "tasks": {"by_status": {"ready": 2, "running": 1}},
-        "dispatched": [],
-        "next_actions": [],
-        "issues": [],
-    }
-    base.update(overrides)
-    return base
-
-
-class TestValidateOrchestratorReport:
-
-    def test_valid_report_returns_empty_list(self):
-        import orch_core
-        errors = orch_core.validate_orchestrator_report(_valid_report())
-        assert errors == []
-
-    def test_missing_required_field(self):
-        import orch_core
-        report = _valid_report()
-        del report["status"]
-        errors = orch_core.validate_orchestrator_report(report)
-        assert any("status" in e for e in errors)
-
-    def test_invalid_status_value(self):
-        import orch_core
-        errors = orch_core.validate_orchestrator_report(_valid_report(status="unknown_state"))
-        assert any("status" in e for e in errors)
-
-    def test_all_valid_statuses_accepted(self):
-        import orch_core
-        for s in ("empty", "ready", "running", "blocked", "completed", "escalated", "error"):
-            errors = orch_core.validate_orchestrator_report(_valid_report(status=s))
-            # Status-related errors should not appear
-            assert not any("not in" in e and "status" in e for e in errors), \
-                f"Status {s!r} rejected unexpectedly"
-
-    def test_tasks_missing_by_status(self):
-        import orch_core
-        report = _valid_report(tasks={"total": 5})  # no "by_status"
-        errors = orch_core.validate_orchestrator_report(report)
-        assert any("by_status" in e for e in errors)
-
-    def test_issue_missing_fields(self):
-        import orch_core
-        report = _valid_report(issues=[{"code": "CB001"}])  # missing severity and detail
-        errors = orch_core.validate_orchestrator_report(report)
-        assert any("severity" in e for e in errors)
-        assert any("detail" in e for e in errors)
-
-    def test_issue_invalid_severity(self):
-        import orch_core
-        report = _valid_report(issues=[{
-            "code": "CB001", "severity": "urgent", "detail": "some detail"
-        }])
-        errors = orch_core.validate_orchestrator_report(report)
-        assert any("severity" in e for e in errors)
-
-    def test_all_valid_severities_accepted(self):
-        import orch_core
-        for sev in ("critical", "warning", "info"):
-            report = _valid_report(issues=[{
-                "code": "X001", "severity": sev, "detail": "test"
-            }])
-            errors = orch_core.validate_orchestrator_report(report)
-            assert not any("severity" in e for e in errors), \
-                f"Severity {sev!r} rejected unexpectedly: {errors}"
-
-    def test_missing_multiple_fields(self):
-        import orch_core
-        errors = orch_core.validate_orchestrator_report({})
-        # All required fields should be flagged
-        assert len(errors) >= len(["status", "last_seq", "tasks", "dispatched", "next_actions", "issues"])

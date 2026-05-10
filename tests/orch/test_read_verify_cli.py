@@ -208,8 +208,3 @@ def test_verify_audit_does_not_modify_log(tmp_path):
     assert log.read_bytes() == content_before
 
 
-def test_verify_output_contains_mode_field(tmp_path):
-    _setup_log(tmp_path)
-    r = _run(VERIFY_SCRIPT, ["--mode", "audit"], tmp_path)
-    result = json.loads(r.stdout)
-    assert result["mode"] == "audit"

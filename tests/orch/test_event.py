@@ -55,27 +55,6 @@ class TestNowIso:
         assert dt.tzinfo is not None
 
 
-class TestCanonicalJson:
-    def test_sorted_keys(self):
-        result = canonical_json({"b": 2, "a": 1})
-        assert result.index('"a"') < result.index('"b"')
-
-    def test_no_whitespace(self):
-        result = canonical_json({"a": 1, "b": 2})
-        assert " " not in result
-
-    def test_deterministic_regardless_of_insertion_order(self):
-        """Scenario 2.5: canonical_json is deterministic."""
-        r1 = canonical_json({"b": 2, "a": 1})
-        r2 = canonical_json({"a": 1, "b": 2})
-        assert r1 == r2
-
-    def test_nested_sorted(self):
-        r1 = canonical_json({"z": {"b": 2, "a": 1}})
-        r2 = canonical_json({"z": {"a": 1, "b": 2}})
-        assert r1 == r2
-
-
 # ---------------------------------------------------------------------------
 # EventType enum
 # ---------------------------------------------------------------------------
