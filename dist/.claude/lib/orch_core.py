@@ -2714,11 +2714,41 @@ REVIEW_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
     # R9 — Dynamic concurrency by qa_mode window
     ("select_batch", lambda i: True):
         Action("set_max_concurrent", {}),  # populated by wrapper
+
+    # R10 — Auto-approval gate (4 strict rules, most specific failure first)
+    ("approval_gate", lambda i: i.get("completed_review_tasks_count", 0) == 0):
+        Action("manual_gate", {"disqualified_by": "R1_no_completed_tasks"}),
+    ("approval_gate", lambda i: not i.get("all_qa_mode_micro")):
+        Action("manual_gate", {"disqualified_by": "R2_non_micro_qa_mode"}),
+    ("approval_gate", lambda i: not i.get("all_verdicts_approved")):
+        Action("manual_gate", {"disqualified_by": "R3_verdict_not_approved"}),
+    ("approval_gate", lambda i: i.get("any_severe_findings")):
+        Action("manual_gate", {"disqualified_by": "R4_severe_findings_present"}),
+    ("approval_gate", lambda i: True):
+        Action(
+            "auto_approve",
+            {
+                "synthesized_human_response": True,
+                "auto_approved": True,
+                "reason": "micro_unanimous_clean",
+                "audit_code": "E18_auto_approval_granted",
+            },
+        ),
+
+    # R11 — human_response.action routing
+    ("human_response_received", lambda i: i.get("action") == "approve"):
+        Action("proceed_to_exit", {}),
+    ("human_response_received", lambda i: i.get("action") == "return_to_dev"):
+        Action("return_to_dev", {"scope": "full"}),
+    ("human_response_received", lambda i: i.get("action") == "return_partial"):
+        Action("return_to_dev", {"scope": "partial"}),  # rejected_task_ids dyn
+    ("human_response_received", lambda i: True):
+        Action("error", {"reason": "unknown_action"}),  # received populated by wrapper
 }
 
 
 class ReviewStateMachine(StateMachine):
-    """Subclass for orchestrator-review that populates dynamic params for R4/R9."""
+    """Subclass for orchestrator-review that populates dynamic params for R4/R9/R11."""
 
     def evaluate(self, state: str, inputs: dict) -> Action:
         action = super().evaluate(state, inputs)
@@ -2741,5 +2771,25 @@ class ReviewStateMachine(StateMachine):
             return Action(
                 "set_max_concurrent",
                 {"max_concurrent": _r9_compute_max_concurrent(modes)},
+            )
+        if (
+            state == "human_response_received"
+            and action.name == "return_to_dev"
+            and action.params.get("scope") == "partial"
+        ):
+            return Action(
+                "return_to_dev",
+                {
+                    "scope": "partial",
+                    "rejected_task_ids": list(inputs.get("rejected_task_ids", [])),
+                },
+            )
+        if state == "human_response_received" and action.name == "error":
+            return Action(
+                "error",
+                {
+                    "reason": "unknown_action",
+                    "received": inputs.get("action"),
+                },
             )
         return action

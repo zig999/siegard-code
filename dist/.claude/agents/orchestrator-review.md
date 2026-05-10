@@ -659,11 +659,19 @@ Return to 4.0.
 
 Read log for most recent `escalation` event with `data.code == "E99_human_approval_required"` in the review phase.
 
-If found, look for a subsequent `human_response` event:
+If found, look for a subsequent `human_response` event. Route via state machine (R11):
 
-- `action == "approve"` → approval received → proceed to Step 6
-- `action == "return_to_dev"` → human rejected all → proceed to §Return-to-dev
-- `action == "return_partial"` with `data.rejected_task_ids: [...]` → partial rejection → proceed to §Return-to-dev (only rejected tasks)
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine review --state human_response_received \
+  --inputs "{\"action\": \"<human_response.action>\", \"rejected_task_ids\": <human_response.rejected_task_ids or []>}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+SCOPE=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('scope',''))")
+```
+
+- `$ACTION == "proceed_to_exit"` (action=approve) → approval received → proceed to Step 6
+- `$ACTION == "return_to_dev"` with `$SCOPE == "full"` (action=return_to_dev) → human rejected all → proceed to §Return-to-dev
+- `$ACTION == "return_to_dev"` with `$SCOPE == "partial"` (action=return_partial) → partial rejection; SM params include `rejected_task_ids` → proceed to §Return-to-dev (only rejected tasks)
+- `$ACTION == "error"` → unknown action; emit warning and treat as no response
 - No `human_response` yet → output `{"status": "escalated", "last_seq": <last_seq>, "summary": "awaiting human approval of QA verdicts"}` and stop
 
 **If no prior E99_human_approval_required escalation:** evaluate Step 5.0 (auto-approval gate) before falling through to the manual gate below.
@@ -689,9 +697,20 @@ python3 .claude/skills/phase-review-rules/scripts/check_micro_unanimous_clean.py
 
 Parse `qualifies` and `evidence` from output.
 
-**If `qualifies == false`:** record the reason from `evidence` and continue to the manual gate below (E99 emission).
+**Auto-approval routing (R10, via state machine):**
 
-**If `qualifies == true`:**
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine review --state approval_gate \
+  --inputs "{\"completed_review_tasks_count\": $COMPLETED_COUNT, \"all_qa_mode_micro\": $ALL_MICRO, \"all_verdicts_approved\": $ALL_APPROVED, \"any_severe_findings\": $ANY_SEVERE}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+DISQUALIFIED_BY=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('disqualified_by',''))")
+```
+
+`$ACTION` is `auto_approve` (all R1-R4 satisfied) or `manual_gate` (any rule disqualifies; `$DISQUALIFIED_BY` identifies which one).
+
+**If `$ACTION == "manual_gate"`:** record `$DISQUALIFIED_BY` and continue to the manual gate below (E99 emission).
+
+**If `$ACTION == "auto_approve"`:**
 
 1. Emit the audit-trail escalation:
 
