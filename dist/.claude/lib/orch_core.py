@@ -2520,11 +2520,33 @@ META_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
             "escalate_critical",
             {"severity": "critical", "code": "E13"},
         ),
+
+    # M5 — Escalation decision gate
+    (
+        "escalation_active",
+        lambda i: i.get("escalation_severity") == "info"
+                  and bool(i.get("escalation_options")),
+    ):
+        Action("ask_user", {}),  # options populated by MetaStateMachine wrapper
+    ("escalation_active", lambda i: True):
+        Action("surface_error", {}),
+
+    # M7 — Phase routing
+    ("phase_entry", lambda i: i.get("current_phase") == "sdd"):
+        Action("spawn_phase_orchestrator", {"subagent_type": "orchestrator-sdd"}),
+    ("phase_entry", lambda i: i.get("current_phase") == "dev"):
+        Action("spawn_phase_orchestrator", {"subagent_type": "orchestrator-dev"}),
+    ("phase_entry", lambda i: i.get("current_phase") == "review"):
+        Action("spawn_phase_orchestrator", {"subagent_type": "orchestrator-review"}),
+    ("phase_entry", lambda i: i.get("current_phase") == "test"):
+        Action("spawn_phase_orchestrator", {"subagent_type": "orchestrator-test"}),
+    ("phase_entry", lambda i: True):
+        Action("error", {"reason": "unknown_phase"}),  # phase populated by wrapper
 }
 
 
 class MetaStateMachine(StateMachine):
-    """Subclass for the meta-orchestrator that populates M3 dynamic params."""
+    """Subclass for the meta-orchestrator that populates dynamic params."""
 
     def evaluate(self, state: str, inputs: dict) -> Action:
         action = super().evaluate(state, inputs)
@@ -2532,5 +2554,18 @@ class MetaStateMachine(StateMachine):
             return Action(
                 "set_run_status",
                 {"run_status": _m3_derive_run_status(inputs)},
+            )
+        if state == "escalation_active" and action.name == "ask_user":
+            return Action(
+                "ask_user",
+                {"options": list(inputs.get("escalation_options", []))},
+            )
+        if state == "phase_entry" and action.name == "error":
+            return Action(
+                "error",
+                {
+                    "reason": "unknown_phase",
+                    "phase": inputs.get("current_phase"),
+                },
             )
         return action

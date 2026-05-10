@@ -231,9 +231,15 @@ Options:
   - {option}
 ```
 
-**Decision gate** (`escalation.options` is present AND `escalation.severity == "info"`):
+**Decision gate (M5, via state machine):**
 
-Use AskUserQuestion with the options from `escalation.options`.
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine meta --state escalation_active \
+  --inputs "{\"escalation_severity\": \"<escalation.severity>\", \"escalation_options\": <escalation.options as JSON array>}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+If `$ACTION == "ask_user"`: Use AskUserQuestion with the options from `escalation.options`.
 
 On response (`operator_choice`):
 
@@ -246,7 +252,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 Re-read state (re-run Steps 1–2). Proceed to Step 5 to resume the phase orchestrator.
 
-**Error condition** (`escalation.options` absent OR `escalation.severity != "info"`):
+**Else (`$ACTION == "surface_error"`** — no options, or severity is warning/critical**):**
 
 Output:
 ```json
@@ -362,10 +368,19 @@ If `cycle_counter ≥ 2`: output `{"status": "error", "reason": "phase_transitio
 
 Read `last_seq` from state (this becomes `log_seq_at_spawn` for the phase orchestrator).
 
-Look up phase orchestrator from routing table using `current_phase`.
+**Phase routing (M7, via state machine):**
 
-If `current_phase` is not in the routing table:
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine meta --state phase_entry \
+  --inputs "{\"current_phase\": \"$current_phase\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+SUBAGENT=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('subagent_type',''))")
+```
+
+If `$ACTION == "error"` (current_phase not in routing table):
 Output `{"status": "error", "reason": "unknown_phase", "detail": "<current_phase> has no entry in routing table", "last_seq": <n>}` and stop.
+
+If `$ACTION == "spawn_phase_orchestrator"`: spawn `$SUBAGENT` (one of `orchestrator-{sdd,dev,review,test}`).
 
 Derive `workflow_type` and `requirement` from the `phase_declared` event before spawning:
 
