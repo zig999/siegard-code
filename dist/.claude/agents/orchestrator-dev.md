@@ -324,8 +324,15 @@ print(json.dumps(result))
 
 Store `stack`, `handoff_type`, `dev_impact`, and `changed_files` for use in Steps 3–5.
 
-**`dev_impact: no_action` short-circuit:**
-If `handoff_type` is `fast_track` or `major_evolution` AND `dev_impact` is `no_action`:
+**`dev_impact: no_action` short-circuit (D6, via state machine):**
+
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine dev --state post_manifest \
+  --inputs "{\"handoff_type\": \"$handoff_type\", \"dev_impact\": \"$dev_impact\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+If `$ACTION == "exit_vacuous"`:
 - No implementation work is required for this evolution.
 - Emit `phase_exit_criterion_met` for all dev criteria (they are vacuously met with zero tasks).
 - Emit `phase_exit_approved` and `phase_transitioned(dev→review)`.
@@ -335,8 +342,21 @@ If `handoff_type` is `fast_track` or `major_evolution` AND `dev_impact` is `no_a
 
 ### Step 3 — Planning dispatch
 
-**Planning skip (improve flow only):** If `workflow_type == "improve"` AND `planner_required == false`
-(read from `triage.json` in Step 2): skip the planner dispatch and synthesize a minimal backlog
+**Planning routing (D7, via state machine):**
+
+```bash
+TRIAGE_PRESENT=$([ -f "$ORCH_PROJECT_DIR/.orch/sessions/$workflow_id/triage.json" ] && echo true || echo false)
+RESULT=$(python3 .claude/lib/sm_runner.py --machine dev --state planning_dispatch \
+  --inputs "{\"workflow_type\": \"$workflow_type\", \"planner_required\": $planner_required, \"triage_present\": $TRIAGE_PRESENT}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+`$ACTION` is one of:
+- `synthesize_backlog_from_triage` — improve flow with `planner_required=false` and triage present; skip planner, synthesize backlog directly from triage.
+- `escalate_e13` — improve flow with `planner_required=false` but triage missing; emit `E13_improve_scope_unusable` and stop.
+- `dispatch_planner` — standard flow OR improve flow with `planner_required=true`; proceed with stack-conditional planning dispatch below.
+
+**Synthesize-from-triage path (`$ACTION == "synthesize_backlog_from_triage"`):** skip the planner dispatch and synthesize a minimal backlog
 directly from `triage.json` (`affected_specs`). The triage already defines the scoped task contracts —
 running the planner would duplicate and potentially contradict that scope.
 

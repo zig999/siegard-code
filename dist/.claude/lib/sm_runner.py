@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from orch_core import (  # noqa: E402
+    DEV_TRANSITIONS,
     META_TRANSITIONS,
     TEST_TRANSITIONS,
     Action,
@@ -37,6 +38,10 @@ REGISTERED_MACHINES: dict[str, dict] = {
     "meta": {
         "machine": MetaStateMachine(META_TRANSITIONS),
         "initial_state": "post_infra",
+    },
+    "dev": {
+        "machine": StateMachine(DEV_TRANSITIONS),
+        "initial_state": "post_manifest",
     },
 }
 

@@ -2345,6 +2345,7 @@ __all__ = [
     "TestPhaseStateMachine",
     "META_TRANSITIONS",
     "MetaStateMachine",
+    "DEV_TRANSITIONS",
 ]
 
 
@@ -2569,3 +2570,58 @@ class MetaStateMachine(StateMachine):
                 },
             )
         return action
+
+
+# ---------------------------------------------------------------------------
+# orchestrator-dev transitions (D6, D7)
+# ---------------------------------------------------------------------------
+
+DEV_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
+    # D6 — dev_impact: no_action short-circuit
+    (
+        "post_manifest",
+        lambda i: i.get("handoff_type") in ("fast_track", "major_evolution")
+                  and i.get("dev_impact") == "no_action",
+    ):
+        Action(
+            "exit_vacuous",
+            {
+                "next_phase": "review",
+                "reason": "dev_impact_no_action",
+                "criteria_vacuously_met": True,
+            },
+        ),
+    ("post_manifest", lambda i: True):
+        Action("proceed", {"to": "step_3_planning"}),
+
+    # D7 — planner_required skip in improve flow
+    # Most specific predicate must come first (escalate when triage missing).
+    (
+        "planning_dispatch",
+        lambda i: i.get("workflow_type") == "improve"
+                  and i.get("planner_required") is False
+                  and not i.get("triage_present", False),
+    ):
+        Action(
+            "escalate_e13",
+            {
+                "code": "E13_improve_scope_unusable",
+                "severity": "critical",
+                "reason": "triage_missing — cannot synthesize backlog without triage.json",
+            },
+        ),
+    (
+        "planning_dispatch",
+        lambda i: i.get("workflow_type") == "improve"
+                  and i.get("planner_required") is False,
+    ):
+        Action(
+            "synthesize_backlog_from_triage",
+            {
+                "skip_planner": True,
+                "reason": "implementation_only_no_spec_change",
+            },
+        ),
+    ("planning_dispatch", lambda i: True):
+        Action("dispatch_planner", {}),
+}
