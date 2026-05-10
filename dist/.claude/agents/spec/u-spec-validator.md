@@ -161,7 +161,7 @@ When the result is VALID:
 1. If a previous report exists in `{SPECS_DIR}/_validation/`, update the status to VALID and Triage to COMPLETED
 2. Keep the file as a historical record (do not delete)
 
-> Persistence does NOT replace returning to the Orchestrator — the synchronous flow continues working normally. Persistence is an ADDITIONAL mechanism that enables the triage flow via `/u-spec-triage`.
+> Persistence does NOT replace returning to the Orchestrator — the synchronous flow continues working normally. Persistence is an ADDITIONAL mechanism: `orchestrator-sdd` reads INVALID reports from `_validation/` to identify domains requiring the automatic repair cycle (Step R2 in the exit-criteria block).
 
 ### Flow When INVALID
 

@@ -191,7 +191,7 @@ improvement_task: {improvement_task}
 spec_change_status: pending_spec
 phases: sdd → dev → review → test
 
-note: spec impact classification runs automatically at SDD phase start via u-spec-triage.
+note: spec impact classification runs automatically at SDD phase start via the u-spec-triage worker.
 next_command: /u-dev {workflow_id}
 ```
 

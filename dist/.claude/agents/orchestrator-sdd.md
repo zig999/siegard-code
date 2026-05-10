@@ -1063,12 +1063,96 @@ Stop.
 
 Re-read state. Determine why:
 - Non-terminal tasks remain → return to Step 5 (more work to do)
-- All tasks terminal but criteria not met → escalate to human:
+- All tasks terminal but criteria not met → run **Validation Repair Loop** before escalating:
+
+#### Validation Repair Loop (standard mode only — `effective_mode == "standard"`)
+
+**Step R1 — Count repair cycles already attempted:**
+
+```bash
+python3 -c "
+import sys, json, re
+sys.path.insert(0, '.claude/lib')
+from orch_core import read_events_filtered, EventType
+events = read_events_filtered(event_type=EventType.TASK_CREATED)
+repair_ids = [e.task_id for e in events if e.task_id and re.match(r'sdd_.+_spec-writer-repair-\d+', e.task_id)]
+cycles = max((int(re.search(r'-repair-(\d+)', t).group(1)) for t in repair_ids), default=0) if repair_ids else 0
+print(json.dumps({'repair_cycles': cycles}))
+"
+```
+
+Store result as `repair_cycles`.
+
+**If `repair_cycles >= 2` OR `effective_mode != "standard"`:** skip to E08 escalation below.
+
+**Step R2 — Identify INVALID domains:**
+
+```bash
+python3 -c "
+import os, sys, re
+from pathlib import Path
+specs_dir = os.environ.get('SPECS_DIR', 'specs')
+project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
+val_dir = Path(project_dir) / specs_dir / '_validation'
+invalid = []
+if val_dir.exists():
+    for f in val_dir.glob('*-validation.md'):
+        content = f.read_text()
+        if re.search(r'status:\s*INVALID', content, re.IGNORECASE):
+            domain = f.stem.replace('-validation', '')
+            invalid.append(domain)
+import json; print(json.dumps({'invalid_domains': invalid}))
+"
+```
+
+Store result as `invalid_domains`.
+
+**If `invalid_domains` is empty:** skip to E08 escalation below (criteria mismatch — not a validation issue).
+
+**Step R3 — Dispatch repair pipeline for each INVALID domain:**
+
+Repair cycle number: `repair_n = repair_cycles + 1`.
+
+For each `domain` in `invalid_domains`, create repair tasks (same pipeline order as the standard pipeline — spec-writer → spec-reviewer → spec-back → spec-validator):
+
+```bash
+# Task IDs use -repair-{N} suffix to avoid idempotency collision with original pipeline tasks
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<domain>_spec-writer-repair-<repair_n> \
+  --data '{"phase":"sdd","deps":[],"tier":"standard","type":"spec-writer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>,"repair_context":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/_validation/<domain>-validation.md"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<domain>_spec-reviewer-repair-<repair_n> \
+  --data '{"phase":"sdd","deps":["sdd_<domain>_spec-writer-repair-<repair_n>"],"tier":"standard","type":"spec-reviewer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<domain>_spec-back-repair-<repair_n> \
+  --data '{"phase":"sdd","deps":["sdd_<domain>_spec-reviewer-repair-<repair_n>"],"tier":"standard","type":"spec-back","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<domain>_spec-validator-repair-<repair_n> \
+  --data '{"phase":"sdd","deps":["sdd_<domain>_spec-back-repair-<repair_n>"],"tier":"standard","type":"spec-validator","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>}'
+```
+
+After all repair tasks created, return to **Step 5** (dispatch loop). The loop will pick up the new `ready` tasks and dispatch them.
+
+> Repair workers receive `repair_context` (path to the INVALID validation report) in task data, so they can read the specific inconsistencies to fix. Workers must read this file at the start of execution.
+
+**E08 escalation (repair exhausted or not applicable):**
+
   ```bash
   python3 .claude/skills/orch-log/scripts/append.py \
     --agent orchestrator-sdd \
     --event-type escalation \
-    --data '{"code":"E08_exit_criteria_not_met","severity":"warning","reason":"All SDD tasks are terminal but exit criteria are not met: <list failing criteria with evidence>","evidence":[<relevant_seqs>],"suggested_actions":["review handoff-manifest.yaml","check _validation/ for INVALID entries","sync error-codes.md"]}'
+    --data '{"code":"E08_exit_criteria_not_met","severity":"warning","reason":"All SDD tasks are terminal but exit criteria are not met: <list failing criteria with evidence>","evidence":[<relevant_seqs>],"repair_cycles_attempted":<repair_cycles>,"suggested_actions":["review handoff-manifest.yaml","check _validation/ for remaining INVALID entries","sync error-codes.md"]}'
   ```
 
   Output:
@@ -1076,7 +1160,7 @@ Re-read state. Determine why:
   {
     "status": "escalated",
     "last_seq": <last_seq>,
-    "summary": "all tasks terminal but exit criteria not met: <failing criteria>"
+    "summary": "all tasks terminal but exit criteria not met after <repair_cycles> repair cycle(s): <failing criteria>"
   }
   ```
   Stop.

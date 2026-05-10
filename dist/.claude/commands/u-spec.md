@@ -191,6 +191,5 @@ Files produced in {SPECS_DIR}/:
 
 Next steps:
   - To start implementation: /u-dev {workflow_id}
-  - To selectively fix validation errors: /u-spec-triage {workflow_id}
   - To apply a targeted improvement: /u-improve "{description}"
 ```

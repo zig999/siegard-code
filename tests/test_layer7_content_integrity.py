@@ -114,7 +114,6 @@ class TestSpecI15ImproveHashEliminated:
     @pytest.mark.parametrize("rel", [
         "skills/u-improve/SKILL.md",
         "commands/u-dev.md",
-        "commands/u-spec-triage.md",
     ])
     def test_guard38_no_improve_hash_reference(self, rel):
         content = _read(rel)
