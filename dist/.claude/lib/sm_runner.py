@@ -22,10 +22,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 from orch_core import (  # noqa: E402
     DEV_TRANSITIONS,
     META_TRANSITIONS,
+    REVIEW_TRANSITIONS,
     TEST_TRANSITIONS,
     Action,
     DevStateMachine,
     MetaStateMachine,
+    ReviewStateMachine,
     StateMachine,
     TestPhaseStateMachine,
 )
@@ -43,6 +45,10 @@ REGISTERED_MACHINES: dict[str, dict] = {
     "dev": {
         "machine": DevStateMachine(DEV_TRANSITIONS),
         "initial_state": "post_manifest",
+    },
+    "review": {
+        "machine": ReviewStateMachine(REVIEW_TRANSITIONS),
+        "initial_state": "classify_qa_mode_done",
     },
 }
 

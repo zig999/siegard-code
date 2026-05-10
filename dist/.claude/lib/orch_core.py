@@ -2347,6 +2347,8 @@ __all__ = [
     "MetaStateMachine",
     "DEV_TRANSITIONS",
     "DevStateMachine",
+    "REVIEW_TRANSITIONS",
+    "ReviewStateMachine",
 ]
 
 
@@ -2670,5 +2672,74 @@ class DevStateMachine(StateMachine):
             return Action(
                 "select_worker",
                 {"stack": stack, "task_type": inputs.get("task_type")},
+            )
+        return action
+
+
+# ---------------------------------------------------------------------------
+# orchestrator-review transitions (R4, R9)
+# ---------------------------------------------------------------------------
+
+QA_MODE_CONCURRENCY: dict[str, int] = {
+    "micro": 5,
+    "standard": 3,
+    "full": 2,
+    "unknown": 2,
+}
+
+
+def _r9_compute_max_concurrent(qa_modes: list[str]) -> int:
+    """R9 — min CONCURRENCY across qa_modes_in_window (defaults 2 for empty/unknown)."""
+    if not qa_modes:
+        return 2
+    return min(QA_MODE_CONCURRENCY.get(m, 2) for m in qa_modes)
+
+
+REVIEW_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
+    # R4 — qa_mode classification routing
+    # Most specific first: classifier_failed forces standard fallback.
+    ("classify_qa_mode_done", lambda i: i.get("classifier_failed")):
+        Action(
+            "create_qa_task",
+            {
+                "qa_mode": "standard",
+                "concurrency_hint": 3,
+                "warn_emitted": True,
+                "code": "E19_qa_mode_classifier_failed",
+            },
+        ),
+    ("classify_qa_mode_done", lambda i: i.get("qa_mode") in QA_MODE_CONCURRENCY):
+        Action("create_qa_task", {}),  # populated by ReviewStateMachine wrapper
+
+    # R9 — Dynamic concurrency by qa_mode window
+    ("select_batch", lambda i: True):
+        Action("set_max_concurrent", {}),  # populated by wrapper
+}
+
+
+class ReviewStateMachine(StateMachine):
+    """Subclass for orchestrator-review that populates dynamic params for R4/R9."""
+
+    def evaluate(self, state: str, inputs: dict) -> Action:
+        action = super().evaluate(state, inputs)
+        if (
+            state == "classify_qa_mode_done"
+            and action.name == "create_qa_task"
+            and not action.params.get("warn_emitted")
+        ):
+            mode = inputs.get("qa_mode", "standard")
+            return Action(
+                "create_qa_task",
+                {
+                    "qa_mode": mode,
+                    "concurrency_hint": QA_MODE_CONCURRENCY.get(mode, 2),
+                    "rationale": inputs.get("rationale", ""),
+                },
+            )
+        if state == "select_batch" and action.name == "set_max_concurrent":
+            modes = inputs.get("qa_modes_in_window", [])
+            return Action(
+                "set_max_concurrent",
+                {"max_concurrent": _r9_compute_max_concurrent(modes)},
             )
         return action

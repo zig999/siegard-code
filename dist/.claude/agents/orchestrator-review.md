@@ -235,7 +235,18 @@ python3 .claude/skills/phase-review-rules/scripts/classify_qa_mode.py \
   --project-dir "$ORCH_PROJECT_DIR"
 ```
 
-Parse `qa_mode`, `concurrency_hint`, `rationale` from the JSON output. If the script fails (exit 1), default to `qa_mode="standard"`, `concurrency_hint=3` and emit a warning escalation `E19_qa_mode_classifier_failed` (severity: warning) — do NOT abort the phase over a classification failure.
+**qa_mode routing (R4, via state machine):**
+
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine review --state classify_qa_mode_done \
+  --inputs "{\"qa_mode\": \"<qa_mode_or_null>\", \"rationale\": \"<rationale>\", \"classifier_failed\": <true_if_classifier_exit_1>}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+QA_MODE=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['qa_mode'])")
+CONCURRENCY_HINT=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['concurrency_hint'])")
+WARN_EMITTED=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('warn_emitted', False))")
+```
+
+When the classifier script fails (exit 1), the SM returns `qa_mode="standard"`, `concurrency_hint=3`, and `warn_emitted=true` with `code=E19_qa_mode_classifier_failed` — emit that warning escalation but do NOT abort the phase. Otherwise the SM populates `concurrency_hint` from the qa_mode (`micro=5, standard=3, full=2`).
 
 Then emit `task_created`:
 
@@ -446,7 +457,18 @@ Re-read state after all syntheses.
 
 #### 4.1 — Select batch (dynamic concurrency by qa_mode)
 
-Order ready tasks by tier priority, then creation seq. Compute `max_concurrent` from the modes present in the ready queue:
+Order ready tasks by tier priority, then creation seq.
+
+**Compute `max_concurrent` (R9, via state machine):**
+
+```bash
+WINDOW_MODES_JSON='[<qa_modes from top 5 candidates as JSON array>]'
+RESULT=$(python3 .claude/lib/sm_runner.py --machine review --state select_batch \
+  --inputs "{\"qa_modes_in_window\": $WINDOW_MODES_JSON}")
+MAX_CONCURRENT=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['max_concurrent'])")
+```
+
+The SM applies these rules:
 
 | qa_mode of leading task | max_concurrent |
 |---|---|
