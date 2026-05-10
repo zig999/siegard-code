@@ -23,11 +23,13 @@ from orch_core import (  # noqa: E402
     DEV_TRANSITIONS,
     META_TRANSITIONS,
     REVIEW_TRANSITIONS,
+    SDD_TRANSITIONS,
     TEST_TRANSITIONS,
     Action,
     DevStateMachine,
     MetaStateMachine,
     ReviewStateMachine,
+    SddStateMachine,
     StateMachine,
     TestPhaseStateMachine,
 )
@@ -49,6 +51,10 @@ REGISTERED_MACHINES: dict[str, dict] = {
     "review": {
         "machine": ReviewStateMachine(REVIEW_TRANSITIONS),
         "initial_state": "classify_qa_mode_done",
+    },
+    "sdd": {
+        "machine": SddStateMachine(SDD_TRANSITIONS),
+        "initial_state": "triage_done",
     },
 }
 

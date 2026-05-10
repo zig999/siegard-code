@@ -2349,6 +2349,8 @@ __all__ = [
     "DevStateMachine",
     "REVIEW_TRANSITIONS",
     "ReviewStateMachine",
+    "SDD_TRANSITIONS",
+    "SddStateMachine",
 ]
 
 
@@ -2791,5 +2793,69 @@ class ReviewStateMachine(StateMachine):
                     "reason": "unknown_action",
                     "received": inputs.get("action"),
                 },
+            )
+        return action
+
+
+# ---------------------------------------------------------------------------
+# orchestrator-sdd transitions (S4-S8)
+# ---------------------------------------------------------------------------
+
+SDD_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
+    # S4 — type=implementation_only short-circuit (most specific first)
+    ("triage_done", lambda i: i.get("type") == "implementation_only"):
+        Action(
+            "exit_no_spec_change",
+            {"next_phase": "dev", "reason": "implementation_only_no_spec_change"},
+        ),
+
+    # S5 + S6 — effective_mode + bypass_e99 (combined per trigger × mode_hint)
+    (
+        "triage_done",
+        lambda i: i.get("trigger") == "u-improve" and i.get("mode_hint") == "full",
+    ):
+        Action(
+            "dispatch_pipeline",
+            {"effective_mode": "standard", "bypass_e99": True},
+        ),
+    (
+        "triage_done",
+        lambda i: i.get("trigger") == "u-improve"
+                  and isinstance(i.get("mode_hint"), str)
+                  and i.get("mode_hint", "").startswith("fast-track"),
+    ):
+        Action(
+            "dispatch_pipeline",
+            {"effective_mode": "targeted", "bypass_e99": True},
+        ),
+    ("triage_done", lambda i: i.get("trigger") == "u-spec"):
+        Action(
+            "dispatch_pipeline",
+            {"effective_mode": "standard", "bypass_e99": False},
+        ),
+
+    # S7 — Targeted vs Standard branch
+    ("post_mode_declared", lambda i: i.get("effective_mode") == "targeted"):
+        Action("goto_step", {"step": "step_4_targeted"}),
+    ("post_mode_declared", lambda i: i.get("effective_mode") == "standard"):
+        Action("goto_step", {"step": "step_2_assess"}),
+
+    # S8 — Greenfield routing (params populated by SddStateMachine wrapper)
+    ("assess_pipeline", lambda i: i.get("greenfield") is True):
+        Action("use_triage_domains", {}),
+    ("assess_pipeline", lambda i: i.get("greenfield") is False):
+        Action("scan_filesystem", {}),
+}
+
+
+class SddStateMachine(StateMachine):
+    """Subclass for orchestrator-sdd that populates dynamic params for S8."""
+
+    def evaluate(self, state: str, inputs: dict) -> Action:
+        action = super().evaluate(state, inputs)
+        if state == "assess_pipeline" and action.name == "use_triage_domains":
+            return Action(
+                "use_triage_domains",
+                {"domains": list(inputs.get("triage_domains", []))},
             )
         return action

@@ -294,7 +294,21 @@ Extract and hold from `triage.json`:
 - `greenfield`: bool
 - `requirement`: task description (passed to workers as context)
 
-**If `type == "implementation_only"`:**
+**Triage routing (S4-S6, via state machine):**
+
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine sdd --state triage_done \
+  --inputs "{\"type\": \"$type\", \"trigger\": \"$trigger\", \"mode_hint\": \"$mode_hint\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+EFFECTIVE_MODE=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('effective_mode',''))")
+BYPASS_E99=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('bypass_e99',False))")
+```
+
+`$ACTION` is one of:
+- `exit_no_spec_change` — `type == implementation_only`; emit phase_exit_approved and transition to dev
+- `dispatch_pipeline` — `type == spec_change_required`; SM populates `effective_mode` (standard|targeted) and `bypass_e99` (bool)
+
+**If `$ACTION == "exit_no_spec_change"`:**
 
 No spec work required. Per DECLARATIVE_TRUNCATION, log a `task_skipped` event for the standard pipeline (representing the steps that would have run), then emit phase exit and return immediately:
 
@@ -382,16 +396,35 @@ Hold the full `OrchState` in memory for this cycle. Extract:
 
 ### Step 2 — Assess spec pipeline state
 
-> **Targeted mode (`effective_mode == "targeted"`):** skip to §Step 4 (Targeted) after Step 3.
+**Mode branch (S7, via state machine):**
+
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine sdd --state post_mode_declared \
+  --inputs "{\"effective_mode\": \"$EFFECTIVE_MODE\"}")
+NEXT_STEP=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['step'])")
+```
+
+`$NEXT_STEP` is `step_4_targeted` (skip to §Step 4 Targeted) or `step_2_assess` (continue with standard flow below).
+
+> **Targeted mode (`$NEXT_STEP == "step_4_targeted"`):** skip to §Step 4 (Targeted) after Step 3.
 
 ```bash
 export ORCH_PROJECT_DIR="<ORCH_PROJECT_DIR from spawn prompt inputs>"
 export SPECS_DIR="<SPECS_DIR from spawn prompt inputs>"
 ```
 
-**If `greenfield: true`** (from triage.json read in Step 0.5): use `triage.domains` as the domain list directly. Skip filesystem scan. Classify all entries as `new` (no sdd tasks can exist for domains that did not exist before triage).
+**Greenfield routing (S8, via state machine):**
 
-**If `greenfield: false`**: scan `$SPECS_DIR/` for domain spec files:
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine sdd --state assess_pipeline \
+  --inputs "{\"greenfield\": $greenfield, \"triage_domains\": $TRIAGE_DOMAINS_JSON}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+DOMAINS=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('domains',[]))")
+```
+
+**If `$ACTION == "use_triage_domains"`** (greenfield=true): use the domains list returned by the SM (sourced from `triage.json`). Skip filesystem scan. Classify all entries as `new` (no sdd tasks can exist for domains that did not exist before triage).
+
+**If `$ACTION == "scan_filesystem"`** (greenfield=false): scan `$SPECS_DIR/` for domain spec files:
 
 ```bash
 python3 -c "
