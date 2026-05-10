@@ -2801,6 +2801,18 @@ class ReviewStateMachine(StateMachine):
 # orchestrator-sdd transitions (S4-S8)
 # ---------------------------------------------------------------------------
 
+def _s10_classify_path(path: str) -> str:
+    """S10 — heuristic mapping path keyword → domain_task_type."""
+    p = (path or "").lower()
+    if "front/" in p or "component" in p:
+        return "spec-front"
+    if "back/" in p or p.endswith(".back.md"):
+        return "spec-back"
+    if "domains/" in p:
+        return "spec-back"  # openapi.yaml + .spec.md default to back
+    return "spec-front"  # ambiguous → front (UI improvements default)
+
+
 SDD_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
     # S4 — type=implementation_only short-circuit (most specific first)
     ("triage_done", lambda i: i.get("type") == "implementation_only"):
@@ -2845,11 +2857,32 @@ SDD_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
         Action("use_triage_domains", {}),
     ("assess_pipeline", lambda i: i.get("greenfield") is False):
         Action("scan_filesystem", {}),
+
+    # S10 — Domain worker type by path keyword (params populated by wrapper)
+    ("targeted_classify_path", lambda i: True):
+        Action("set_domain_worker_type", {}),
+
+    # S11 — Structural diff routing
+    ("targeted_dispatch_decision", lambda i: i.get("domain_worker_required") is True):
+        Action("create_writer_and_reviewer", {}),  # pipeline populated by wrapper
+    ("targeted_dispatch_decision", lambda i: i.get("domain_worker_required") is False):
+        Action("create_reviewer_only", {"pipeline": ["spec-reviewer"]}),
+
+    # S16 — Validation Repair Loop (most specific first: dispatch only if all conditions met)
+    (
+        "exit_criteria_failed",
+        lambda i: i.get("effective_mode") == "standard"
+                  and i.get("repair_cycles", 0) < 2
+                  and len(i.get("invalid_domains", [])) > 0,
+    ):
+        Action("dispatch_repair_pipeline", {}),  # cycle_n + domains populated by wrapper
+    ("exit_criteria_failed", lambda i: True):
+        Action("escalate_e08", {}),  # reason populated by wrapper
 }
 
 
 class SddStateMachine(StateMachine):
-    """Subclass for orchestrator-sdd that populates dynamic params for S8."""
+    """Subclass for orchestrator-sdd that populates dynamic params for S8/S10/S11/S16."""
 
     def evaluate(self, state: str, inputs: dict) -> Action:
         action = super().evaluate(state, inputs)
@@ -2857,5 +2890,54 @@ class SddStateMachine(StateMachine):
             return Action(
                 "use_triage_domains",
                 {"domains": list(inputs.get("triage_domains", []))},
+            )
+        if state == "targeted_classify_path" and action.name == "set_domain_worker_type":
+            path = inputs.get("spec_path", "") or ""
+            return Action(
+                "set_domain_worker_type",
+                {
+                    "domain_task_type": _s10_classify_path(path),
+                    "spec_path": path,
+                },
+            )
+        if (
+            state == "targeted_dispatch_decision"
+            and action.name == "create_writer_and_reviewer"
+        ):
+            dtt = inputs.get("domain_task_type", "spec-front")
+            return Action(
+                "create_writer_and_reviewer",
+                {"pipeline": [dtt, "spec-reviewer"], "domain_task_type": dtt},
+            )
+        if state == "exit_criteria_failed" and action.name == "dispatch_repair_pipeline":
+            cycles = int(inputs.get("repair_cycles", 0))
+            return Action(
+                "dispatch_repair_pipeline",
+                {
+                    "repair_cycle_n": cycles + 1,
+                    "domains": list(inputs.get("invalid_domains", [])),
+                    "pipeline": ["spec-writer", "spec-reviewer", "spec-back", "spec-validator"],
+                },
+            )
+        if state == "exit_criteria_failed" and action.name == "escalate_e08":
+            cycles = int(inputs.get("repair_cycles", 0))
+            invalid = inputs.get("invalid_domains", []) or []
+            mode = inputs.get("effective_mode")
+            if cycles >= 2:
+                reason = "max_repair_cycles_reached"
+            elif not invalid:
+                reason = "no_repairable_invalid_domains"
+            elif mode != "standard":
+                reason = "non_standard_mode"
+            else:
+                reason = "exit_criteria_not_met"
+            return Action(
+                "escalate_e08",
+                {
+                    "code": "E08_exit_criteria_not_met",
+                    "severity": "warning",
+                    "repair_cycles_attempted": cycles,
+                    "reason": reason,
+                },
             )
         return action

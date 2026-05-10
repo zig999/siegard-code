@@ -598,13 +598,19 @@ Re-run Step 1 after all task_created events to refresh state.
 
 For each entry `i` (1-indexed, zero-padded) in `affected_specs`:
 
-**Determine domain worker type** from `spec.path`.
-The result is the **task `type` string** (one of the valid types in the routing table):
+**Determine domain worker type (S10, via state machine):**
 
-- Path contains `front/` or `component` → task type = `spec-front`
-- Path contains `back/` or `.back.md` → task type = `spec-back`
-- Path contains `domains/` and has both `.spec.md` and `openapi.yaml` → task type = `spec-back` then `spec-front`
-- Ambiguous → task type = `spec-front` (default for UI improvements)
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine sdd --state targeted_classify_path \
+  --inputs "{\"spec_path\": \"<spec.path>\"}")
+domain_task_type=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['domain_task_type'])")
+```
+
+The SM applies these heuristics (path keyword → `domain_task_type`):
+- Path contains `front/` or `component` → `spec-front`
+- Path contains `back/` or ends with `.back.md` → `spec-back`
+- Path contains `domains/` → `spec-back` (default for openapi/.spec.md)
+- Ambiguous → `spec-front` (default for UI improvements)
 
 Store the resolved task type as `domain_task_type` (e.g., `"spec-front"` or `"spec-back"`).
 The task ID suffix is derived by stripping the `spec-` prefix from `domain_task_type`: if `domain_task_type = "spec-front"`, the suffix is `front`; if `"spec-back"`, the suffix is `back`.
@@ -618,6 +624,17 @@ python3 .claude/skills/phase-sdd-rules/scripts/check_structural_diff.py \
 ```
 
 Read output field `domain_worker_required` (bool).
+
+**Dispatch decision (S11, via state machine):**
+
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine sdd --state targeted_dispatch_decision \
+  --inputs "{\"domain_worker_required\": $domain_worker_required, \"domain_task_type\": \"$domain_task_type\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+PIPELINE=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['pipeline'])")
+```
+
+`$ACTION` is `create_writer_and_reviewer` (pipeline = `[domain_task_type, spec-reviewer]`) when structural changes detected, or `create_reviewer_only` (pipeline = `[spec-reviewer]`) for text-only changes.
 
 **IF `domain_worker_required == true`:** emit domain worker + reviewer tasks (two tasks, chained):
 
@@ -1098,7 +1115,7 @@ Re-read state. Determine why:
 - Non-terminal tasks remain → return to Step 5 (more work to do)
 - All tasks terminal but criteria not met → run **Validation Repair Loop** before escalating:
 
-#### Validation Repair Loop (standard mode only — `effective_mode == "standard"`)
+#### Validation Repair Loop (S16, via state machine)
 
 **Step R1 — Count repair cycles already attempted:**
 
@@ -1140,7 +1157,17 @@ import json; print(json.dumps({'invalid_domains': invalid}))
 
 Store result as `invalid_domains`.
 
-**If `invalid_domains` is empty:** skip to E08 escalation below (criteria mismatch — not a validation issue).
+**Step R2.5 — State machine routes repair vs escalate:**
+
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine sdd --state exit_criteria_failed \
+  --inputs "{\"effective_mode\": \"$effective_mode\", \"repair_cycles\": $repair_cycles, \"invalid_domains\": $INVALID_DOMAINS_JSON}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+```
+
+`$ACTION` is `dispatch_repair_pipeline` (SM populates `repair_cycle_n`, `domains`, `pipeline`) or `escalate_e08` (SM populates `reason` ∈ `max_repair_cycles_reached | no_repairable_invalid_domains | non_standard_mode`).
+
+**If `$ACTION == "escalate_e08"`:** skip to E08 escalation below.
 
 **Step R3 — Dispatch repair pipeline for each INVALID domain:**
 
