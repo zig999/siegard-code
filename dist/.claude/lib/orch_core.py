@@ -2343,6 +2343,8 @@ __all__ = [
     "StateMachine",
     "TEST_TRANSITIONS",
     "TestPhaseStateMachine",
+    "META_TRANSITIONS",
+    "MetaStateMachine",
 ]
 
 
@@ -2454,5 +2456,81 @@ class TestPhaseStateMachine(StateMachine):
                     "task_type": inputs.get("task_type"),
                     "stack": inputs.get("stack"),
                 },
+            )
+        return action
+
+
+# ---------------------------------------------------------------------------
+# meta-orchestrator transitions (M1, M2, M3, M9)
+# ---------------------------------------------------------------------------
+
+def _m3_derive_run_status(inputs: dict) -> str:
+    """M3 — derive run_status from raw_run_status + phases[]."""
+    raw = inputs.get("raw_run_status")
+    if raw == "escalated":
+        return "escalated"
+    phases = inputs.get("phases") or []
+    required = [p for p in phases if p.get("required")]
+    if required and all(p.get("status") == "completed" for p in required):
+        return "completed"
+    if not phases:
+        return "pending"
+    return "active"
+
+
+META_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
+    # M1 — infra check gate
+    ("post_infra", lambda i: i.get("preflight_status") == "blocked"):
+        Action("block", {"reason": "preflight_failed"}),
+    ("post_infra", lambda i: i.get("integrity_status") == "blocked"):
+        Action("block", {"reason": "integrity_failed"}),
+    ("post_infra", lambda i: i.get("circuit_status") == "blocked"):
+        Action("block", {"reason": "circuit_failed"}),
+    ("post_infra", lambda i: True):
+        Action("proceed", {"to": "step_2_state"}),
+
+    # M2 — state derivation error
+    ("post_state", lambda i: i.get("reduce_status") == "error"):
+        Action("error", {"reason": "state_derivation_failed", "source": "reduce.py"}),
+    ("post_state", lambda i: i.get("current_phase_status") == "error"):
+        Action(
+            "error",
+            {"reason": "state_derivation_failed", "source": "current_phase.py"},
+        ),
+    ("post_state", lambda i: True):
+        Action("proceed", {"to": "step_3_terminal"}),
+
+    # M3 — run_status derivation (params populated by MetaStateMachine wrapper)
+    ("derive_run_status", lambda i: True):
+        Action("set_run_status", {}),
+
+    # M9 — E13 retry escalation
+    ("subagent_invalid", lambda i: i.get("e13_retry_count", 0) == 0):
+        Action(
+            "retry_with_backoff",
+            {"backoff_seconds": 30, "severity": "warning", "code": "E13"},
+        ),
+    ("subagent_invalid", lambda i: i.get("e13_retry_count", 0) == 1):
+        Action(
+            "retry_with_backoff",
+            {"backoff_seconds": 60, "severity": "warning", "code": "E13"},
+        ),
+    ("subagent_invalid", lambda i: i.get("e13_retry_count", 0) >= 2):
+        Action(
+            "escalate_critical",
+            {"severity": "critical", "code": "E13"},
+        ),
+}
+
+
+class MetaStateMachine(StateMachine):
+    """Subclass for the meta-orchestrator that populates M3 dynamic params."""
+
+    def evaluate(self, state: str, inputs: dict) -> Action:
+        action = super().evaluate(state, inputs)
+        if state == "derive_run_status" and action.name == "set_run_status":
+            return Action(
+                "set_run_status",
+                {"run_status": _m3_derive_run_status(inputs)},
             )
         return action

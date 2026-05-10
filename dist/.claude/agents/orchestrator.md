@@ -98,19 +98,26 @@ Execute these steps in order on every invocation. Each invocation handles exactl
 ```bash
 export ORCH_PROJECT_DIR="$(pwd)"
 export ORCH_DIR="${ORCH_PROJECT_DIR}/.orch"
-python3 .claude/skills/orch-infra/scripts/run_preflight.py
-python3 .claude/skills/orch-infra/scripts/run_integrity.py
-python3 .claude/skills/orch-infra/scripts/run_circuit_check.py
+PREFLIGHT=$(python3 .claude/skills/orch-infra/scripts/run_preflight.py | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','ok'))")
+INTEGRITY=$(python3 .claude/skills/orch-infra/scripts/run_integrity.py | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','ok'))")
+CIRCUIT=$(python3 .claude/skills/orch-infra/scripts/run_circuit_check.py | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','ok'))")
 ```
 
-Parse each output.
+**Infra gate (M1, via state machine):**
 
-If any script returns `"status": "blocked"`:
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine meta --state post_infra \
+  --inputs "{\"preflight_status\": \"$PREFLIGHT\", \"integrity_status\": \"$INTEGRITY\", \"circuit_status\": \"$CIRCUIT\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+REASON=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('reason',''))")
+```
+
+If `$ACTION == "block"`:
 
 ```json
 {
   "status": "blocked",
-  "reason": "<check>_failed",
+  "reason": "<REASON>",
   "detail": "<reason from script output>",
   "action_required": "resolve <check> failure before running orchestrator"
 }
@@ -123,19 +130,24 @@ Stop.
 ### Step 2 — State derivation
 
 ```bash
-python3 .claude/skills/orch-state/scripts/reduce.py
-python3 .claude/skills/orch-state/scripts/current_phase.py
+REDUCE_OUT=$(python3 .claude/skills/orch-state/scripts/reduce.py)
+CP_OUT=$(python3 .claude/skills/orch-state/scripts/current_phase.py)
+REDUCE_STATUS=$(echo "$REDUCE_OUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','ok'))")
+CP_STATUS=$(echo "$CP_OUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','ok'))")
 ```
 
-**Before extracting variables:** inspect each output for `"status": "error"`. If either script returns an error object:
+**State derivation gate (M2, via state machine):**
 
-```json
-{"status": "error", "reason": "<reason>", "detail": "<detail>"}
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine meta --state post_state \
+  --inputs "{\"reduce_status\": \"$REDUCE_STATUS\", \"current_phase_status\": \"$CP_STATUS\"}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+SOURCE=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('source',''))")
 ```
 
-Output immediately:
+If `$ACTION == "error"`, output immediately:
 ```json
-{"status": "error", "reason": "state_derivation_failed", "detail": "<script>: <detail>", "last_seq": 0}
+{"status": "error", "reason": "state_derivation_failed", "detail": "<SOURCE>: <detail>", "last_seq": 0}
 ```
 
 Stop.
@@ -153,19 +165,24 @@ Extract from the combined output:
 | `raw_run_status` | `reduce.py` → `run_status` | `"active"` \| `"escalated"` (reducer-computed) |
 | `run_status` | Derived below | Final workflow-level status |
 
-**Derive `run_status` from script outputs (no interpretation — exact field comparisons only):**
+**Derive `run_status` (M3, via state machine — exact field comparisons only):**
+
+Build a phases JSON array from `phases.values()` (each entry: `{"required": bool, "status": str}`), then call:
+
+```bash
+PHASES_JSON='<JSON array built from phases.values()>'
+RUN_STATUS=$(python3 .claude/lib/sm_runner.py --machine meta --state derive_run_status \
+  --inputs "{\"raw_run_status\": \"$raw_run_status\", \"phases\": $PHASES_JSON}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['run_status'])")
+```
+
+`$RUN_STATUS` will be one of `escalated | completed | pending | active`. The SM applies these rules:
 
 ```
-# raw_run_status from reduce.py is "active" or "escalated".
-# Augment with "completed" and "pending" using phases map.
-
-required_phases = [p for p in phases.values() if p.required == true]
-all_completed   = len(required_phases) > 0 AND all(p.status == "completed" for p in required_phases)
-
-if raw_run_status == "escalated"  → run_status = "escalated"
-elif all_completed                 → run_status = "completed"
-elif len(phases) == 0              → run_status = "pending"
-else                               → run_status = "active"
+if raw_run_status == "escalated"                                 → escalated
+elif required phases exist AND all required.status == "completed" → completed
+elif phases is empty                                              → pending
+else                                                              → active
 ```
 
 ---
@@ -419,6 +436,18 @@ Wait for the phase orchestrator to return.
 **If either guard condition fired** (subagent_invalid_response):
 
 Consult `e13_retry_count` (from Step 6 counters).
+
+**E13 retry routing (M9, via state machine):**
+
+```bash
+RESULT=$(python3 .claude/lib/sm_runner.py --machine meta --state subagent_invalid \
+  --inputs "{\"e13_retry_count\": $e13_retry_count}")
+ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
+BACKOFF=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('backoff_seconds',0))")
+SEVERITY=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('severity','warning'))")
+```
+
+`$ACTION` is `retry_with_backoff` (counts 0 and 1) or `escalate_critical` (count ≥ 2). The branches below are kept as documentation of the bash flow each action triggers.
 
 **If `e13_retry_count == 0`** (first occurrence — likely transient):
 
