@@ -61,6 +61,10 @@ class ConfigError(OrchError):
     """Config file is missing, invalid, or has wrong schema."""
 
 
+class PreconditionViolation(OrchError):
+    """Append rejected: event would violate a registered log-ordering precondition."""
+
+
 # ---------------------------------------------------------------------------
 # Constants and paths
 # ---------------------------------------------------------------------------
@@ -924,6 +928,49 @@ def load_blob_data(event: Event) -> dict[str, Any]:
     return json.loads(raw)
 
 
+# ---------------------------------------------------------------------------
+# Append-time preconditions (prod-hardening task 00)
+# ---------------------------------------------------------------------------
+# Registered functions run inside append_event, under LogLock, BEFORE the event
+# is written. Signature: (data: dict, events: list[Event]) -> str | None.
+# A non-None return is the rejection reason and raises PreconditionViolation.
+# The default registry is empty => behavior-neutral (no-op). Later tasks
+# register guards for phase_transitioned (task 01), task_claimed (task 12),
+# handoff_receipt (task 08), etc. — moving those guarantees from prompt to code.
+
+_APPEND_PRECONDITIONS: dict[str, list[Callable[[dict, list[Event]], str | None]]] = {}
+
+
+def register_precondition(
+    event_type: str, fn: Callable[[dict, list[Event]], str | None]
+) -> None:
+    """Registers an append-time precondition for an event type (multiple allowed)."""
+    _APPEND_PRECONDITIONS.setdefault(event_type, []).append(fn)
+
+
+def clear_preconditions(event_type: str | None = None) -> None:
+    """Removes preconditions for one event type, or all of them if event_type is None."""
+    if event_type is None:
+        _APPEND_PRECONDITIONS.clear()
+    else:
+        _APPEND_PRECONDITIONS.pop(event_type, None)
+
+
+def last_event_where(
+    events: list[Event], pred: Callable[[Event], bool]
+) -> Event | None:
+    """Returns the last event satisfying pred (scanning newest-first), or None."""
+    for e in reversed(events):
+        if pred(e):
+            return e
+    return None
+
+
+def any_event_where(events: list[Event], pred: Callable[[Event], bool]) -> bool:
+    """Returns True if any event satisfies pred."""
+    return any(pred(e) for e in events)
+
+
 def append_event(
     agent: str,
     event_type: str,
@@ -961,6 +1008,16 @@ def append_event(
     ensure_dirs()
 
     with LogLock():
+        # Append-time preconditions (prod-hardening task 00): run BEFORE the
+        # write, under the lock, so the check is consistent with the append.
+        # Empty registry (default) => no-op. A non-None return rejects the append.
+        _preconds = _APPEND_PRECONDITIONS.get(event_type)
+        if _preconds:
+            _existing = list(read_events())
+            for _fn in _preconds:
+                _reason = _fn(data, _existing)
+                if _reason:
+                    raise PreconditionViolation(f"{event_type} rejected: {_reason}")
         last = last_event()
         seq = (last.seq + 1) if last else 1
         prev_hash = last.hash if last else "GENESIS"
@@ -2271,6 +2328,7 @@ __all__ = [
     "BlobIntegrityError",
     "BlobNotFoundError",
     "ConfigError",
+    "PreconditionViolation",
     # Paths and constants
     "ORCH_DIR", "LOG_PATH", "LOCK_PATH", "STATE_DIR", "DLQ_DIR",
     "AUDIT_DIR", "METRICS_DIR", "BLOBS_DIR", "WORKERS_DIR", "CONFIG_PATH",
@@ -2282,6 +2340,11 @@ __all__ = [
     "parse_iso",
     "sha256_hex",
     "canonical_json",
+    # Append-time preconditions (prod-hardening task 00)
+    "register_precondition",
+    "clear_preconditions",
+    "last_event_where",
+    "any_event_where",
     # Enums
     "EventType",
     "TaskStatus",
