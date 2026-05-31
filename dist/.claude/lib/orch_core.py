@@ -971,6 +971,71 @@ def any_event_where(events: list[Event], pred: Callable[[Event], bool]) -> bool:
     return any(pred(e) for e in events)
 
 
+# Loop-back (rejection) transitions: not approved exits, so they are exempt from
+# the gate/approval preconditions. Returning to an earlier phase never advances
+# the workflow toward "done".
+_RETURN_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
+    ("review", "dev"), ("test", "dev"), ("test", "review"),
+})
+
+
+def _evt_data(e: Event) -> dict:
+    """Event data with any externalized blob resolved (transition/approval events
+    are small and never externalized, but resolve defensively)."""
+    return load_blob_data(e) if is_blob_ref(e.data) else e.data
+
+
+def _precond_phase_transitioned(data: dict, events: list[Event]) -> str | None:
+    """Hard-block a forward phase transition unless its gate is satisfied in the log.
+
+    Enforces (in Python, not prompt):
+      - a phase_exit_approved for from_phase must precede the transition (C1/A4-F1);
+      - evidence_seq must reference a prior event (P8/A3-F8);
+      - leaving review forward (review->test) requires a human_response action=approve
+        OR an E18 auto-approval escalation (A1-F1).
+    Return-to-dev / loop-back transitions are exempt (rejection paths, not exits).
+    """
+    from_phase = data.get("from_phase")
+    to_phase = data.get("to_phase")
+    if not from_phase or not to_phase:
+        return "missing from_phase/to_phase"
+    if (from_phase, to_phase) in _RETURN_TRANSITIONS:
+        return None
+    approved = last_event_where(
+        events,
+        lambda e: e.event_type == EventType.PHASE_EXIT_APPROVED.value
+        and _evt_data(e).get("phase") == from_phase,
+    )
+    if approved is None:
+        return f"no phase_exit_approved for {from_phase!r} precedes the transition (P11/P7)"
+    ev_seq = data.get("evidence_seq")
+    if not isinstance(ev_seq, int) or not any_event_where(events, lambda e: e.seq == ev_seq):
+        return f"evidence_seq {ev_seq!r} does not reference a prior event"
+    if from_phase == "review":
+        human_ok = last_event_where(
+            events,
+            lambda e: e.event_type == EventType.HUMAN_RESPONSE.value
+            and _evt_data(e).get("action") == "approve",
+        )
+        e18 = last_event_where(
+            events,
+            lambda e: e.event_type == EventType.ESCALATION.value
+            and str(_evt_data(e).get("code", "")).startswith("E18"),
+        )
+        if human_ok is None and e18 is None:
+            return (
+                "review->test requires a human_response action=approve "
+                "(or an E18 auto-approval) in the log (A1-F1)"
+            )
+    return None
+
+
+def install_transition_preconditions() -> None:
+    """Idempotent: register the phase_transitioned hard-block guard exactly once."""
+    clear_preconditions(EventType.PHASE_TRANSITIONED.value)
+    register_precondition(EventType.PHASE_TRANSITIONED.value, _precond_phase_transitioned)
+
+
 def append_event(
     agent: str,
     event_type: str,
@@ -3004,3 +3069,11 @@ class SddStateMachine(StateMachine):
                 },
             )
         return action
+
+
+# ---------------------------------------------------------------------------
+# Import-time enforcement install (prod-hardening)
+# ---------------------------------------------------------------------------
+# dist/ always enforces these guards. Reloading the module (tests) re-installs
+# them idempotently. Task 01: phase-transition gate + human-approval gate.
+install_transition_preconditions()
