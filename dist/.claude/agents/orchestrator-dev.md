@@ -324,6 +324,8 @@ print(json.dumps(result))
 
 Store `stack`, `handoff_type`, `dev_impact`, and `changed_files` for use in Steps 3–5.
 
+**Fail-closed on unresolved stack (A3-F7):** if `stack` is `null` (no recognized `stack:` and no `backend_package`/`frontend_package` signal), do NOT default — emit `E20_manifest_stack_unresolved` (severity `critical`) and stop with `{"status":"blocked","reason":"manifest_stack_unresolved"}`. Exception: the no-SDD improve fast-path derives `stack` from CLAUDE.md `domain:` (above) and does not reach this gate.
+
 **`dev_impact: no_action` short-circuit (D6, via state machine):**
 
 ```bash

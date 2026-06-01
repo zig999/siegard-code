@@ -204,6 +204,17 @@ Continue execution with the default values — do not stop.
 
 Store `stack` (and `type`, `dev_impact`, `changed_files`) for worker routing in Step 4.
 
+**Fail-closed on unresolved stack (A3-F7):** if `stack` is `null` — the manifest gave no recognized `stack:` and none could be inferred from a `backend_package`/`frontend_package` block — do NOT default. Defaulting would silently route QA to the wrong-stack worker. Emit a blocking escalation and stop:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E20_manifest_stack_unresolved","severity":"critical","reason":"handoff-manifest stack is unresolved (no explicit stack and no *_package signal) — refusing to default to avoid mis-routing QA to the wrong-stack worker.","evidence":[],"suggested_actions":["add an explicit stack: be|fe|fullstack to the handoff-manifest, or include the appropriate backend_package/frontend_package block","re-invoke after correcting the manifest"]}'
+```
+
+Output `{"status": "blocked", "reason": "manifest_stack_unresolved"}` and stop.
+
 ---
 
 ### Step 3 — QA task creation

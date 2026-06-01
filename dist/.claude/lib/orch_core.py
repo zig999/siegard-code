@@ -1912,7 +1912,8 @@ def parse_manifest_fields(content: str) -> dict[str, Any]:
     scalar values, and inline comments.
 
     Extracted fields:
-        stack        — one of "be", "fe", "fullstack" (default: "be")
+        stack        — "be"|"fe"|"fullstack" when explicit or inferable from
+                       backend_package/frontend_package presence; else None (A3-F7 fail-closed)
         type         — handoff type string (default: "new_domain")
         dev_impact   — dev impact string (default: "")
         changed_files — list of strings from the changed_files block (default: [])
@@ -1947,9 +1948,23 @@ def parse_manifest_fields(content: str) -> dict[str, Any]:
         items = re.findall(r'^\s*-\s+(.+)$', block, re.MULTILINE)
         return [i.strip().strip('"\'') for i in items if i.strip()]
 
-    stack = _extract_scalar("stack", content, "be").lower()
-    if stack not in {"be", "fe", "fullstack"}:
-        stack = "be"
+    raw_stack = _extract_scalar("stack", content, "").lower()
+    if raw_stack in {"be", "fe", "fullstack"}:
+        stack = raw_stack
+    else:
+        # A3-F7: do NOT silently coerce an unknown/absent stack to "be" (that
+        # mis-routed FE-only handoffs to BE workers). Infer from package presence;
+        # if nothing resolves, return None so the caller fails-closed.
+        has_be = bool(re.search(r"^\s*backend_package\s*:", content, re.MULTILINE))
+        has_fe = bool(re.search(r"^\s*frontend_package\s*:", content, re.MULTILINE))
+        if has_be and has_fe:
+            stack = "fullstack"
+        elif has_fe:
+            stack = "fe"
+        elif has_be:
+            stack = "be"
+        else:
+            stack = None
 
     # Extract `type` from the `handoff:` block specifically to avoid matching
     # a `type:` key in a sibling block (e.g., change_summary.type).
