@@ -68,6 +68,7 @@ Then re-invoke the relevant orchestrator to resume.
 | E07–E09 | Phase orchestrators (dev, review) |
 | E10 | Meta-orchestrator |
 | E11–E13 | Phase orchestrators (extended) + meta-orchestrator |
-| E14–E19 | Reserved |
+| E14–E17 | Reserved |
+| E18–E19 | orchestrator-review (E18 auto-approval audit; E19 qa_mode classifier fallback) |
 | E20 | orchestrator-review/dev (manifest stack unresolved — fail-closed, A3-F7) |
 | E99 | Human confirmation / approval gates |
