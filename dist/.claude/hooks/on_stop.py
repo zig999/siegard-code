@@ -19,7 +19,7 @@ sys.path.insert(0, str(_LIB))
 from orch_core import (
     reduce_all, TaskStatus, PhaseStatus, ORCH_DIR, METRICS_DIR,
     ensure_dirs, now_iso, parse_iso, read_events_filtered,
-    cleanup_stale_workers,
+    cleanup_stale_workers, reap_stale_tasks,
 )
 
 
@@ -326,6 +326,13 @@ def main() -> None:
         # computing state — prevents phantom worker_stopped detections on next run.
         try:
             cleanup_stale_workers(max_age_seconds=3600)
+        except Exception:
+            pass
+
+        # prod-hardening task 06 (A2-F1): reap hung RUNNING tasks deterministically
+        # at session end — backstop to the orchestrator Step 5.0 check_stale.py call.
+        try:
+            reap_stale_tasks()
         except Exception:
             pass
 

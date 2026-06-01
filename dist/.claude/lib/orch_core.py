@@ -1719,6 +1719,35 @@ def stale_tasks(state: OrchState, now: str) -> list[TaskState]:
     return result
 
 
+def reap_stale_tasks(now: str | None = None) -> list[str]:
+    """Emits task_failed(reason=stale_timeout) for every RUNNING task past its tier's
+    stale threshold; returns the reaped task_ids.
+
+    Deterministic runtime enforcement of the timeout invariant (A2-F1): a worker
+    that hangs (process alive, emitting no events) is detected and failed by Python,
+    not only by a prompt-level check the orchestrator LLM might skip. Thresholds
+    come from Tier.default_stale_seconds — the single source of truth (A2-F6).
+    Idempotent: a task already terminal/FAILED is a no-op in the reducer. Callable
+    from check_stale.py (orchestrator Step 5.0) and on_stop.py (session-end backstop).
+    """
+    now = now or now_iso()
+    state = reduce_all()
+    reaped: list[str] = []
+    for task in stale_tasks(state, now):
+        try:
+            append_event(
+                agent="stale-monitor",
+                event_type=EventType.TASK_FAILED.value,
+                task_id=task.task_id,
+                attempt=task.attempts or 1,
+                data={"phase": task.phase, "reason": "stale_timeout", "retryable": True},
+            )
+            reaped.append(task.task_id)
+        except Exception:  # noqa: BLE001 — a reaper must never raise
+            continue
+    return reaped
+
+
 # ---------------------------------------------------------------------------
 # Config loading
 # ---------------------------------------------------------------------------
@@ -2453,6 +2482,7 @@ __all__ = [
     "apply_event",
     "reduce_all",
     "stale_tasks",
+    "reap_stale_tasks",
     # Config and retry
     "default_config",
     "load_config",

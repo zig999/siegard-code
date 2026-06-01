@@ -690,28 +690,15 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"dev","reason":"cascade_from_dep","last_error":"dep <dep_id> is in dlq"}'
 ```
 
-**Stale detection:** for each `running` dev task, compute elapsed seconds since `last_event_at`.
-Use this threshold matrix (tier × task_type):
+**Heartbeat + stale detection (deterministic — A2-F1/A2-F2/A2-F6):** at the start of each dispatch-loop iteration, emit an `orchestrator_heartbeat` (so `on_stop.py` can detect a stalled-but-alive orchestrator) and reap hung `running` tasks via Python. Do NOT compute elapsed times or thresholds in-prompt — thresholds live in `Tier.default_stale_seconds` (critical 600s / standard 300s / bulk 120s), the single source of truth.
 
-| tier     | task_type | threshold |
-|----------|-----------|-----------|
-| critical | planning  | 600s      |
-| critical | impl      | 900s      |
-| standard | planning  | 300s      |
-| standard | impl      | 600s      |
-| bulk     | any       | 120s      |
-
-Compute `stale_origin`: if `task.attempts == 1` use `"initial"`, otherwise `"on_retry_<task.attempts>"`.
-
-If elapsed > threshold:
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type task_failed \
-  --task-id <task_id> \
-  --attempt <current_attempt> \
-  --data '{"phase":"dev","reason":"stale_timeout","retryable":true,"synthesized_by":"orchestrator-dev","stale_origin":"<stale_origin>","elapsed_seconds":<elapsed>}'
+python3 .claude/skills/orch-log/scripts/append.py --agent orchestrator-dev \
+  --event-type orchestrator_heartbeat --data '{"phase":"dev"}'
+python3 .claude/scripts/check_stale.py
 ```
+
+`check_stale.py` emits `task_failed(reason=stale_timeout)` for every `running` task past its tier threshold and prints `{"stale_count": N, "failed": [...]}`. Consume the `failed` list; the emission is performed deterministically in Python (not via a prompt-composed append).
 
 **Retry re-queue:** for each `scheduled` dev task with `next_retry_at <= now` (or null):
 ```bash
