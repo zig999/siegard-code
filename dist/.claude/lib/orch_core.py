@@ -187,7 +187,7 @@ def canonical_json(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 
 class EventType(str, Enum):
-    """Canonical event types. 27 total."""
+    """Canonical event types. 28 total."""
 
     # Task lifecycle (9)
     TASK_CREATED = "task_created"
@@ -237,6 +237,10 @@ class EventType(str, Enum):
     # Emitted by the orchestrator at the start of each dispatch loop iteration.
     # Used by on_stop.py to detect a stale orchestrator (alive but not making progress).
     ORCHESTRATOR_HEARTBEAT = "orchestrator_heartbeat"
+    # Handoff loop-closure (prod-hardening task 08, A3-F5): a receipt that a
+    # manifest was consumed — a logged event (not a session side-file) so
+    # consumed/orphan handoff state is derived from the log (P1/P12).
+    HANDOFF_RECEIPT = "handoff_receipt"
 
     @classmethod
     def is_worker_emittable(cls, event_type: str) -> bool:
@@ -415,6 +419,7 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.CIRCUIT_BREAKER_TRIPPED.value:   {"window_start", "window_end", "failure_count", "threshold"},
     EventType.HUMAN_RESPONSE.value:            {"escalation_seq", "action", "operator"},
     EventType.LOG_RECOVERED.value:             {"seq_truncated_from", "events_removed", "operator", "corrupt_file_path"},
+    EventType.HANDOFF_RECEIPT.value:           {"manifest_id", "manifest_sha256", "consumed_by"},
 }
 
 
@@ -1748,6 +1753,22 @@ def reap_stale_tasks(now: str | None = None) -> list[str]:
     return reaped
 
 
+def consumed_manifest_ids(events: list[Event]) -> set[str]:
+    """Returns the set of manifest_ids that have a handoff_receipt in the log.
+
+    Lets the Spec orchestrator derive consumed/orphan handoff state from the log
+    (P1/P12, A3-F5) instead of reading session side-files. Pure function.
+    """
+    out: set[str] = set()
+    for e in events:
+        if e.event_type == EventType.HANDOFF_RECEIPT.value:
+            data = load_blob_data(e) if is_blob_ref(e.data) else e.data
+            mid = data.get("manifest_id")
+            if mid:
+                out.add(mid)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Config loading
 # ---------------------------------------------------------------------------
@@ -2483,6 +2504,7 @@ __all__ = [
     "reduce_all",
     "stale_tasks",
     "reap_stale_tasks",
+    "consumed_manifest_ids",
     # Config and retry
     "default_config",
     "load_config",
