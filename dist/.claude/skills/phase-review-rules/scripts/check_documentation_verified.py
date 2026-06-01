@@ -33,7 +33,7 @@ _LIB = _CLAUDE_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
 try:
-    from orch_core import TaskStatus, reduce_all
+    from orch_core import TaskStatus, reduce_all, now_iso
 except ImportError as exc:
     print(json.dumps({
         "status": "error",
@@ -118,7 +118,12 @@ def evaluate() -> dict:
 
 
 def main() -> None:
-    print(json.dumps(evaluate()))
+    result = evaluate()
+    # task 10 (A4-F6, Option B): uniform gate schema — emit the full superset.
+    result.setdefault("check", result.get("criterion"))
+    result.setdefault("status", "ok" if result.get("met") else "blocked")
+    result.setdefault("timestamp", now_iso())
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":

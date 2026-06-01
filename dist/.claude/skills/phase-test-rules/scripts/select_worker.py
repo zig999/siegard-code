@@ -36,6 +36,17 @@ def main() -> None:
     parser.add_argument("--stack", default="be", choices=sorted(VALID_STACKS))
     args = parser.parse_args()
 
+    # task 10 (A4-F5): unknown task_type errors instead of silently routing to
+    # DEFAULT_WORKER. (The documented stack default is preserved.)
+    _valid_task_types = {tt for (tt, _s) in ROUTING_TABLE}
+    if args.task_type not in _valid_task_types:
+        print(json.dumps({
+            "error": "unknown_task_type",
+            "task_type": args.task_type,
+            "valid_task_types": sorted(_valid_task_types),
+        }), file=sys.stderr)
+        sys.exit(1)
+
     worker = ROUTING_TABLE.get((args.task_type, args.stack), DEFAULT_WORKER)
 
     print(json.dumps({
