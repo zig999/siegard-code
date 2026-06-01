@@ -12,3 +12,5 @@ extras/
 skills-lock.json
 tests
 ./docs
+# pytest coverage artifact
+.coverage
