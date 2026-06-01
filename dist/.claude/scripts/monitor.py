@@ -223,7 +223,9 @@ def _new_workflow_record() -> dict[str, Any]:
         "status": "unknown",
         "agents_running": [],
         "agents_executed": [],
-        "agents_failed": [],
+        "agents_failed": [],     # last terminal event = task_failed (true failures only)
+        "agents_dlq": [],        # last terminal event = task_dlq
+        "agents_skipped": [],    # last terminal event = task_skipped (expected non-execution)
         "phase_details": {},   # phase_name → {status, order, entered_at, completed_at, approved_at, criteria_met}
         "task_statuses": {},   # task_id → current task state dict
     }
@@ -410,26 +412,31 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
                 te["claimed_at"] = event.ts
             elif et == "task_progress":
                 te["last_progress"] = data.get("checkpoint") or data.get("note")
-            elif et in ("task_failed", "task_dlq"):
+            elif et in ("task_failed", "task_dlq", "task_skipped"):
                 te["reason"] = data.get("reason")
 
     # Materialize per-workflow agent lists from task_state.
+    # Each terminal kind has its own bucket so the UI can show the real exit
+    # state instead of lumping skipped/dlq tasks under "failed".
     for wf_id, te_map in task_state.items():
         w = workflows.setdefault(wf_id, _new_workflow_record())
         for te in te_map.values():
             kind = te.get("last_event_type")
-            if kind in _TERMINAL_EVENTS:
-                if kind == "task_completed":
-                    w["agents_executed"].append(te)
-                else:
-                    w["agents_failed"].append(te)
+            if kind == "task_completed":
+                w["agents_executed"].append(te)
+            elif kind == "task_failed":
+                w["agents_failed"].append(te)
+            elif kind == "task_dlq":
+                w["agents_dlq"].append(te)
+            elif kind == "task_skipped":
+                w["agents_skipped"].append(te)
             elif kind in ("task_claimed", "task_progress", "task_retried"):
                 w["agents_running"].append(te)
             # task_created / task_scheduled_retry alone → not yet in flight; skip
 
         w["agents_running"].sort(key=lambda x: x.get("claimed_at") or "")
-        w["agents_executed"].sort(key=lambda x: x.get("last_event_at") or "")
-        w["agents_failed"].sort(key=lambda x: x.get("last_event_at") or "")
+        for bucket in ("agents_executed", "agents_failed", "agents_dlq", "agents_skipped"):
+            w[bucket].sort(key=lambda x: x.get("last_event_at") or "")
 
     return workflows, None
 
@@ -584,6 +591,8 @@ def render_plain_multi(workflows: dict[str, dict], error: str | None,
         running = _filter_orchestrators(w["agents_running"], show_orchestrators)
         executed = _filter_orchestrators(w["agents_executed"], show_orchestrators)
         failed = _filter_orchestrators(w["agents_failed"], show_orchestrators)
+        dlq = _filter_orchestrators(w["agents_dlq"], show_orchestrators)
+        skipped = _filter_orchestrators(w["agents_skipped"], show_orchestrators)
 
         if running:
             print(f"   Agents running ({len(running)}):")
@@ -608,15 +617,30 @@ def render_plain_multi(workflows: dict[str, dict], error: str | None,
             for a in failed:
                 wt = (a.get("worker_type") or "—")[:22]
                 tid = (a.get("task_id") or "—")[:18]
-                kind = a.get("last_event_type", "")
                 reason = (a.get("reason") or "")[:40]
-                print(f"     {wt:<22} ✗ {tid:<18}  {kind}  {reason}")
+                print(f"     {wt:<22} ✗ {tid:<18}  task_failed  {reason}")
+
+        if dlq:
+            print(f"   Agents in DLQ ({len(dlq)}):")
+            for a in dlq:
+                wt = (a.get("worker_type") or "—")[:22]
+                tid = (a.get("task_id") or "—")[:18]
+                reason = (a.get("reason") or "")[:40]
+                print(f"     {wt:<22} ☠ {tid:<18}  task_dlq  {reason}")
+
+        if skipped:
+            print(f"   Agents skipped ({len(skipped)}):")
+            for a in skipped:
+                wt = (a.get("worker_type") or "—")[:22]
+                tid = (a.get("task_id") or "—")[:18]
+                reason = (a.get("reason") or "")[:40]
+                print(f"     {wt:<22} ⊘ {tid:<18}  task_skipped  {reason}")
 
         if not running:
             if w["status"] == "active":
                 phase = w["current_phase"] or "?"
                 print(f"   ⟳ {phase}  [orchestrator dispatching…]")
-            elif not (executed or failed):
+            elif not (executed or failed or dlq or skipped):
                 hint = "" if show_orchestrators else " (run with --show-orchestrators to include meta agents)"
                 print(f"   (no leaf-agent activity recorded{hint})")
         print()
@@ -822,13 +846,24 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
         all_running: list[dict] = []
         done_count = 0
         failed_count = 0
+        dlq_count = 0
+        skipped_count = 0
         for w in workflows.values():
             all_running.extend(_filter_orchestrators(w["agents_running"], False))
             done_count += len(_filter_orchestrators(w["agents_executed"], False))
             failed_count += len(_filter_orchestrators(w["agents_failed"], False))
+            dlq_count += len(_filter_orchestrators(w["agents_dlq"], False))
+            skipped_count += len(_filter_orchestrators(w["agents_skipped"], False))
 
         _addstr(stdscr, row, 0, "AGENTS", curses.A_BOLD)
-        summary = f"  {len(all_running)} running · {done_count} done · {failed_count} failed"
+        parts = [f"{len(all_running)} running", f"{done_count} done"]
+        if failed_count:
+            parts.append(f"{failed_count} failed")
+        if dlq_count:
+            parts.append(f"{dlq_count} dlq")
+        if skipped_count:
+            parts.append(f"{skipped_count} skipped")
+        summary = "  " + " · ".join(parts)
         _addstr(stdscr, row, 6, summary, curses.color_pair(C_DIM) | curses.A_DIM)
         row += 1
 
