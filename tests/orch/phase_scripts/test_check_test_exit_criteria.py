@@ -104,12 +104,14 @@ class TestAllTestTasksTerminal:
         assert result["met"] is True
         assert result["evidence"]["total"] == 2
 
-    def test_all_dlq_is_met(self, phase_env):
+    def test_all_dlq_blocks(self, phase_env):
+        # prod-hardening task 07 (A4-F4): DLQ now blocks the test->done transition
+        # deterministically (was met=True under the old, prompt-trusted behavior).
         _test_phase()
         _test_task("test_dev_tc_001")
         _fail_test_task("test_dev_tc_001")
         result = run_check(TEST_SCRIPTS["check_terminal"], phase_env)
-        assert result["met"] is True
+        assert result["met"] is False
 
     def test_pending_task_is_not_met(self, phase_env):
         _test_phase()

@@ -22,9 +22,23 @@ def _specs_dir(project_dir):
 
 
 def _write_manifest(project_dir, status="approved"):
+    # prod-hardening task 04: the gate now runs the semantic validator, so the
+    # manifest must be semantically valid (delivered_by, domains, backend_package).
+    # sha256 fields omitted -> integrity check skipped (no staged files needed).
     specs = _specs_dir(project_dir)
     (specs / "handoff-manifest.yaml").write_text(
-        f"type: new_domain\nStatus: {status}\nstack: be\n"
+        "handoff:\n"
+        "  delivered_by: u-spec-orchestrator\n"
+        "  type: new_domain\n"
+        f"Status: {status}\n"
+        "stack: be\n"
+        "domains:\n"
+        "  - name: auth\n"
+        "backend_package:\n"
+        "  - path: specs/auth/openapi.yaml\n"
+        "    artifact: openapi\n"
+        "  - path: specs/auth/back.md\n"
+        "    artifact: back-spec\n"
     )
 
 

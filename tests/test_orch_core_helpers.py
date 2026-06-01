@@ -142,11 +142,13 @@ class TestParseManifestFields:
         result = orch_core.parse_manifest_fields(content)
         assert result["stack"] == "fe"
 
-    def test_stack_defaults_to_be_on_invalid(self):
+    def test_unknown_stack_no_packages_is_none(self):
+        # prod-hardening task 05 (A3-F7): unknown stack + no package signal -> None
+        # (fail-closed), not silently coerced to "be".
         import orch_core
         content = "stack: unknown_value\n"
         result = orch_core.parse_manifest_fields(content)
-        assert result["stack"] == "be"
+        assert result["stack"] is None
 
     def test_parses_type_from_handoff_block(self):
         import orch_core
@@ -175,7 +177,7 @@ class TestParseManifestFields:
     def test_empty_content_returns_defaults(self):
         import orch_core
         result = orch_core.parse_manifest_fields("")
-        assert result["stack"] == "be"
+        assert result["stack"] is None        # task 05 (A3-F7): empty -> unresolved, fail-closed
         assert result["type"] == "new_domain"
         assert result["dev_impact"] == ""
         assert result["changed_files"] == []

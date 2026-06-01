@@ -45,10 +45,10 @@ class TestDevSelectWorker:
         r = run_select(DEV_SCRIPTS["select_worker"], "spec", "fe")
         assert r["worker"] == "u-fe-spec-writer"
 
-    def test_unknown_task_type_returns_default(self):
+    def test_unknown_task_type_errors(self):
+        # task 10 (A4-F5): unknown task_type errors instead of silently defaulting.
         r = run_select(DEV_SCRIPTS["select_worker"], "unknown-type", "be")
-        assert "worker" in r
-        assert r["worker"] == "u-be-developer"
+        assert r.get("error") == "unknown_task_type"
 
     def test_output_has_required_fields(self):
         r = run_select(DEV_SCRIPTS["select_worker"], "impl", "be")
@@ -90,9 +90,9 @@ class TestSddSelectWorker:
         r = run_select(SDD_SCRIPTS["select_worker"], "spec-compliance")
         assert r["worker"] == "u-spec-compliance"
 
-    def test_unknown_type_returns_default(self):
+    def test_unknown_type_errors(self):
         r = run_select(SDD_SCRIPTS["select_worker"], "unknown")
-        assert r["worker"] == "u-spec-writer"
+        assert r.get("error") == "unknown_task_type"
 
     def test_output_has_required_fields(self):
         r = run_select(SDD_SCRIPTS["select_worker"], "spec-writer")
@@ -131,9 +131,9 @@ class TestReviewSelectWorker:
         assert r_be["worker"] == "u-security-reviewer"
         assert r_fe["worker"] == "u-security-reviewer"
 
-    def test_unknown_qa_type_returns_default(self):
+    def test_unknown_qa_type_errors(self):
         r = run_select(REVIEW_SCRIPTS["select_worker"], "unknown-review")
-        assert r["worker"] == "u-be-qa-docs"
+        assert r.get("error") == "unknown_task_type"
 
 
 # ---------------------------------------------------------------------------
@@ -154,9 +154,9 @@ class TestTestSelectWorker:
         r = run_select(TEST_SCRIPTS["select_worker"], "test-run", "fullstack")
         assert r["worker"] == "u-test-runner"
 
-    def test_unknown_type_returns_default(self):
+    def test_unknown_type_errors(self):
         r = run_select(TEST_SCRIPTS["select_worker"], "unknown")
-        assert r["worker"] == "u-test-runner"
+        assert r.get("error") == "unknown_task_type"
 
     def test_output_has_required_fields(self):
         r = run_select(TEST_SCRIPTS["select_worker"], "test-run", "be")

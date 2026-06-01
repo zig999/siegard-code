@@ -68,6 +68,11 @@ def transition_phase(from_phase, to_phase, criteria):
     append_event(f"orchestrator-{from_phase}", "phase_exit_approved", data={
         "phase": from_phase, "criteria_met": criteria, "next_phase": to_phase, "workflow_id": WORKFLOW_ID,
     })
+    # prod-hardening task 01: leaving review forward requires a human approval in the log.
+    if from_phase == "review" and to_phase != "dev":
+        append_event("human", "human_response", data={
+            "escalation_seq": seq, "action": "approve", "operator": "test",
+        })
     append_event(f"orchestrator-{from_phase}", "phase_transitioned", data={
         "from_phase": from_phase, "to_phase": to_phase, "evidence_seq": seq, "workflow_id": WORKFLOW_ID,
     })

@@ -82,7 +82,9 @@ def run_select(script_path: Path, task_type: str, stack: str | None = None) -> d
     if stack:
         args += ["--stack", stack]
     result = subprocess.run(args, capture_output=True, text=True)
-    return json.loads(result.stdout)
+    # task 10 (A4-F5): an unknown task_type now errors (exit nonzero, JSON on stderr).
+    out = result.stdout.strip()
+    return json.loads(out) if out else json.loads(result.stderr)
 
 
 @pytest.fixture

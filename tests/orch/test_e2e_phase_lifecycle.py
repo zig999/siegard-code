@@ -91,6 +91,11 @@ def _transition_phase(from_phase, to_phase, criteria):
     append_event(f"orchestrator-{from_phase}", "phase_exit_approved", data={
         "phase": from_phase, "criteria_met": criteria, "next_phase": to_phase, "workflow_id": _WORKFLOW_ID,
     })
+    # prod-hardening task 01: leaving review forward requires a human approval in the log.
+    if from_phase == "review" and to_phase != "dev":
+        append_event("human", "human_response", data={
+            "escalation_seq": seq, "action": "approve", "operator": "test",
+        })
     append_event(f"orchestrator-{from_phase}", "phase_transitioned", data={
         "from_phase": from_phase, "to_phase": to_phase, "evidence_seq": seq, "workflow_id": _WORKFLOW_ID,
     })
@@ -468,9 +473,13 @@ class TestReviewReturnToDev:
         """E.5: human_response event is present and has correct action."""
         self._setup_review_with_return()
         events = list(read_events_filtered(event_type=EventType.HUMAN_RESPONSE))
-        assert len(events) == 1
-        assert events[0].data["action"] == "return_partial"
-        assert "dev_tc_002" in events[0].data["rejected_task_ids"]
+        # prod-hardening task 01: the round-trip now records two human_responses —
+        # the return_partial rejection, then the approve gating the final review->test.
+        assert len(events) == 2
+        return_partial = [e for e in events if e.data["action"] == "return_partial"]
+        assert len(return_partial) == 1
+        assert "dev_tc_002" in return_partial[0].data["rejected_task_ids"]
+        assert any(e.data["action"] == "approve" for e in events)
 
 
 # ---------------------------------------------------------------------------

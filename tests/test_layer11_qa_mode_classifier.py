@@ -13,13 +13,13 @@ CLASSIFY = SCRIPTS / "classify_qa_mode.py"
 AUTO_APPROVE = SCRIPTS / "check_micro_unanimous_clean.py"
 
 
-def _run_py(script, args):
+def _run_py(script, args, ok_codes=(0,)):
     result = subprocess.run(
         ["python3", str(script)] + args,
         capture_output=True, text=True, timeout=30,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"Script failed: {result.stderr}")
+    if result.returncode not in ok_codes:
+        raise RuntimeError(f"Script failed (exit {result.returncode}): {result.stderr}")
     return result.stdout
 
 
@@ -162,10 +162,12 @@ class TestLayer11CheckMicroUnanimousClean:
         (qa_dir / name).write_text(f"verdict: {verdict}\n\n## Findings\n{findings}\n", encoding="utf-8")
 
     def _run_auto_approve(self, tmp, tasks):
+        # prod-hardening task 02: exit 2 = disqualified (valid result with stdout);
+        # only exit 1 (bad input/error) is a failure.
         output = _run_py(AUTO_APPROVE, [
             "--project-dir", str(tmp),
             "--tasks", json.dumps(tasks),
-        ])
+        ], ok_codes=(0, 2))
         return json.loads(output)
 
     def test_aa001_qualifies_two_micro_both_approved_only_low(self, tmp_qa_dir):
