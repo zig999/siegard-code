@@ -4,7 +4,7 @@
   "criteria": [
     {
       "id": "handoff_manifest_approved",
-      "description": "handoff-manifest.yaml exists in SPECS_DIR and contains Status: approved",
+      "description": "handoff-manifest.yaml passes u-handoff-validator (13 rules + sha256) AND is marked Status: approved",
       "script": "scripts/check_handoff_manifest_approved.py",
       "required": true,
       "blocking": true,
