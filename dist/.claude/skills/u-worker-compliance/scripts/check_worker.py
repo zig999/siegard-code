@@ -14,9 +14,14 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# prod-hardening task 03c: drop the pyyaml dependency (zero external deps invariant).
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+if str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+import minimal_yaml  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -65,9 +70,10 @@ def _parse_frontmatter(content: str) -> dict:
     if end == -1:
         return {}
     try:
-        return yaml.safe_load(content[3:end]) or {}
-    except yaml.YAMLError:
+        parsed = minimal_yaml.load(content[3:end])
+    except Exception:  # noqa: BLE001 — fail-soft on any parse error (matches prior behavior)
         return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _is_orchestrator(path: Path) -> bool:
