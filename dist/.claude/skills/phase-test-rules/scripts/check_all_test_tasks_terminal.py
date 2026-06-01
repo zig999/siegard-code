@@ -63,8 +63,10 @@ def evaluate() -> dict:
     ]
     terminal_count = len(test_tasks) - len(non_terminal) - len(dlq_tasks)
 
-    # DLQ is a terminal state — no further retries occur; check_all_tests_passed handles pass/fail.
-    met = len(non_terminal) == 0
+    # prod-hardening task 07 (A4-F4): DLQ blocks the test->done transition
+    # deterministically — a failed task is not a passing test run. This intent
+    # previously lived only in the orchestrator prompt; it is now in the verdict.
+    met = len(non_terminal) == 0 and len(dlq_tasks) == 0
 
     return {
         "criterion": CRITERION_ID,
@@ -80,7 +82,10 @@ def evaluate() -> dict:
 
 
 def main() -> None:
-    print(json.dumps(evaluate()))
+    result = evaluate()
+    print(json.dumps(result))
+    if not result["met"]:
+        sys.exit(1)   # task 07: fail-closed exit so the gate is not prompt-trusted
 
 
 if __name__ == "__main__":

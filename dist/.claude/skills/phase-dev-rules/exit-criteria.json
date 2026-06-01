@@ -4,7 +4,7 @@
   "criteria": [
     {
       "id": "all_impl_tasks_terminal",
-      "description": "All dev-phase tasks have reached a terminal status (completed or dlq)",
+      "description": "All dev-phase tasks have reached a terminal status (completed or dlq). DLQ is accepted-terminal for dev (retries exhausted) and surfaced via evidence.dlq_blocks_criterion; critical-tier DLQ is escalated by the meta-orchestrator (E04). Contrast: the test phase blocks on DLQ.",
       "script": "scripts/check_all_impl_tasks_terminal.py",
       "required": true,
       "blocking": true
