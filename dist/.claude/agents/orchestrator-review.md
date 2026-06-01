@@ -692,21 +692,33 @@ Build the per-task tasks JSON for the script. For each completed review task, ta
 ```bash
 python3 .claude/skills/phase-review-rules/scripts/check_micro_unanimous_clean.py \
   --project-dir "$ORCH_PROJECT_DIR" \
-  --tasks '<JSON: [{"task_id":"...","qa_mode":"<mode>","verdict_path":"<path>"}, ...]>'
+  --tasks '<JSON: [{"task_id":"...","qa_mode":"<mode>","verdict_path":"<path>"}, ...]>' > "$ORCH_DIR/qa_gate.json"
+GATE_EXIT=$?   # prod-hardening task 02 (C2/A4-F2): 0 = qualifies, 2 = disqualified, 1 = error
 ```
 
-Parse `qualifies` and `evidence` from output.
+**Bind the SM inputs to the script's own output — never hand-type these booleans (A1-F2):**
+
+```bash
+QUALIFIES=$(python3 -c "import json;print(str(json.load(open('$ORCH_DIR/qa_gate.json')).get('qualifies',False)).lower())")
+EV=$ORCH_DIR/qa_gate.json
+COMPLETED_COUNT=$(python3 -c "import json;print(json.load(open('$EV'))['evidence']['total_review_tasks'])")
+ALL_MICRO=$(python3 -c "import json;print(str(json.load(open('$EV'))['evidence']['all_micro']).lower())")
+ALL_APPROVED=$(python3 -c "import json;print(str(json.load(open('$EV'))['evidence']['all_approved']).lower())")
+ANY_SEVERE=$(python3 -c "import json;e=json.load(open('$EV'))['evidence'];print(str(e['max_finding_severity'] in ('medium','high','critical')).lower())")
+```
 
 **Auto-approval routing (R10, via state machine):**
 
 ```bash
 RESULT=$(python3 .claude/lib/sm_runner.py --machine review --state approval_gate \
-  --inputs "{\"completed_review_tasks_count\": $COMPLETED_COUNT, \"all_qa_mode_micro\": $ALL_MICRO, \"all_verdicts_approved\": $ALL_APPROVED, \"any_severe_findings\": $ANY_SEVERE}")
+  --inputs "{\"qualifies\": $QUALIFIES, \"completed_review_tasks_count\": $COMPLETED_COUNT, \"all_qa_mode_micro\": $ALL_MICRO, \"all_verdicts_approved\": $ALL_APPROVED, \"any_severe_findings\": $ANY_SEVERE}")
 ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
 DISQUALIFIED_BY=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['params'].get('disqualified_by',''))")
 ```
 
-`$ACTION` is `auto_approve` (all R1-R4 satisfied) or `manual_gate` (any rule disqualifies; `$DISQUALIFIED_BY` identifies which one).
+`$ACTION` is `auto_approve` (script qualified AND R1-R4 satisfied) or `manual_gate` (`$DISQUALIFIED_BY` identifies which rule).
+
+**Hard guard (mandatory):** if `$GATE_EXIT != 0`, the effective action is `manual_gate` regardless of `$ACTION` — the synthesized approval (E18 + `human_response`) MUST NOT be emitted unless the Python script exited 0. The exit code, not the prompt, is the binding authority for skipping the human gate.
 
 **If `$ACTION == "manual_gate"`:** record `$DISQUALIFIED_BY` and continue to the manual gate below (E99 emission).
 

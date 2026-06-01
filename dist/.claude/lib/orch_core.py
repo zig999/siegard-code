@@ -2846,6 +2846,12 @@ REVIEW_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
         Action("set_max_concurrent", {}),  # populated by wrapper
 
     # R10 — Auto-approval gate (4 strict rules, most specific failure first)
+    # prod-hardening task 02 (C2/A4-F2): bind the SM to the script's own `qualifies`
+    # verdict. When the orchestrator passes qualifies=False (script exit!=0), short-
+    # circuit to the manual gate — do not trust LLM-retyped booleans. R1-R4 below
+    # remain as defense-in-depth for the positive path.
+    ("approval_gate", lambda i: i.get("qualifies") is False):
+        Action("manual_gate", {"disqualified_by": "script_qualifies_false"}),
     ("approval_gate", lambda i: i.get("completed_review_tasks_count", 0) == 0):
         Action("manual_gate", {"disqualified_by": "R1_no_completed_tasks"}),
     ("approval_gate", lambda i: not i.get("all_qa_mode_micro")):

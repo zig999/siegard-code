@@ -19,7 +19,7 @@ Usage:
       --project-dir <abs path> \
       --tasks '<JSON list: [{"task_id":"...","qa_mode":"micro","verdict_path":"..."}, ...]>'
 
-Output (stdout, exit 0):
+Output (stdout; exit 0 if qualifies, exit 2 if disqualified):
     {
       "qualifies": bool,
       "evidence": {
@@ -186,7 +186,12 @@ def main() -> None:
         }), file=sys.stderr)
         sys.exit(1)
 
-    print(json.dumps(evaluate(tasks, project_dir)))
+    result = evaluate(tasks, project_dir)
+    print(json.dumps(result))
+    # prod-hardening task 02 (C2/A4-F2): the exit code carries the verdict so the
+    # review orchestrator gates the synthesized human approval on it — exit 0 only
+    # when qualifies, exit 2 when disqualified (1 is reserved for bad input/error).
+    sys.exit(0 if result["qualifies"] else 2)
 
 
 if __name__ == "__main__":
