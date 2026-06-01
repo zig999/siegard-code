@@ -784,7 +784,7 @@ Use `estimated_prompt_chars ≈ 1500` (the dev spawn prompt template length). In
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type dispatch_decision \
-  --data '{"phase":"dev","batch_size":<N>,"batch_members":[{"task_id":"<task_id>","worker_type":"<worker>","tier":"<tier>","stack":"<task.stack>"}],"rationale":"ready queue order, tier priority, per-task stack routing","constraints":{"max_batch":2,"nesting_depth":<nesting_depth>,"context_estimate":[{"task_id":"<task_id>","total_chars":<total_chars>,"over_threshold":<bool>,"mitigation":"<none|split_spec|summarize_spec|inline_excerpt>"}]}}'
+  --data '{"phase":"dev","batch":[{"task_id":"<task_id>","worker_type":"<worker>","tier":"<tier>","stack":"<task.stack>"}],"rationale":"ready queue order, tier priority, per-task stack routing","constraints":{"max_batch":2,"nesting_depth":<nesting_depth>,"context_estimate":[{"task_id":"<task_id>","total_chars":<total_chars>,"over_threshold":<bool>,"mitigation":"<none|split_spec|summarize_spec|inline_excerpt>"}]}}'
 ```
 
 Then for each task, emit `task_claimed` before any spawn:

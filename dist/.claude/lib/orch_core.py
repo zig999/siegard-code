@@ -412,6 +412,7 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.TASK_DLQ.value:                  {"phase", "reason", "last_error"},
     EventType.TASK_SKIPPED.value:              {"phase", "reason"},
     EventType.OPERATION_MODE_DECLARED.value:   {"phase", "mode"},
+    EventType.DISPATCH_DECISION.value:         {"phase", "batch", "rationale", "constraints"},
     EventType.PHASE_DECLARED.value:            {"workflow_id", "phases"},
     EventType.PHASE_ENTERED.value:             {"phase", "order", "workflow_id"},
     EventType.PHASE_EXIT_CRITERION_MET.value:  {"phase", "criterion"},
