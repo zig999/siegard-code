@@ -1,13 +1,13 @@
-# new_flow/dist2 — System Documentation
+# Siegard — System Documentation
 
-> Internal documentation for the orchestration engine delivered in `dist2/`.
-> Reference the source files under `new_flow/dist2/.claude/` for implementation details.
+> Documentação do motor de orquestração entregue em `dist/.claude/`.
+> Referencie os arquivos-fonte em `dist/.claude/` para detalhes de implementação.
 
 ---
 
 ## What this system is
 
-`dist2` é uma **engine de orquestração event-sourced para workflows multi-fase no Claude Code**. Funciona como um Temporal ou Airflow nativo para sub-agentes Claude: coordena execução paralela de workers, mantém estado auditável via log append-only, garante retry automático, detecção de crash e recovery.
+O siegard é uma **engine de orquestração event-sourced para workflows multi-fase no Claude Code**. Funciona como um Temporal ou Airflow nativo para sub-agentes Claude: coordena execução paralela de workers, mantém estado auditável via log append-only, garante retry automático, detecção de crash e recovery.
 
 O sistema é **agnóstico de domínio na infraestrutura** — a lógica de negócio (SDD, Dev, QA, Test) fica em skills de fase plugáveis. O núcleo nunca muda; o comportamento muda pelos skills.
 
@@ -17,6 +17,7 @@ O sistema é **agnóstico de domínio na infraestrutura** — a lógica de negó
 
 | Documento | Conteúdo |
 |-----------|---------|
+| [flow.md](flow.md) | **Resumo: fases, rotas e gates.** Como o siegard funciona e como o workflow é gerido. Comece por aqui. |
 | [agents.md](agents.md) | Todos os agentes: meta-orchestrator, phase orchestrators, workers |
 | [workflow.md](workflow.md) | Engine de workflow: event sourcing, fases, dispatch loop, circuit breaker |
 | [specs.md](specs.md) | Como specs são gerenciadas: pipeline SDD, validações, artefatos |
@@ -24,10 +25,10 @@ O sistema é **agnóstico de domínio na infraestrutura** — a lógica de negó
 
 ---
 
-## Estrutura do dist2
+## Estrutura do dist
 
 ```
-dist2/.claude/
+dist/.claude/
 ├── agents/
 │   ├── orchestrator.md              # Meta-orchestrator (Tier 1)
 │   ├── orchestrator-sdd.md          # Phase orchestrator — Spec & Design
@@ -54,8 +55,12 @@ dist2/.claude/
 ├── commands/
 │   ├── u-spec.md                    # Entry point: inicia/retoma SDD phase
 │   ├── u-dev.md                     # Entry point: inicia Dev phase
+│   ├── u-orchestrator.md            # Entry point: retoma/avança qualquer workflow
 │   ├── u-improve.md                 # Entry point: melhoria incremental
-│   └── u-reverse-spec.md            # Entry point: reverse engineering
+│   ├── u-reverse-spec.md            # Entry point: reverse engineering
+│   ├── u-fe-validate.md             # Utilitário: validação avulsa de frontend
+│   ├── u-cleanup.md                 # Utilitário: GC/purge de runtime .orch
+│   └── u-doc-cleanup.md             # Utilitário: remoção de ruído em docs
 ├── hooks/
 │   ├── on_subagent_stop.py          # Sintetiza task_failed para workers que morrem silenciosamente
 │   └── on_stop.py                   # Persiste métricas ao encerrar sessão

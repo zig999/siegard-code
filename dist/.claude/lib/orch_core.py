@@ -42,7 +42,20 @@ class CorruptedLogError(OrchError):
 
 
 class IllegalTransition(OrchError):
-    """Event would cause illegal state transition."""
+    """Event would cause illegal state transition.
+
+    Handlers raise this with a human-readable message only. `apply_event`
+    enriches the instance in-flight with the offending event's context
+    (`seq`, `task_id`, `event_type`, `workflow_id`, `phase`) so downstream
+    consumers — e.g. the monitor — can pinpoint the event without re-scanning
+    the log. Attributes are `None` until enriched.
+    """
+
+    seq: int | None = None
+    task_id: str | None = None
+    event_type: str | None = None
+    workflow_id: str | None = None
+    phase: str | None = None
 
 
 class UnknownEventType(OrchError):
@@ -1676,6 +1689,21 @@ def apply_event(state: OrchState, event: Event) -> OrchState:
             event.data = load_blob_data(event)
         try:
             handler(state, event)
+        except IllegalTransition as exc:
+            # Enrich with the offending event's context so the failure can be
+            # pinpointed without re-scanning the log. Only fill fields the
+            # handler did not already set (handlers raise message-only).
+            if exc.seq is None:
+                exc.seq = event.seq
+            if exc.task_id is None:
+                exc.task_id = event.task_id
+            if exc.event_type is None:
+                exc.event_type = event.event_type
+            if exc.workflow_id is None:
+                exc.workflow_id = event.data.get("workflow_id")
+            if exc.phase is None:
+                exc.phase = event.data.get("phase")
+            raise
         finally:
             event.data = original_data
 
@@ -1695,6 +1723,64 @@ def reduce_all() -> OrchState:
     for event in read_events():
         apply_event(state, event)
     return state
+
+
+@dataclass
+class Violation:
+    """A single illegal transition encountered during tolerant reduction.
+
+    Mirrors the enriched-`IllegalTransition` locus so consumers get the same
+    fields whether they catch the strict exception or list violations.
+    """
+
+    seq: int | None
+    task_id: str | None
+    event_type: str | None
+    workflow_id: str | None
+    phase: str | None
+    message: str
+
+
+def reduce_all_tolerant() -> tuple[OrchState, list[Violation]]:
+    """Replay all events, collecting every illegal transition instead of
+    stopping at the first.
+
+    This is a DIAGNOSTIC variant for read-only consumers (e.g. the monitor).
+    The engine MUST use the strict `reduce_all` — the validator rejecting a
+    bad log is a feature, not a bug. Here an offending event is recorded as a
+    `Violation` and skipped (not applied); reduction continues so the operator
+    sees the full list, including any cascade the skip produces.
+
+    A `CorruptedLogError` (broken hash chain / invalid JSON) still propagates:
+    once the chain is untrustworthy, no further event can be trusted.
+
+    Returns:
+        (state, violations) — partial state and the violations in log order.
+    """
+    state = OrchState()
+    violations: list[Violation] = []
+    for event in read_events():
+        try:
+            apply_event(state, event)
+        except IllegalTransition as exc:
+            violations.append(Violation(
+                seq=exc.seq if exc.seq is not None else event.seq,
+                task_id=exc.task_id if exc.task_id is not None else event.task_id,
+                event_type=exc.event_type if exc.event_type is not None else event.event_type,
+                workflow_id=exc.workflow_id,
+                phase=exc.phase,
+                message=str(exc),
+            ))
+            # Skip the offending event; keep reducing the rest.
+            state.last_seq = event.seq
+        except UnknownEventType as exc:
+            violations.append(Violation(
+                seq=event.seq, task_id=event.task_id, event_type=event.event_type,
+                workflow_id=event.data.get("workflow_id"), phase=event.data.get("phase"),
+                message=str(exc),
+            ))
+            state.last_seq = event.seq
+    return state, violations
 
 
 def stale_tasks(state: OrchState, now: str) -> list[TaskState]:

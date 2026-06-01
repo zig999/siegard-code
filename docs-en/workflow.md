@@ -324,7 +324,7 @@ O sistema usa o padrão `escalation` + `human_response` para comunicação assí
 
 ## Escalation Codes
 
-Referência completa em `dist2/.claude/ESCALATION_CODES.md`.
+Referência completa em `dist/.claude/ESCALATION_CODES.md`.
 
 | Code | Severity | Emitido por | Condição |
 |------|----------|------------|---------|

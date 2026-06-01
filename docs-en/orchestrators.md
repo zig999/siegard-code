@@ -84,7 +84,7 @@ User calls orchestrator
 | 6 — Spawn phase orchestrator | Calls the specialist for the current phase | Delegating to the right department |
 | 7 — Evaluate return | The specialist finished — what now? | Checking if the department did its job |
 
-**Safety limit:** the meta-orchestrator makes at most **20 phase transitions in a single invocation**. If it exceeds this, something is wrong and it stops to report the problem.
+**Safety limit:** the meta-orchestrator runs **exactly one phase orchestrator per invocation** (invariant I5). When a phase completes and the workflow is not yet finished, it outputs `phase_advanced` and stops — the caller (e.g. `/u-dev`) re-invokes it to start the next phase. This keeps the context bounded per invocation regardless of how long the workflow is. A cycle counter guards against logic bugs: reaching **2** means something is wrong and it stops.
 
 ---
 
@@ -123,49 +123,57 @@ and test can return tasks to dev if failures are found.
 
 **Analogy:** before building a house, you draw the blueprints. SDD is the blueprints.
 
-**Model used:** `claude-opus-4-7` (the most powerful model — because writing specifications requires deep reasoning).
+**Model used:** `claude-sonnet-4-6` (the orchestrator only coordinates — the deep reasoning happens inside the spec workers).
 
 ```
                     orchestrator-sdd
                           │
-          ┌───────────────┼───────────────┐
-          │               │               │
-     STANDARD MODE    FAST-TRACK MODE     │
-     (new feature)    (/u-improve)        │
-          │               │               │
-          ▼               ▼               │
-    Human gate        Skips gate          │
-    (E99 escalation)  (already confirmed) │
-          │               │               │
-          └───────┬────────┘               │
-                  │                        │
-                  ▼
-    For each domain — strict pipeline:
+                          ▼
+    Step 0.5 — TRIAGE (always first, synchronous)
     ┌─────────────────────────────────────────────────────┐
-    │                                                     │
-    │  spec-writer → spec-reviewer → spec-back →          │
-    │  spec-validator → spec-front → spec-validator       │
-    │                                                     │
-    │  (each step depends on the previous one)            │
-    └─────────────────────────────────────────────────────┘
-                  │
-                  ▼
-    After all domains: sdd_compliance (cross-domain check)
-                  │
-                  ▼
+    │  u-spec-triage writes triage.json:                  │
+    │   - trigger (/u-spec vs /u-improve)                 │
+    │   - affected specs / domains                        │
+    │   - mode_hint + execution policy                    │
+    └────────────────────────┬────────────────────────────┘
+                             │  derives effective_mode + bypass_e99
+                             ▼
+          ┌──────────────────────────────────┐
+          │  Human gate (E99)                │
+          │  required, UNLESS bypass_e99=true │ ← /u-improve already confirmed
+          └──────────────────┬───────────────┘
+                             │
+            ┌────────────────┴─────────────────┐
+            │                                  │
+       STANDARD mode                      TARGETED mode
+       (new spec / broad change)          (localized improve)
+            │                                  │
+            ▼                                  ▼
+   For each domain — strict pipeline:   Only the affected specs:
+   spec-writer → spec-reviewer →        domain worker + spec-reviewer
+   spec-back → spec-validator →         (writer/validators/compliance
+   spec-front → spec-validator           skipped, logged as task_skipped)
+            │                                  │
+            ▼                                  │
+   After all domains:                          │
+   spec-compliance (cross-domain)              │
+            └────────────────┬─────────────────┘
+                             ▼
     Exit criteria (all must be true):
       ✓ handoff-manifest approved
-      ✓ all domains validated
+      ✓ all domains validated         (standard)
+        OR all improve reviewers done  (targeted)
       ✓ error codes synchronized
-                  │
-                  ▼
-           → transitions to DEV
+                             │
+                             ▼
+                      → transitions to DEV
 ```
 
 **What each worker does in the SDD pipeline:**
 
 | Worker | Responsibility |
 |--------|---------------|
+| `u-spec-triage` | Runs first (synchronous). Classifies the request and writes `triage.json` — the orchestrator reads it to pick the mode |
 | `spec-writer` | Writes the initial specification from scratch |
 | `spec-reviewer` | Reviews and approves (or rejects) the spec |
 | `spec-back` | Adds backend-specific details (APIs, database) |
@@ -174,16 +182,23 @@ and test can return tasks to dev if failures are found.
 | `spec-validator` (2nd pass) | Re-validates after frontend additions |
 | `spec-compliance` | Cross-domain consistency check |
 
+**Operating modes (derived from `triage.json`):**
+- **standard** — new spec or broad change; runs the full pipeline for each domain.
+- **targeted** — localized `/u-improve` change; only the affected specs go through `domain worker + spec-reviewer`; writer/validators/compliance are skipped. Exit uses `all_improve_reviewers_completed` instead of `all_domains_validated`.
+- **implementation_only** — `/u-improve` with no spec impact; SDD exits immediately and the workflow goes straight to DEV.
+
 **Human gates in SDD:**
-- Before the first dispatch, the human must confirm the pipeline state (standard mode)
-- In fast-track mode (`/u-improve`), this confirmation was already given earlier
+- Before the first dispatch, the human must confirm the pipeline state (E99 gate).
+- When the trigger is `/u-improve`, `bypass_e99` is set and this confirmation is skipped (it was already given earlier).
 
 **Escalation codes:**
 | Code | When | What it means |
 |------|------|--------------|
 | E99 | Before first dispatch | "Please confirm you want to proceed" |
-| E05 | Too many rejections | Spec rejected 3+ times — needs human attention |
+| E05 | Too many rejections | spec-writer ≥3 attempts or spec-validator ≥2 — needs human attention |
+| E06 | Dispatch loop limit | Loop reached 30 iterations without converging — tasks stuck |
 | E11 | Missing input files | spec-reviewer found files that should exist but don't |
+| E12 | State reduction failed | `reduce.py` errored — log may be corrupt |
 | E08 | All done but criteria not met | Something is wrong with the output — needs investigation |
 
 ---
@@ -287,19 +302,22 @@ and test can return tasks to dev if failures are found.
               ┌─────────────────────────────┐
               │      DISPATCH LOOP          │
               │                             │
+              │  Each task is classified by │
+              │  qa_mode (micro/standard/   │
+              │  full) → drives concurrency │
+              │                             │
               │  QA workers review each     │
               │  delivery artifact and      │
               │  produce a qa.md verdict    │
               │                             │
-              │  Possible verdicts:         │
+              │  Verdict is binary:         │
               │   approved                  │
-              │   approved_with_reservations│
               │   rejected                  │
               └──────────────┬──────────────┘
                              │
                              ▼
               ┌─────────────────────────────┐
-              │    HUMAN APPROVAL GATE      │  ← mandatory
+              │    HUMAN APPROVAL GATE      │  ← mandatory*
               │                             │
               │  Shows verdict summary      │
               │  Flags SPEC-DIVERGENCE      │
@@ -328,18 +346,24 @@ and test can return tasks to dev if failures are found.
      → transitions to TEST
 ```
 
-**Special workers (manually injected):**
+*\*Auto-approval:* the orchestrator may skip the human gate **only** when the strict Step 5.0 gate qualifies — every completed review task is `qa_mode == micro`, all verdicts are `approved`, and there are no severe findings. In that case it emits `E18_auto_approval_granted` and synthesizes the approval itself. The decision is bound to a Python script exit code, not the prompt (invariant I8). An operator can still override by appending a `return_to_dev` response.
+
+**Special workers (not part of automatic QA dispatch):**
 - `u-architecture-reviewer` — reviews architectural decisions
 - `u-security-reviewer` — security vulnerability review
 
-These workers are not dispatched automatically. An operator must inject them into the log before invoking the orchestrator.
+The automatic dispatch creates one `qa` task per completed dev task. These two reviewers are injected by an operator when desired; they write to `<session_dir>/reviews/`.
 
 **Escalation codes:**
 | Code | When | What it means |
 |------|------|--------------|
 | E99 | After QA completes | "QA finished — please approve or return to dev" |
+| E18 | Auto-approval gate met | Orchestrator synthesized the approval (micro, unanimous, clean) |
 | E09 | SPEC-DIVERGENCE found | Implementation deviated from spec — a Change Request may be needed |
-| E08 | Criteria not met after approval | Human approved but system checks still fail |
+| E16 | Shared build failed | The shared build/test suite failed — QA cannot be dispatched |
+| E17 | Suite parser degraded | Could not parse test failures — falls back to per-task gate |
+| E19 | qa_mode classifier failed | Classifier errored — task created as `standard` (warning only) |
+| E08 | Criteria not met / DLQ | Human approved but checks still fail, or review tasks remain in DLQ |
 
 ---
 
@@ -521,7 +545,7 @@ to be reviewed and approved via /u-spec before dev can start.
   │                       │    │                          │
   │  • Routes phases      │    │  • Analyzes existing code│
   │  • Zero domain logic  │    │  • Produces draft specs  │
-  │  • Max 20 transitions │    │  • Interactive (gates)   │
+  │  • 1 phase/invocation │    │  • Interactive (gates)   │
   │  • Log is the truth   │    │  • Output: draft specs   │
   └────────────┬──────────┘    └────────────┬─────────────┘
                │                            │
@@ -534,15 +558,16 @@ to be reviewed and approved via /u-spec before dev can start.
 │orchestrator  │          │    (reads code)       (writes specs)
 │    -sdd      │          │
 │              │          │
-│ • opus-4-7   │          │
+│ • sonnet-4-6 │          │
 │ • Semi-auto  │          │
 │ • E99 gate   │          │
-│ • 6-step     │          │
+│ • triage +   │          │
 │   pipeline   │          │
 │   per domain │          │
 └──────┬───────┘          │
        │                  │
   Spawns workers:         │
+  u-spec-triage (first)   │
   spec-writer             │
   spec-reviewer           │
   spec-back               │
@@ -567,7 +592,7 @@ to be reviewed and approved via /u-spec before dev can start.
   u-fe-planner            │
   u-be-developer          │
   u-fe-developer          │
-  u-fe-ui                 │
+  u-fe-spec-writer        │
        │                  │
        ▼                  │
 ┌──────────────┐          │
@@ -657,6 +682,9 @@ Types of escalation:
   E05 — "A spec was rejected too many times"
   └─ The spec may have a structural problem
 
+  E06 — "Dispatch loop did not converge"
+  └─ Reached 30 iterations — tasks stuck in retry
+
   E07 — "Planning failed"
   └─ The handoff-manifest may have issues
 
@@ -672,9 +700,29 @@ Types of escalation:
   E11 — "Required spec files are missing"
   └─ Create the files and re-invoke
 
+  E12 — "State could not be derived from the log"
+  └─ reduce.py errored — log may be corrupt
+
+  E13 — "Phase orchestrator returned no valid output"
+  └─ Possible context overflow or startup failure (auto-retries first)
+
   E14 — "Confirm the improvement before proceeding"
   └─ /u-improve gate before the SDD phase
+
+  E16 — "Shared build/test suite failed" (review)
+  └─ QA cannot start until the build is fixed
+
+  E17 — "Test output parser degraded" (review, warning)
+  └─ Falls back to per-task test gate
+
+  E18 — "Auto-approval granted" (review, info)
+  └─ Micro + unanimous + clean: orchestrator approved automatically
+
+  E19 — "qa_mode classifier failed" (review, warning)
+  └─ Task defaulted to standard mode
 ```
+
+> Codes **E16–E19** are review-phase only. The full, authoritative reference is `dist/.claude/ESCALATION_CODES.md`.
 
 **To resume after an escalation:**
 The human emits a `human_response` event with an `action` field. The available actions depend on the escalation code. Then they invoke the orchestrator again — it reads the response from the log and continues.
@@ -725,7 +773,7 @@ All orchestrators use the same set of shared skills (libraries):
 | Orchestrator | Phase | Model | Autonomy | Human gates | Next phase |
 |-------------|-------|-------|----------|-------------|------------|
 | `orchestrator` | — (routes) | sonnet-4-6 | Routing only | Escalations | Any phase |
-| `orchestrator-sdd` | SDD | opus-4-7 | Semi | E99 before dispatch | dev |
+| `orchestrator-sdd` | SDD | sonnet-4-6 | Semi | E99 before dispatch (bypassed for `/u-improve`) | dev |
 | `orchestrator-dev` | DEV | sonnet-4-6 | Full | None | review |
 | `orchestrator-review` | REVIEW | sonnet-4-6 | Semi | E99 for approval | test or dev |
 | `orchestrator-test` | TEST | sonnet-4-6 | Full* | E99 only on failure | done or dev |

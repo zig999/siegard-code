@@ -17,7 +17,8 @@ import curses
 import os
 import sys
 import time
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -68,7 +69,9 @@ from orch_core import (  # noqa: E402
     OrchState,
     PhaseStatus,
     TaskStatus,
+    Tier,
     reduce_all,
+    reduce_all_tolerant,
     read_events_filtered,
     is_blob_ref,
     load_blob_data,
@@ -88,6 +91,7 @@ STATUS_ORDER = [
     TaskStatus.SCHEDULED,
     TaskStatus.FAILED,
     TaskStatus.DLQ,
+    TaskStatus.SKIPPED,
     TaskStatus.CANCELLED,
     TaskStatus.COMPLETED,
 ]
@@ -99,6 +103,7 @@ STATUS_ICON = {
     TaskStatus.SCHEDULED: "↻",
     TaskStatus.FAILED:    "✗",
     TaskStatus.DLQ:       "☠",
+    TaskStatus.SKIPPED:   "⊘",
     TaskStatus.CANCELLED: "⊘",
     TaskStatus.COMPLETED: "✓",
 }
@@ -129,6 +134,7 @@ STATUS_COLOR = {
     TaskStatus.SCHEDULED: C_PENDING,
     TaskStatus.FAILED:    C_FAILED,
     TaskStatus.DLQ:       C_DLQ,
+    TaskStatus.SKIPPED:   C_DIM,
     TaskStatus.CANCELLED: C_DIM,
     TaskStatus.COMPLETED: C_DONE,
 }
@@ -178,14 +184,41 @@ def _last_checkpoint(task_id: str) -> str | None:
         return None
 
 
-def _load_state(project_dir: Path) -> tuple[OrchState | None, str | None]:
-    """Return (state, error_msg). error_msg is None on success."""
+@dataclass
+class LoadError:
+    """Structured reducer failure.
+
+    `kind` drives rendering: "waiting" is a benign no-log sentinel; the others
+    are real failures. `source` attributes blame: "log" means the log itself is
+    inconsistent (an upstream emitter defect — NOT a monitor bug), "monitor"
+    means the monitor failed internally. The locus fields (`seq`, `task_id`,
+    `event_type`, `workflow_id`, `phase`) come from the offending event so the
+    operator can pinpoint it without re-scanning the log. `__str__` yields the
+    one-line message so legacy string consumers keep working.
+    """
+
+    kind: str                      # "waiting" | "illegal_transition" | "corrupted_log" | "internal"
+    message: str
+    seq: int | None = None
+    task_id: str | None = None
+    event_type: str | None = None
+    workflow_id: str | None = None
+    phase: str | None = None
+    source: str = "monitor"        # "log" = upstream emitter fault, "monitor" = internal
+    violations: list = field(default_factory=list)  # all illegal transitions (diagnostics)
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def _load_state(project_dir: Path) -> tuple[OrchState | None, LoadError | None]:
+    """Return (state, error). error is None on success."""
     import orch_core as _oc
     # Re-resolve paths in case project_dir changed (supports dynamic reload).
     orch_dir = project_dir / ".orch"
     log = orch_dir / "log.jsonl"
     if not log.exists():
-        return None, "waiting for log…"
+        return None, LoadError(kind="waiting", message="waiting for log…")
     # Point orch_core to the right directory before calling reduce_all.
     _oc.ORCH_DIR = orch_dir
     _oc.LOG_PATH = log
@@ -193,11 +226,26 @@ def _load_state(project_dir: Path) -> tuple[OrchState | None, str | None]:
         state = reduce_all()
         return state, None
     except CorruptedLogError as exc:
-        return None, f"CORRUPTED LOG: {exc}"
+        return None, LoadError(kind="corrupted_log", message=f"CORRUPTED LOG: {exc}", source="log")
     except IllegalTransition as exc:
-        return None, f"ILLEGAL TRANSITION: {exc}"
+        # Re-reduce tolerantly to enumerate EVERY violation, not just the first.
+        try:
+            _, violations = reduce_all_tolerant()
+        except Exception:  # noqa: BLE001
+            violations = []
+        return None, LoadError(
+            kind="illegal_transition",
+            message=f"ILLEGAL TRANSITION: {exc}",
+            seq=exc.seq,
+            task_id=exc.task_id,
+            event_type=exc.event_type,
+            workflow_id=exc.workflow_id,
+            phase=exc.phase,
+            source="log",
+            violations=violations,
+        )
     except Exception as exc:  # noqa: BLE001
-        return None, f"ERROR: {exc}"
+        return None, LoadError(kind="internal", message=f"ERROR: {exc}", source="monitor")
 
 
 # ---------------------------------------------------------------------------
@@ -353,24 +401,53 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
                 "task_id": tid,
                 "status": "pending",
                 "worker_id": None,
+                "worker_type": None,
                 "attempts": 0,
                 "max_attempts": data.get("max_attempts", 3),
                 "claimed_at": None,
+                "created_at": None,
                 "last_event_at": None,
                 "last_failure_reason": None,
                 "next_retry_at": None,
+                # Eixo A — rich fields previously discarded (now carried for the UI):
+                "phase": data.get("phase"),
+                "task_type": None,
+                "tier": None,
+                "stack": None,
+                "deps": [],
+                "spec": None,
+                "artifacts": [],
+                "last_progress": None,
             })
             ts["last_event_at"] = event.ts
+            if data.get("phase"):
+                ts["phase"] = data.get("phase")
             if et == "task_created":
                 ts["status"] = "pending"
+                ts["created_at"] = event.ts
                 ts["max_attempts"] = data.get("max_attempts", ts["max_attempts"])
+                ts["task_type"] = data.get("type", ts["task_type"])
+                ts["tier"] = data.get("tier", ts["tier"])
+                ts["stack"] = data.get("stack", ts["stack"])
+                ts["spec"] = data.get("spec", ts["spec"])
+                deps = data.get("deps")
+                if isinstance(deps, list):
+                    ts["deps"] = list(deps)
             elif et == "task_claimed":
                 ts["status"] = "running"
                 ts["worker_id"] = data.get("worker_id")
+                ts["worker_type"] = data.get("worker_type", ts["worker_type"])
                 ts["claimed_at"] = event.ts
                 ts["attempts"] += 1
+            elif et == "task_progress":
+                cp = data.get("checkpoint") or data.get("note")
+                if cp:
+                    ts["last_progress"] = cp
             elif et == "task_completed":
                 ts["status"] = "completed"
+                arts = data.get("artifacts")
+                if isinstance(arts, list):
+                    ts["artifacts"] = [a for a in arts if isinstance(a, str)]
             elif et == "task_failed":
                 ts["status"] = "failed"
                 ts["last_failure_reason"] = data.get("reason")
@@ -383,7 +460,8 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
                 ts["status"] = "dlq"
                 ts["last_failure_reason"] = data.get("reason")
             elif et == "task_skipped":
-                ts["status"] = "cancelled"
+                ts["status"] = "skipped"
+                ts["last_failure_reason"] = data.get("reason") or ts["last_failure_reason"]
 
         if et in _TASK_EVENT_TYPES and event.task_id:
             attempt = event.attempt or 1
@@ -482,12 +560,23 @@ def _wf_tasks(wf: dict) -> dict:
             task_id=tid,
             status=status,
             worker_id=ts.get("worker_id"),
+            worker_type=ts.get("worker_type"),
             attempts=ts.get("attempts", 1),
             max_attempts=ts.get("max_attempts", 3),
             claimed_at=ts.get("claimed_at"),
+            created_at=ts.get("created_at"),
             last_event_at=ts.get("last_event_at"),
             last_failure_reason=ts.get("last_failure_reason"),
             next_retry_at=ts.get("next_retry_at"),
+            # Eixo A — rich fields:
+            phase=ts.get("phase"),
+            task_type=ts.get("task_type"),
+            tier=ts.get("tier"),
+            stack=ts.get("stack"),
+            deps=ts.get("deps", []),
+            spec=ts.get("spec"),
+            artifacts=ts.get("artifacts", []),
+            last_progress=ts.get("last_progress"),
         )
     return result
 
@@ -505,12 +594,337 @@ def _filter_orchestrators(agents: list[dict], show: bool) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Eixo B — responsive layout + scroll + detail panel
+# ---------------------------------------------------------------------------
+
+class UIState:
+    """Mutable interaction state held across frames in the live loop."""
+    def __init__(self) -> None:
+        self.sel = 0          # selected task index (into the task entries of the row model)
+        self.scroll = 0       # first visible display row (TASKS viewport top)
+        self.detail = False   # detail panel open for the selected task
+        self.events = False   # recent-events feed open
+
+
+def _alloc_widths(avail: int, spec: list[tuple[str, int, int]]) -> dict[str, int]:
+    """Distribute `avail` columns across `spec` entries (name, min_width, weight).
+
+    Every column gets at least its min_width; leftover space is shared by weight.
+    The last column absorbs the rounding remainder so the row fills `avail` exactly.
+    """
+    total_min = sum(m for _, m, _ in spec)
+    total_weight = sum(w for _, _, w in spec) or 1
+    leftover = max(0, avail - total_min)
+    widths: dict[str, int] = {}
+    assigned = 0
+    for idx, (name, m, w) in enumerate(spec):
+        if idx == len(spec) - 1:
+            extra = leftover - assigned
+        else:
+            extra = (leftover * w) // total_weight
+            assigned += extra
+        widths[name] = max(m, m + extra)
+    return widths
+
+
+def _wrap(text: str, width: int) -> list[str]:
+    """Word-wrap `text` to `width`; hard-splits tokens longer than the line."""
+    if width <= 0:
+        return [text]
+    out: list[str] = []
+    for raw_line in str(text).splitlines() or [""]:
+        line = ""
+        for word in raw_line.split(" "):
+            while len(word) > width:
+                if line:
+                    out.append(line)
+                    line = ""
+                out.append(word[:width])
+                word = word[width:]
+            if not line:
+                line = word
+            elif len(line) + 1 + len(word) <= width:
+                line += " " + word
+            else:
+                out.append(line)
+                line = word
+        out.append(line)
+    return out
+
+
+def _task_detail_lines(t: Any) -> list[tuple[str, str]]:
+    """Build (label, value) rows for the detail panel — nothing truncated here."""
+    def _fmt(v: Any) -> str:
+        if v is None or v == "":
+            return "—"
+        if isinstance(v, (list, tuple)):
+            return ", ".join(str(x) for x in v) if v else "—"
+        return str(v)
+
+    status = t.status.value if isinstance(t.status, TaskStatus) else str(t.status)
+    return [
+        ("task_id",   _fmt(t.task_id)),
+        ("status",    _fmt(status)),
+        ("phase",     _fmt(getattr(t, "phase", None))),
+        ("type",      _fmt(getattr(t, "task_type", None))),
+        ("tier",      _fmt(getattr(t, "tier", None))),
+        ("stack",     _fmt(getattr(t, "stack", None))),
+        ("worker",    _fmt(getattr(t, "worker_id", None) or getattr(t, "worker_type", None))),
+        ("attempts",  f"{getattr(t, 'attempts', 1)}/{getattr(t, 'max_attempts', 3)}"),
+        ("deps",      _fmt(getattr(t, "deps", []))),
+        ("spec",      _fmt(getattr(t, "spec", None))),
+        ("artifacts", _fmt(getattr(t, "artifacts", []))),
+        ("progress",  _fmt(getattr(t, "last_progress", None))),
+        ("failure",   _fmt(getattr(t, "last_failure_reason", None))),
+        ("next_retry", _fmt(getattr(t, "next_retry_at", None))),
+        ("created",   _fmt(getattr(t, "created_at", None))),
+        ("claimed",   _fmt(getattr(t, "claimed_at", None))),
+        ("last_event", _fmt(getattr(t, "last_event_at", None))),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Eixo C/D — phase grouping, progress, dependency state, durations
+# ---------------------------------------------------------------------------
+
+_DONE_STATUSES = {TaskStatus.COMPLETED, TaskStatus.SKIPPED}
+_spec_title_cache: dict[str, tuple[float, str | None]] = {}
+
+
+def _elapsed_s(iso: str | None) -> float | None:
+    """Seconds elapsed since `iso` (UTC), or None if unparseable. Clamped to >= 0."""
+    if not iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    now = datetime.now(timezone.utc)
+    return max(0.0, (now - dt).total_seconds())
+
+
+def _fmt_dur(seconds: float | None) -> str:
+    """Human-friendly duration: 12s / 3m20s / 1h04m."""
+    if seconds is None:
+        return "—"
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def _stale_threshold(tier: str | None) -> int:
+    """Stale threshold (seconds) for a tier, from orch_core. Falls back to standard."""
+    try:
+        return int(Tier(tier).default_stale_seconds)
+    except Exception:
+        try:
+            return int(Tier.STANDARD.default_stale_seconds)
+        except Exception:
+            return 300
+
+
+def _stale_level(elapsed: float | None, tier: str | None) -> int:
+    """0 = fresh, 1 = stale (> threshold), 2 = very stale (> 2× threshold)."""
+    if elapsed is None:
+        return 0
+    thr = _stale_threshold(tier)
+    if elapsed > 2 * thr:
+        return 2
+    if elapsed > thr:
+        return 1
+    return 0
+
+
+def _checkpoints(task_id: str, n: int = 8) -> list[tuple[str, str]]:
+    """Return up to `n` recent (ts, label) progress checkpoints for a task."""
+    try:
+        events = read_events_filtered(task_id=task_id, event_type="task_progress", tail=n)
+    except Exception:
+        return []
+    out: list[tuple[str, str]] = []
+    for ev in events:
+        data = ev.data
+        if is_blob_ref(data):
+            try:
+                data = load_blob_data(ev)
+            except Exception:
+                data = {}
+        label = data.get("checkpoint") or data.get("note")
+        if label:
+            out.append((ev.ts, str(label)))
+    return out
+
+
+def _spec_title(spec: str | None, project_dir: Path | None) -> str | None:
+    """Read a human title from the task's spec file frontmatter (cached by mtime)."""
+    if not spec or project_dir is None:
+        return None
+    path = (project_dir / spec)
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    cached = _spec_title_cache.get(str(path))
+    if cached and cached[0] == mtime:
+        return cached[1]
+    title: str | None = None
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for _ in range(40):  # scan only the head of the file
+                line = fh.readline()
+                if not line:
+                    break
+                m = line.strip()
+                low = m.lower()
+                if low.startswith("title:") or low.startswith("objective:"):
+                    title = m.split(":", 1)[1].strip().strip('"').strip("'") or None
+                    break
+                if m.startswith("# "):
+                    title = m[2:].strip()
+                    break
+    except OSError:
+        title = None
+    _spec_title_cache[str(path)] = (mtime, title)
+    return title
+
+
+def _phase_counts(tasks_src: dict) -> dict[str, dict[TaskStatus, int]]:
+    """Group tasks by phase → {status: count}."""
+    counts: dict[str, dict[TaskStatus, int]] = {}
+    for t in tasks_src.values():
+        ph = getattr(t, "phase", None) or "(no phase)"
+        try:
+            s = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
+        except ValueError:
+            s = TaskStatus.PENDING
+        bucket = counts.setdefault(ph, {})
+        bucket[s] = bucket.get(s, 0) + 1
+    return counts
+
+
+def _dep_state(task: Any, status_map: dict[str, TaskStatus]) -> tuple[str, list[str]]:
+    """For a pending task, classify as ('ready', []) or ('blocked', [unmet deps])."""
+    unmet: list[str] = []
+    for dep in getattr(task, "deps", []) or []:
+        st = status_map.get(dep)
+        if st not in _DONE_STATUSES:
+            unmet.append(dep)
+    return ("blocked", unmet) if unmet else ("ready", [])
+
+
+def _progress_bar(done: int, total: int, width: int) -> str:
+    """Unicode progress bar of `width` cells."""
+    width = max(1, width)
+    if total <= 0:
+        return "░" * width
+    filled = round(done / total * width)
+    filled = max(0, min(width, filled))
+    return "▓" * filled + "░" * (width - filled)
+
+
+def _build_rows(tasks_src: dict, phase_order: list[str],
+                status_map: dict[str, TaskStatus]) -> list[dict]:
+    """Build the unified TASKS row model: phase headers + tasks.
+
+    Returns a list of {"kind": "header"|"task", ...}. Tasks are grouped by phase
+    (in `phase_order`, unknown phases last) and within a phase by STATUS_ORDER.
+    Each task entry carries its dependency classification for pending tasks.
+    """
+    by_phase: dict[str, list] = {}
+    for t in tasks_src.values():
+        ph = getattr(t, "phase", None) or "(no phase)"
+        by_phase.setdefault(ph, []).append(t)
+
+    ordered_phases = [p for p in phase_order if p in by_phase]
+    ordered_phases += [p for p in by_phase if p not in phase_order]
+
+    status_rank = {s: i for i, s in enumerate(STATUS_ORDER)}
+    rows: list[dict] = []
+    for ph in ordered_phases:
+        group = by_phase[ph]
+
+        def _rank(t: Any) -> tuple[int, str]:
+            try:
+                s = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
+            except ValueError:
+                s = TaskStatus.PENDING
+            return (status_rank.get(s, 99), t.task_id)
+
+        group.sort(key=_rank)
+        done = sum(1 for t in group
+                   if (t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)) in _DONE_STATUSES)
+        rows.append({"kind": "header", "phase": ph, "done": done, "total": len(group)})
+        for t in group:
+            try:
+                s = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
+            except ValueError:
+                s = TaskStatus.PENDING
+            dep = _dep_state(t, status_map) if s in (TaskStatus.PENDING, TaskStatus.READY) else ("", [])
+            rows.append({"kind": "task", "task": t, "status": s, "dep": dep})
+    return rows
+
+
+def _build_rows_multi(workflows: dict, *, show_orchestrators: bool = True) -> list[dict]:
+    """Build the unified TASKS row model across ALL workflows.
+
+    Three row kinds: "workflow" → "header" (phase) → "task". Workflows are
+    ordered by last_seq descending (most recent first). Within each workflow,
+    phase grouping and task ordering are delegated to _build_rows, so the
+    single-workflow and multi-workflow views share one source of truth.
+
+    A workflow header is ALWAYS emitted — even for a single workflow or a
+    workflow with no tasks yet (only phase_declared) — so the hierarchy is
+    uniform and deterministic.
+
+    Dependency classification is computed per-workflow: deps reference task_ids
+    within the same workflow, so a cross-workflow status_map would misclassify.
+    """
+    rows: list[dict] = []
+    items = sorted(workflows.items(), key=lambda kv: -(kv[1]["last_seq"] or 0))
+    for wf_id, w in items:
+        tasks_src = _wf_tasks(w)
+        if not show_orchestrators:
+            tasks_src = {
+                tid: t for tid, t in tasks_src.items()
+                if not _is_orchestrator_agent(getattr(t, "worker_type", None))
+            }
+        wf_phases = _wf_phases(w)
+        phase_order = [n for n, _ in sorted(wf_phases.items(), key=lambda kv: kv[1].order)]
+        status_map: dict[str, TaskStatus] = {}
+        for tid, t in tasks_src.items():
+            try:
+                status_map[tid] = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
+            except ValueError:
+                status_map[tid] = TaskStatus.PENDING
+        done = sum(1 for s in status_map.values() if s in _DONE_STATUSES)
+        rows.append({
+            "kind": "workflow",
+            "workflow_id": wf_id,
+            "status": w.get("status", "unknown"),
+            "current_phase": w.get("current_phase"),
+            "last_seq": w.get("last_seq", 0),
+            "done": done,
+            "total": len(tasks_src),
+        })
+        rows.extend(_build_rows(tasks_src, phase_order, status_map))
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Plain-text renderer (--once mode)
 # ---------------------------------------------------------------------------
 
-def render_plain(state: OrchState | None, error: str | None) -> None:
+def render_plain(state: OrchState | None, error: LoadError | None) -> None:
     if error:
         print(f"  {error}")
+        if len(error.violations) > 1:
+            print(f"  all violations ({len(error.violations)}):")
+            for v in error.violations:
+                seq_s = v.seq if v.seq is not None else "?"
+                print(f"    seq={seq_s}  {v.event_type or ''}  task={v.task_id or '—'}  {v.message}")
         return
 
     assert state is not None
@@ -586,63 +1000,59 @@ def render_plain_multi(workflows: dict[str, dict], error: str | None,
             "unknown": "● ?",
         }.get(status, "● ?")
         wf_label = wf_id if wf_id != UNKNOWN_WORKFLOW else "(orphan events — no phase_declared)"
-        print(f"▼ {wf_label}  [{phase}]  seq={w['last_seq']}  {badge}")
 
-        running = _filter_orchestrators(w["agents_running"], show_orchestrators)
-        executed = _filter_orchestrators(w["agents_executed"], show_orchestrators)
-        failed = _filter_orchestrators(w["agents_failed"], show_orchestrators)
-        dlq = _filter_orchestrators(w["agents_dlq"], show_orchestrators)
-        skipped = _filter_orchestrators(w["agents_skipped"], show_orchestrators)
+        # Per-workflow tasks grouped phase → task (shared grouping with the live TUI).
+        tasks_src = _wf_tasks(w)
+        if not show_orchestrators:
+            tasks_src = {
+                tid: t for tid, t in tasks_src.items()
+                if not _is_orchestrator_agent(getattr(t, "worker_type", None))
+            }
+        status_map: dict[str, TaskStatus] = {}
+        for tid, t in tasks_src.items():
+            try:
+                status_map[tid] = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
+            except ValueError:
+                status_map[tid] = TaskStatus.PENDING
+        done = sum(1 for s in status_map.values() if s in _DONE_STATUSES)
+        print(f"▼ {wf_label}  [{phase}]  {done}/{len(tasks_src)}  seq={w['last_seq']}  {badge}")
 
-        if running:
-            print(f"   Agents running ({len(running)}):")
-            for a in running:
-                wt = (a.get("worker_type") or "—")[:22]
-                tid = (a.get("task_id") or "—")[:18]
-                claimed = _short_ts(a.get("claimed_at"))
-                cp = a.get("last_progress")
-                cp_str = f"  ⤳ {cp}" if cp else ""
-                print(f"     {wt:<22} {tid:<18}  attempt {a.get('attempt')}  claimed {claimed}{cp_str}")
+        wf_phases = _wf_phases(w)
+        phase_order = [n for n, _ in sorted(wf_phases.items(), key=lambda kv: kv[1].order)]
+        prows = _build_rows(tasks_src, phase_order, status_map)
 
-        if executed:
-            print(f"   Agents executed ({len(executed)}):")
-            for a in executed:
-                wt = (a.get("worker_type") or "—")[:22]
-                tid = (a.get("task_id") or "—")[:18]
-                ts = _short_ts(a.get("last_event_at"))
-                print(f"     {wt:<22} ✓ {tid:<18}  {ts}")
-
-        if failed:
-            print(f"   Agents failed ({len(failed)}):")
-            for a in failed:
-                wt = (a.get("worker_type") or "—")[:22]
-                tid = (a.get("task_id") or "—")[:18]
-                reason = (a.get("reason") or "")[:40]
-                print(f"     {wt:<22} ✗ {tid:<18}  task_failed  {reason}")
-
-        if dlq:
-            print(f"   Agents in DLQ ({len(dlq)}):")
-            for a in dlq:
-                wt = (a.get("worker_type") or "—")[:22]
-                tid = (a.get("task_id") or "—")[:18]
-                reason = (a.get("reason") or "")[:40]
-                print(f"     {wt:<22} ☠ {tid:<18}  task_dlq  {reason}")
-
-        if skipped:
-            print(f"   Agents skipped ({len(skipped)}):")
-            for a in skipped:
-                wt = (a.get("worker_type") or "—")[:22]
-                tid = (a.get("task_id") or "—")[:18]
-                reason = (a.get("reason") or "")[:40]
-                print(f"     {wt:<22} ⊘ {tid:<18}  task_skipped  {reason}")
-
-        if not running:
-            if w["status"] == "active":
-                phase = w["current_phase"] or "?"
+        if not prows:
+            if status == "active":
                 print(f"   ⟳ {phase}  [orchestrator dispatching…]")
-            elif not (executed or failed or dlq or skipped):
+            else:
                 hint = "" if show_orchestrators else " (run with --show-orchestrators to include meta agents)"
-                print(f"   (no leaf-agent activity recorded{hint})")
+                print(f"   (no task activity recorded{hint})")
+            print()
+            continue
+
+        for e in prows:
+            if e["kind"] == "header":
+                print(f"   ── {e['phase']} ──  {e['done']}/{e['total']}")
+                continue
+            t = e["task"]
+            s = e["status"]
+            icon = STATUS_ICON.get(s, "?")
+            worker = getattr(t, "worker_id", None) or getattr(t, "worker_type", None) or "—"
+            ts = _short_ts(t.claimed_at if s == TaskStatus.RUNNING else t.last_event_at)
+            detail = ""
+            if s == TaskStatus.RUNNING:
+                detail = getattr(t, "last_progress", None) or ""
+            elif s == TaskStatus.SCHEDULED and getattr(t, "next_retry_at", None):
+                detail = f"retry@{_short_ts(t.next_retry_at)}"
+            elif s in (TaskStatus.FAILED, TaskStatus.DLQ):
+                detail = getattr(t, "last_failure_reason", None) or ""
+            elif s in (TaskStatus.PENDING, TaskStatus.READY):
+                dstate, unmet = e["dep"]
+                detail = "waiting: " + ", ".join(unmet) if dstate == "blocked" else "ready"
+            if getattr(t, "attempts", 1) > 1 and s != TaskStatus.RUNNING:
+                detail = f"×{t.attempts}/{t.max_attempts}  {detail}".rstrip()
+            detail = detail[:40]
+            print(f"     {icon} {t.task_id[:18]:<18} [{s.value:<10}] {worker[:22]:<22} {ts}  {detail}".rstrip())
         print()
 
 
@@ -714,9 +1124,121 @@ def _hline(win: Any, row: int, col: int, ch: str, n: int) -> None:
         pass
 
 
-def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_path: Path,
-                  workflows: dict[str, dict] | None = None,
+def render_detail(stdscr: Any, task: Any, rows: int, cols: int,
                   project_dir: Path | None = None) -> None:
+    """Full-screen detail view for a single task — values are wrapped, never cut."""
+    stdscr.erase()
+    title = f"TASK DETAIL — {task.task_id}"
+    _addstr(stdscr, 0, 0, _trunc(title, cols - 1), curses.color_pair(C_HEADER) | curses.A_BOLD)
+    _hline(stdscr, 1, 0, "─", cols - 1)
+
+    label_w = 11
+    val_x = label_w + 3
+    val_w = max(10, cols - val_x - 1)
+    row = 2
+
+    # C5 — human title from the task's spec file (best-effort, cached).
+    lines = list(_task_detail_lines(task))
+    spec_title = _spec_title(getattr(task, "spec", None), project_dir)
+    if spec_title:
+        lines.insert(1, ("title", spec_title))
+
+    for label, value in lines:
+        if row >= rows - 1:
+            break
+        wrapped = _wrap(value, val_w) or ["—"]
+        _addstr(stdscr, row, 1, f"{label:<{label_w}}", curses.color_pair(C_DIM) | curses.A_BOLD)
+        _addstr(stdscr, row, val_x, wrapped[0])
+        row += 1
+        for cont in wrapped[1:]:
+            if row >= rows - 1:
+                break
+            _addstr(stdscr, row, val_x, cont)
+            row += 1
+
+    # D4 — progress history (recent checkpoints).
+    history = _checkpoints(task.task_id, n=12)
+    if history and row < rows - 2:
+        row += 1
+        _addstr(stdscr, row, 1, "progress history", curses.color_pair(C_HEADER) | curses.A_BOLD)
+        row += 1
+        for ts, label in history:
+            if row >= rows - 1:
+                break
+            _addstr(stdscr, row, 2, _short_ts(ts), curses.color_pair(C_DIM) | curses.A_DIM)
+            _addstr(stdscr, row, 9, _trunc(f"→ {label}", cols - 11), curses.color_pair(C_RUNNING))
+            row += 1
+
+    _hline(stdscr, rows - 1, 0, "─", cols - 1)
+    _addstr(stdscr, rows - 1, 0, " Enter/Esc: back   q: quit ",
+            curses.color_pair(C_DIM) | curses.A_DIM)
+    stdscr.refresh()
+
+
+def render_events(stdscr: Any, project_dir: Path | None, rows: int, cols: int) -> None:
+    """Full-screen recent-events feed (toggle 'e')."""
+    stdscr.erase()
+    _addstr(stdscr, 0, 0, "RECENT EVENTS", curses.color_pair(C_HEADER) | curses.A_BOLD)
+    _hline(stdscr, 1, 0, "─", cols - 1)
+
+    events: list = []
+    err: str | None = None
+    try:
+        import orch_core as _oc
+        if project_dir is not None:
+            _oc.ORCH_DIR = project_dir / ".orch"
+            _oc.LOG_PATH = _oc.ORCH_DIR / "log.jsonl"
+        events = list(read_events_filtered(tail=max(1, rows - 4)))
+    except Exception as exc:  # noqa: BLE001
+        err = f"cannot read events: {exc}"
+
+    if err:
+        _addstr(stdscr, 2, 2, err, curses.color_pair(C_ALERT))
+    elif not events:
+        _addstr(stdscr, 2, 2, "(no events)", curses.color_pair(C_DIM) | curses.A_DIM)
+    else:
+        w = _alloc_widths(cols - 4, [
+            ("seq", 6, 0), ("ts", 5, 0), ("type", 18, 1), ("task", 14, 1), ("info", 10, 3),
+        ])
+        x_seq = 2
+        x_ts = x_seq + w["seq"] + 1
+        x_type = x_ts + w["ts"] + 1
+        x_task = x_type + w["type"] + 1
+        x_info = x_task + w["task"] + 1
+        row = 2
+        for ev in events[-(rows - 3):]:
+            if row >= rows - 1:
+                break
+            data = ev.data if not is_blob_ref(ev.data) else {}
+            info = data.get("checkpoint") or data.get("note") or data.get("reason") \
+                or data.get("phase") or data.get("code") or ""
+            color = C_DIM
+            et = ev.event_type
+            if et in ("task_failed", "task_dlq", "escalation"):
+                color = C_FAILED
+            elif et == "task_completed":
+                color = C_DONE
+            elif et in ("task_claimed", "task_progress"):
+                color = C_RUNNING
+            _addstr(stdscr, row, x_seq, str(ev.seq), curses.color_pair(C_DIM) | curses.A_DIM)
+            _addstr(stdscr, row, x_ts, _short_ts(ev.ts), curses.color_pair(C_DIM) | curses.A_DIM)
+            _addstr(stdscr, row, x_type, _trunc(et, w["type"]), curses.color_pair(color))
+            _addstr(stdscr, row, x_task, _trunc(ev.task_id or "—", w["task"]), curses.color_pair(C_DIM))
+            if info:
+                _addstr(stdscr, row, x_info, _trunc(str(info), max(1, cols - x_info - 1)),
+                        curses.color_pair(C_DIM) | curses.A_DIM)
+            row += 1
+
+    _hline(stdscr, rows - 1, 0, "─", cols - 1)
+    _addstr(stdscr, rows - 1, 0, " e/Esc: back   q: quit ",
+            curses.color_pair(C_DIM) | curses.A_DIM)
+    stdscr.refresh()
+
+
+def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None, log_path: Path,
+                  workflows: dict[str, dict] | None = None,
+                  project_dir: Path | None = None,
+                  ui: UIState | None = None) -> None:
     rows, cols = stdscr.getmaxyx()
     stdscr.erase()
 
@@ -734,10 +1256,53 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
     active_phases = _wf_phases(active_wf) if active_wf else {}
     active_tasks  = _wf_tasks(active_wf)  if active_wf else {}
 
+    # Build the unified TASKS row model (phase headers + tasks) once. The task
+    # entries — in order — back both selection/scroll and the detail panel.
+    tasks_src = active_tasks if active_tasks else (state.tasks if state else {})
+    if active_phases:
+        phase_order = [n for n, _ in sorted(active_phases.items(), key=lambda kv: kv[1].order)]
+    elif state:
+        phase_order = [n for n, _ in sorted(state.phases.items(), key=lambda kv: kv[1].order)]
+    else:
+        phase_order = []
+    status_map: dict[str, TaskStatus] = {}
+    for tid, t in tasks_src.items():
+        try:
+            status_map[tid] = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
+        except ValueError:
+            status_map[tid] = TaskStatus.PENDING
+    # TASKS spans ALL workflows (workflow → phase → task). The active-workflow
+    # tasks_src above still feeds the focused PHASES summary at the top.
+    rows_model = (_build_rows_multi(workflows) if workflows
+                  else _build_rows(tasks_src, phase_order, status_map))
+    flat_tasks = [e["task"] for e in rows_model if e["kind"] == "task"]
+    if ui is not None and flat_tasks:
+        ui.sel = max(0, min(ui.sel, len(flat_tasks) - 1))
+
+    # Full-screen panels (mutually exclusive with the main view).
+    if ui is not None and ui.events:
+        render_events(stdscr, project_dir, rows, cols)
+        return
+    if ui is not None and ui.detail and flat_tasks:
+        render_detail(stdscr, flat_tasks[ui.sel], rows, cols, project_dir)
+        return
+
     # ---- Header ----
-    if error:
-        badge = "● ERROR"
+    if error and error.kind == "waiting":
+        badge = "● WAIT"
         header = f"SIEGARD MONITOR  [—]  seq=?  {badge}"
+    elif error:
+        # Real failure. Show the offending event's seq (not "?") and attribute
+        # blame in the badge: a log fault is upstream, not a monitor bug.
+        seq_str = str(error.seq) if error.seq is not None else "?"
+        badge = "● LOG ERROR" if error.source == "log" else "● MONITOR ERROR"
+        phase_label = error.phase or (active_wf["current_phase"] if active_wf else None) or "—"
+        wf_id = error.workflow_id or active_wf_id
+        if wf_id:
+            wf_label = _trunc(wf_id, max(10, cols - 50))
+            header = f"SIEGARD MONITOR  {wf_label}  [{phase_label}]  seq={seq_str}  {badge}"
+        else:
+            header = f"SIEGARD MONITOR  [{phase_label}]  seq={seq_str}  {badge}"
     elif state is None:
         badge = "● WAIT"
         header = f"SIEGARD MONITOR  [—]  seq=?  {badge}"
@@ -768,25 +1333,86 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
     _hline(stdscr, row, 0, "─", cols - 1)
     row += 1
 
-    if error:
-        _addstr(stdscr, row, 2, error, curses.color_pair(C_ALERT))
+    if error and error.kind == "waiting":
+        _addstr(stdscr, row, 2, "waiting for log…", curses.color_pair(C_PENDING))
+        _addstr(stdscr, row + 1, 2, str(log_path), curses.color_pair(C_DIM) | curses.A_DIM)
         stdscr.refresh()
         return
 
-    if state is None:
+    if error:
+        # Degrade gracefully: surface the violation(s) as a warning, attribute
+        # the fault, then keep rendering whatever the tolerant index holds.
+        n_viol = len(error.violations)
+        headline = str(error)
+        if n_viol > 1:
+            headline = f"{headline}   (+{n_viol - 1} more violation(s))"
+        _addstr(stdscr, row, 2, _trunc(headline, cols - 4),
+                curses.color_pair(C_ALERT) | curses.A_BOLD)
+        row += 1
+        locus = "  ".join(s for s in (
+            error.event_type or "",
+            f"task={error.task_id}" if error.task_id else "",
+            f"wf={error.workflow_id}" if error.workflow_id else "",
+            f"phase={error.phase}" if error.phase else "",
+        ) if s)
+        if locus:
+            _addstr(stdscr, row, 4, _trunc(locus, cols - 6), curses.color_pair(C_ALERT))
+            row += 1
+        # Attribution: who is to blame, by failure class.
+        if error.kind == "corrupted_log":
+            attribution = "log integrity broken (hash chain / JSON) — not a monitor bug"
+        elif error.source == "log":
+            attribution = "log inconsistency (out-of-order/missing event) — upstream emitter defect, not a monitor bug"
+        else:
+            attribution = "internal monitor error"
+        _addstr(stdscr, row, 4, _trunc(attribution, cols - 6),
+                curses.color_pair(C_DIM) | curses.A_DIM)
+        row += 1
+        # List ALL violations (not just the first), capped to the space available.
+        if n_viol > 1 and row < rows - 4:
+            _addstr(stdscr, row, 2, f"all violations ({n_viol}):",
+                    curses.color_pair(C_ALERT) | curses.A_BOLD)
+            row += 1
+            max_list = max(0, (rows - 4) - row)
+            for v in error.violations[:max_list]:
+                seq_s = v.seq if v.seq is not None else "?"
+                bits = "  ".join(s for s in (
+                    v.event_type or "",
+                    f"task={v.task_id}" if v.task_id else "",
+                    f"phase={v.phase}" if v.phase else "",
+                ) if s)
+                _addstr(stdscr, row, 4, _trunc(f"seq={seq_s}  {bits}", cols - 6),
+                        curses.color_pair(C_FAILED))
+                row += 1
+            if n_viol > max_list:
+                _addstr(stdscr, row, 4, f"… {n_viol - max_list} more (see 'e' events feed)",
+                        curses.color_pair(C_DIM) | curses.A_DIM)
+                row += 1
+        if not workflows:
+            stdscr.refresh()
+            return
+        _addstr(stdscr, row, 2,
+                "partial state below (tolerant index; violations ignored):",
+                curses.color_pair(C_DIM) | curses.A_DIM)
+        row += 1
+        _hline(stdscr, row, 0, "─", cols - 1)
+        row += 1
+        # fall through: phases/agents/tasks below are driven by the workflow index
+
+    if state is None and not error:
         _addstr(stdscr, row, 2, "waiting for log…", curses.color_pair(C_PENDING))
         _addstr(stdscr, row + 1, 2, str(log_path), curses.color_pair(C_DIM) | curses.A_DIM)
         stdscr.refresh()
         return
 
     # ---- Alerts ----
-    if state.circuit_breaker:
+    if state and state.circuit_breaker:
         cb = state.circuit_breaker
         _addstr(stdscr, row, 0, f"  ⚡ CIRCUIT BREAKER TRIPPED  failures={cb.get('failure_count', '?')}",
                 curses.color_pair(C_ALERT) | curses.A_BOLD)
         row += 1
 
-    if state.escalation:
+    if state and state.escalation:
         esc = state.escalation
         code = esc.get("code", "?")
         reason = _trunc(esc.get("reason", ""), cols - 20)
@@ -799,6 +1425,7 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
     row += 1
 
     phases_src = active_phases or (state.phases if state else {})
+    pcounts = _phase_counts(tasks_src)
     if phases_src:
         for name, p in sorted(phases_src.items(), key=lambda kv: kv[1].order):
             if row >= rows - 2:
@@ -815,22 +1442,45 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
                      C_PENDING)
 
             if ps == PhaseStatus.ACTIVE:
-                ts = _short_ts(p.entered_at)
-                qualifier = f"(active since {ts})"
+                qualifier = f"since {_short_ts(p.entered_at)}"
             elif ps in (PhaseStatus.COMPLETED, PhaseStatus.EXIT_APPROVED):
-                ts = _short_ts(p.completed_at or p.approved_at)
-                qualifier = f"(completed {ts})"
+                qualifier = f"done {_short_ts(p.completed_at or p.approved_at)}"
             elif ps == PhaseStatus.PAUSED:
-                qualifier = "(paused)"
+                qualifier = "paused"
             else:
                 qualifier = ""
 
-            criteria_str = ""
-            if p.criteria_met:
-                criteria_str = f"  [{len(p.criteria_met)} criteria met]"
+            # C2 — progress bar + per-status breakdown from the task counts.
+            c = pcounts.get(name, {})
+            total = sum(c.values())
+            done = c.get(TaskStatus.COMPLETED, 0) + c.get(TaskStatus.SKIPPED, 0)
+            running = c.get(TaskStatus.RUNNING, 0)
+            pending = c.get(TaskStatus.PENDING, 0) + c.get(TaskStatus.READY, 0)
+            failed = c.get(TaskStatus.FAILED, 0) + c.get(TaskStatus.DLQ, 0)
 
-            line = f"  {icon} {name}  {qualifier}{criteria_str}"
-            _addstr(stdscr, row, 0, line, curses.color_pair(color))
+            _addstr(stdscr, row, 2, f"{icon} {name:<7}", curses.color_pair(color) | curses.A_BOLD)
+            x = 2 + 2 + 7 + 1
+            if total:
+                bar = _progress_bar(done, total, 12)
+                _addstr(stdscr, row, x, bar, curses.color_pair(C_DONE if done == total else color))
+                x += len(bar) + 1
+                _addstr(stdscr, row, x, f"{done}/{total}", curses.color_pair(C_DIM))
+                x += len(f"{done}/{total}") + 2
+                bd = []
+                if running:
+                    bd.append(f"▶{running}")
+                if pending:
+                    bd.append(f"·{pending}")
+                if failed:
+                    bd.append(f"✗{failed}")
+                bd.append(f"✓{done}")
+                _addstr(stdscr, row, x, " ".join(bd), curses.color_pair(C_DIM) | curses.A_DIM)
+                x += len(" ".join(bd)) + 2
+            crit = f"[{len(p.criteria_met)} crit]" if p.criteria_met else ""
+            tail = "  ".join(s for s in (qualifier, crit) if s)
+            if tail:
+                _addstr(stdscr, row, x, _trunc(tail, max(1, cols - x - 1)),
+                        curses.color_pair(C_DIM) | curses.A_DIM)
             row += 1
     else:
         _addstr(stdscr, row, 2, "(no phases declared)", curses.color_pair(C_DIM) | curses.A_DIM)
@@ -848,12 +1498,21 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
         failed_count = 0
         dlq_count = 0
         skipped_count = 0
+        tier_map: dict[str, str | None] = {}
         for w in workflows.values():
             all_running.extend(_filter_orchestrators(w["agents_running"], False))
             done_count += len(_filter_orchestrators(w["agents_executed"], False))
             failed_count += len(_filter_orchestrators(w["agents_failed"], False))
             dlq_count += len(_filter_orchestrators(w["agents_dlq"], False))
             skipped_count += len(_filter_orchestrators(w["agents_skipped"], False))
+            for tid, ts in w["task_statuses"].items():
+                tier_map[tid] = ts.get("tier")
+
+        # D3 — count running agents past their tier's stale threshold.
+        stale_count = sum(
+            1 for a in all_running
+            if _stale_level(_elapsed_s(a.get("claimed_at")), tier_map.get(a.get("task_id"))) > 0
+        )
 
         _addstr(stdscr, row, 0, "AGENTS", curses.A_BOLD)
         parts = [f"{len(all_running)} running", f"{done_count} done"]
@@ -863,6 +1522,8 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
             parts.append(f"{dlq_count} dlq")
         if skipped_count:
             parts.append(f"{skipped_count} skipped")
+        if stale_count:
+            parts.append(f"⚠ {stale_count} stale")
         summary = "  " + " · ".join(parts)
         _addstr(stdscr, row, 6, summary, curses.color_pair(C_DIM) | curses.A_DIM)
         row += 1
@@ -877,31 +1538,52 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
                 _addstr(stdscr, row, 2, "(no agents running)", curses.color_pair(C_DIM) | curses.A_DIM)
             row += 1
         else:
-            _a_col_wt  = 2
-            _a_col_tid = 32
-            _a_col_ts  = 52
-            _a_col_cp  = 59
+            # Cap the running list so it never starves the TASKS section below.
+            agents_cap = 8
+            shown_agents = all_running[:agents_cap]
 
-            for a in all_running:
+            # Responsive columns scaled to terminal width.
+            w = _alloc_widths(cols - 4, [
+                ("wt",  18, 2),   # worker_type
+                ("tid", 14, 2),   # task_id
+                ("dur",  8, 0),   # elapsed since claim (+ stale mark)
+                ("cp",  10, 4),   # last checkpoint / progress
+            ])
+            x_wt = 2
+            x_tid = x_wt + w["wt"] + 1
+            x_dur = x_tid + w["tid"] + 1
+            x_cp = x_dur + w["dur"] + 1
+
+            for a in shown_agents:
                 if row >= rows - 2:
                     break
-                wt      = _trunc(a.get("worker_type") or "—", 28)
-                tid     = _trunc(a.get("task_id") or "—", 18)
-                claimed = _short_ts(a.get("claimed_at"))
+                wt      = _trunc(a.get("worker_type") or "—", w["wt"] - 2)
+                tid     = _trunc(a.get("task_id") or "—", w["tid"])
                 attempt = a.get("attempt", 1)
                 cp      = a.get("last_progress")
                 att_str = f"×{attempt} " if attempt > 1 else ""
-                cp_str  = f"→ {_trunc(cp, cols - _a_col_cp - len(att_str) - 2)}" if cp else ""
 
-                _addstr(stdscr, row, _a_col_wt,  f"▶ {wt}", curses.color_pair(C_RUNNING))
-                _addstr(stdscr, row, _a_col_tid, tid,       curses.color_pair(C_DIM))
-                _addstr(stdscr, row, _a_col_ts,  claimed,   curses.color_pair(C_DIM))
-                cp_col = _a_col_cp
+                # D2/D3 — elapsed + stale.
+                el = _elapsed_s(a.get("claimed_at"))
+                lvl = _stale_level(el, tier_map.get(a.get("task_id")))
+                dur_color = C_ALERT if lvl == 2 else (C_PENDING if lvl == 1 else C_DIM)
+                dur_str = (_fmt_dur(el) + (" ⚠" if lvl else ""))
+
+                _addstr(stdscr, row, x_wt,  f"▶ {wt}", curses.color_pair(C_RUNNING))
+                _addstr(stdscr, row, x_tid, tid,       curses.color_pair(C_DIM))
+                _addstr(stdscr, row, x_dur, _trunc(dur_str, w["dur"]), curses.color_pair(dur_color))
+                cp_col = x_cp
                 if att_str:
                     _addstr(stdscr, row, cp_col, att_str, curses.color_pair(C_PENDING) | curses.A_DIM)
                     cp_col += len(att_str)
-                if cp_str:
+                if cp:
+                    cp_str = f"→ {_trunc(cp, max(1, cols - cp_col - len(att_str) - 2))}"
                     _addstr(stdscr, row, cp_col, cp_str, curses.color_pair(C_RUNNING) | curses.A_DIM)
+                row += 1
+
+            if len(all_running) > agents_cap and row < rows - 2:
+                _addstr(stdscr, row, 2, f"  … +{len(all_running) - agents_cap} more running",
+                        curses.color_pair(C_DIM) | curses.A_DIM)
                 row += 1
 
         row += 1  # spacer
@@ -909,77 +1591,136 @@ def render_curses(stdscr: Any, state: OrchState | None, error: str | None, log_p
             stdscr.refresh()
             return
 
-    # ---- Tasks ----
+    # ---- Tasks (grouped by phase) ----
+    ntasks = len(flat_tasks)
     _addstr(stdscr, row, 0, "TASKS", curses.A_BOLD)
+    _addstr(stdscr, row, 6, f"  ({ntasks})", curses.color_pair(C_DIM) | curses.A_DIM)
     row += 1
+    tasks_top = row
 
-    by_status: dict[TaskStatus, list] = {s: [] for s in STATUS_ORDER}
-    tasks_src = active_tasks if active_tasks else (state.tasks if state else {})
-    for t in tasks_src.values():
-        try:
-            s = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
-        except ValueError:
-            s = TaskStatus.PENDING
-        by_status.setdefault(s, []).append(t)
+    # Responsive columns scaled to the real terminal width (no fixed offsets).
+    w = _alloc_widths(cols - 4, [
+        ("id",     16, 3),   # task_id (icon rendered in the 2-col left gutter)
+        ("status", 11, 0),   # [running] / [scheduled] / …
+        ("meta",    8, 1),   # type·tier
+        ("worker", 12, 2),   # worker_id / worker_type
+        ("ts",      5, 0),   # HH:MM
+        ("detail", 10, 4),   # progress / reason / retry / deps — elastic
+    ])
+    x_id     = 2
+    x_status = x_id + 2 + w["id"] + 1
+    x_meta   = x_status + w["status"] + 1
+    x_worker = x_meta + w["meta"] + 1
+    x_ts     = x_worker + w["worker"] + 1
+    x_detail = x_ts + w["ts"] + 1
 
-    col_id = 2
-    col_status = 20
-    col_worker = 36
-    col_ts = 62
-    col_extra = 70
+    # Display model includes phase headers; selection maps to task entries only.
+    disp = rows_model
+    total_disp = len(disp)
+    task_disp_idx = [i for i, e in enumerate(disp) if e["kind"] == "task"]
+    sel_disp = task_disp_idx[ui.sel] if (ui and task_disp_idx and ui.sel < len(task_disp_idx)) else -1
 
-    for status in STATUS_ORDER:
-        if row >= rows - 2:
+    body_avail = max(1, rows - 1 - tasks_top)
+    if ui:
+        # Scroll-follow on the selected task's display row (reserve 1 indicator line).
+        view = max(1, body_avail - 1)
+        if sel_disp >= 0:
+            if sel_disp < ui.scroll:
+                ui.scroll = sel_disp
+            elif sel_disp >= ui.scroll + view:
+                ui.scroll = sel_disp - view + 1
+        ui.scroll = max(0, min(ui.scroll, max(0, total_disp - 1)))
+    start = ui.scroll if ui else 0
+    top_ind = 1 if start > 0 else 0
+    win = max(1, body_avail - top_ind)
+    end = min(total_disp, start + win)
+    bot_ind = 1 if end < total_disp else 0
+    if bot_ind:
+        win = max(1, win - 1)
+        end = min(total_disp, start + win)
+
+    if top_ind and row < rows - 1:
+        _addstr(stdscr, row, 2, f"▲ +{start} more", curses.color_pair(C_DIM) | curses.A_DIM)
+        row += 1
+
+    for i in range(start, end):
+        if row >= rows - 1:
             break
-        tasks = by_status.get(status, [])
-        if not tasks:
-            continue
+        e = disp[i]
 
-        color = curses.color_pair(STATUS_COLOR.get(status, C_DIM))
-
-        if status == TaskStatus.COMPLETED:
-            _addstr(stdscr, row, col_id,
-                    f"✓ completed ({len(tasks)})",
-                    curses.color_pair(C_DONE) | curses.A_DIM)
+        if e["kind"] == "workflow":
+            badge = ("● DONE" if e["status"] == "done"
+                     else "● LIVE" if e["status"] == "active" else "● ?")
+            wf_label = e["workflow_id"] if e["workflow_id"] != UNKNOWN_WORKFLOW else "(orphan events)"
+            phase = e["current_phase"] or "—"
+            label = f"▼ {wf_label}  [{phase}]  {e['done']}/{e['total']}  {badge}"
+            _addstr(stdscr, row, 0, _trunc(label, cols - 1), curses.color_pair(C_HEADER) | curses.A_BOLD)
             row += 1
             continue
 
-        for t in tasks:
-            if row >= rows - 2:
-                break
-            icon = STATUS_ICON.get(status, "?")
-            tid = _trunc(t.task_id, 16)
-            stat_label = f"[{status.value}]"
-            worker = _trunc(t.worker_id or "—", 24)
-            ts = _short_ts(t.claimed_at if status == TaskStatus.RUNNING else t.last_event_at)
-
-            extras = []
-            if t.attempts > 1:
-                extras.append(f"attempt {t.attempts}/{t.max_attempts}")
-            if status == TaskStatus.RUNNING:
-                cp = _last_checkpoint(t.task_id)
-                if cp:
-                    extras.append(f"→ {cp}")
-            if status == TaskStatus.DLQ and t.last_failure_reason:
-                extras.append(_trunc(t.last_failure_reason, 20))
-            if status == TaskStatus.SCHEDULED and t.next_retry_at:
-                extras.append(f"retry@{_short_ts(t.next_retry_at)}")
-            extra_str = "  " + "  ".join(extras) if extras else ""
-
-            _addstr(stdscr, row, col_id,     f"{icon} {tid}", color)
-            _addstr(stdscr, row, col_status, stat_label, color)
-            _addstr(stdscr, row, col_worker, worker, curses.color_pair(C_DIM))
-            _addstr(stdscr, row, col_ts,     ts, curses.color_pair(C_DIM))
-            if extra_str:
-                _addstr(stdscr, row, col_extra, extra_str, color | curses.A_DIM)
+        if e["kind"] == "header":
+            label = f"── {e['phase']} ──  {e['done']}/{e['total']}"
+            _addstr(stdscr, row, 1, _trunc(label, cols - 2), curses.color_pair(C_HEADER) | curses.A_BOLD)
             row += 1
+            continue
+
+        t = e["task"]
+        status = e["status"]
+        sel = curses.A_REVERSE if i == sel_disp else 0
+        icon = STATUS_ICON.get(status, "?")
+        base = STATUS_COLOR.get(status, C_DIM)
+        detail = ""
+        detail_color = base
+
+        if status == TaskStatus.RUNNING:
+            el = _elapsed_s(t.claimed_at)
+            lvl = _stale_level(el, getattr(t, "tier", None))
+            prog = getattr(t, "last_progress", None)
+            detail = _fmt_dur(el) + (f"  → {prog}" if prog else "")
+            if lvl:
+                detail = "⚠ " + detail
+                detail_color = C_ALERT if lvl == 2 else C_PENDING
+        elif status == TaskStatus.SCHEDULED and t.next_retry_at:
+            detail = f"retry@{_short_ts(t.next_retry_at)}"
+        elif status in (TaskStatus.FAILED, TaskStatus.DLQ) and t.last_failure_reason:
+            detail = t.last_failure_reason
+        elif status in (TaskStatus.PENDING, TaskStatus.READY):
+            dstate, unmet = e["dep"]
+            if dstate == "blocked":
+                icon = "⛓"
+                detail = "waiting: " + ", ".join(unmet)
+                detail_color = C_PENDING
+            else:
+                detail = "ready"
+        if t.attempts > 1 and status != TaskStatus.RUNNING:
+            detail = f"×{t.attempts}/{t.max_attempts}  {detail}".rstrip()
+
+        color = curses.color_pair(base) | sel
+        dim = curses.color_pair(C_DIM) | sel
+        meta = "·".join(p for p in (getattr(t, "task_type", None), getattr(t, "tier", None)) if p)
+        worker = getattr(t, "worker_id", None) or getattr(t, "worker_type", None) or "—"
+        ts = _short_ts(t.claimed_at if status == TaskStatus.RUNNING else t.last_event_at)
+
+        _addstr(stdscr, row, x_id,     f"{icon} {_trunc(t.task_id, w['id'])}", color)
+        _addstr(stdscr, row, x_status, _trunc(f"[{status.value}]", w["status"]), color)
+        _addstr(stdscr, row, x_meta,   _trunc(meta or "—", w["meta"]), dim)
+        _addstr(stdscr, row, x_worker, _trunc(worker, w["worker"]), dim)
+        _addstr(stdscr, row, x_ts,     _trunc(ts, w["ts"]), dim)
+        if detail:
+            _addstr(stdscr, row, x_detail, _trunc(detail, max(1, cols - x_detail - 1)),
+                    curses.color_pair(detail_color) | sel | curses.A_DIM)
+        row += 1
+
+    if bot_ind and row < rows - 1:
+        _addstr(stdscr, row, 2, f"▼ +{total_disp - end} more", curses.color_pair(C_DIM) | curses.A_DIM)
+        row += 1
 
     # ---- Footer ----
-    if row < rows - 1:
-        _hline(stdscr, rows - 1, 0, "─", cols - 1)
-        now = datetime.now().strftime("%H:%M:%S")
-        footer = f" q=quit  {now} "
-        _addstr(stdscr, rows - 1, 0, footer, curses.color_pair(C_DIM) | curses.A_DIM)
+    _hline(stdscr, rows - 1, 0, "─", cols - 1)
+    now = datetime.now().strftime("%H:%M:%S")
+    pos = f"{ui.sel + 1}/{ntasks}" if (ui and ntasks) else f"{ntasks}"
+    footer = f" ↑↓ select · Enter detail · e events · q quit    {pos}    {now} "
+    _addstr(stdscr, rows - 1, 0, _trunc(footer, cols - 1), curses.color_pair(C_DIM) | curses.A_DIM)
 
     stdscr.refresh()
 
@@ -1033,23 +1774,63 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
 
     last_stat: tuple[float, int] = (-1.0, -1)
     state: OrchState | None = None
-    error: str | None = None
+    error: LoadError | None = None
     workflows: dict[str, dict] = {}
+    ui = UIState()
 
     tick_ms = 100  # key responsiveness
     ticks_per_poll = max(1, int(interval * 1000 / tick_ms))
+    redraw_ticks = max(1, int(1000 / tick_ms))  # time-based redraw (~1s) for live durations
     tick_count = ticks_per_poll  # force immediate load on first frame
+    redraw_count = 0
+    dirty = True                 # render needed (data or UI changed)
 
     while True:
-        # Key handling
+        # --- Key handling ---
         try:
             key = stdscr.getch()
         except curses.error:
             key = -1
 
-        if key in (ord("q"), ord("Q"), 27):  # q or ESC
+        if key in (ord("q"), ord("Q")):
             return
+        elif key == 27:  # ESC: close an open panel, else quit
+            if ui.detail or ui.events:
+                ui.detail = False
+                ui.events = False
+                dirty = True
+            else:
+                return
+        elif key in (ord("e"), ord("E")):  # toggle recent-events feed
+            ui.events = not ui.events
+            ui.detail = False
+            dirty = True
+        elif key in (curses.KEY_DOWN, ord("j")):
+            ui.sel += 1
+            dirty = True
+        elif key in (curses.KEY_UP, ord("k")):
+            ui.sel = max(0, ui.sel - 1)
+            dirty = True
+        elif key == curses.KEY_NPAGE:  # PgDn
+            ui.sel += 10
+            dirty = True
+        elif key == curses.KEY_PPAGE:  # PgUp
+            ui.sel = max(0, ui.sel - 10)
+            dirty = True
+        elif key in (curses.KEY_HOME, ord("g")):
+            ui.sel = 0
+            dirty = True
+        elif key in (curses.KEY_END, ord("G")):
+            ui.sel = 1 << 30  # clamped to last by the renderer
+            dirty = True
+        elif key in (10, 13, curses.KEY_ENTER):  # Enter: toggle detail
+            ui.detail = not ui.detail
+            ui.events = False
+            dirty = True
+        elif key == curses.KEY_RESIZE:
+            dirty = True
 
+        # --- Polling: reload state when the log changes ---
         tick_count += 1
         if tick_count >= ticks_per_poll:
             tick_count = 0
@@ -1058,7 +1839,17 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
                 last_stat = current_stat
                 state, error = _load_state(project_dir)
                 workflows, _ = _collect_workflow_index(project_dir)
-                render_curses(stdscr, state, error, log_path, workflows, project_dir)
+                dirty = True
+
+        # --- Time-based redraw: keep elapsed/stale and the clock advancing ---
+        redraw_count += 1
+        if redraw_count >= redraw_ticks:
+            redraw_count = 0
+            dirty = True
+
+        if dirty:
+            render_curses(stdscr, state, error, log_path, workflows, project_dir, ui)
+            dirty = False
 
         time.sleep(tick_ms / 1000)
 

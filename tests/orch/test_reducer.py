@@ -199,6 +199,27 @@ class TestIllegalTransitions:
             apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="t_001",
                                     data={"phase": "dev", "worker_type": "impl", "worker_id": "w2"}))
 
+    def test_illegal_transition_carries_event_context(self):
+        """apply_event enriches IllegalTransition with the offending event's
+        locus (seq, task_id, event_type, workflow_id, phase) so consumers can
+        pinpoint the fault without re-scanning the log."""
+        state = OrchState()  # no active phase → task stays pending
+        apply_event(state, _evt(EventType.TASK_CREATED, task_id="dev_tc_001",
+                                data=_task_data()))
+        claim = _evt(EventType.TASK_CLAIMED, task_id="dev_tc_001", seq=42,
+                     data={"phase": "dev", "worker_type": "impl",
+                           "worker_id": "w", "workflow_id": "wf-xyz"})
+        with pytest.raises(IllegalTransition) as exc_info:
+            apply_event(state, claim)
+        exc = exc_info.value
+        assert exc.seq == 42
+        assert exc.task_id == "dev_tc_001"
+        assert exc.event_type == EventType.TASK_CLAIMED.value
+        assert exc.workflow_id == "wf-xyz"
+        assert exc.phase == "dev"
+        # Message is preserved for legacy string consumers.
+        assert "expected ready" in str(exc)
+
     def test_completed_task_failed_is_noop(self):
         """Scenario 3.7 (C2 fix): task_failed on COMPLETED task is a no-op, not an error.
         This prevents log corruption when on_subagent_stop hook races with Step 6.4."""

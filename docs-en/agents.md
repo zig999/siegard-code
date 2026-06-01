@@ -1,6 +1,6 @@
 # Agentes do Sistema
 
-> Referência de todos os agentes em `dist2/.claude/agents/`.
+> Referência de todos os agentes em `dist/.claude/agents/`.
 > Para cada agente: papel, tools, skills, o que spawna, o que emite, envelope de retorno.
 
 ---
