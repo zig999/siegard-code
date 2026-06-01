@@ -146,7 +146,7 @@ def _detect_premature_claims(project_dir: Path) -> list[dict]:
 # Recovery
 # ---------------------------------------------------------------------------
 
-def _recover(incident: dict, operator: str, dry_run: bool) -> None:
+def _recover(incident: dict, operator: str, dry_run: bool, yes: bool = False) -> None:
     task_id = incident["task_id"]
     bad_seq = incident["bad_claim_seq"]
     failed_seq = incident["failed_seq"]
@@ -165,7 +165,7 @@ def _recover(incident: dict, operator: str, dry_run: bool) -> None:
         print("\n  [dry-run] No changes made.")
         return
 
-    confirm = input(f"\n  Truncate log from seq {bad_seq}? [yes/no]: ").strip().lower()
+    confirm = "yes" if yes else input(f"\n  Truncate log from seq {bad_seq}? [yes/no]: ").strip().lower()
     if confirm != "yes":
         print("  Aborted.")
         return
@@ -197,6 +197,8 @@ def _parse_args() -> argparse.Namespace:
                    help="Report without modifying the log")
     p.add_argument("--operator", default="operator",
                    help="Operator identity for log_recovered event")
+    p.add_argument("--yes", action="store_true",
+                   help="Non-interactive: confirm truncation without the input() prompt (task 11/A5-F5)")
     return p.parse_args()
 
 
@@ -240,7 +242,7 @@ def main() -> int:
     # Process first incident only (truncating from the earliest bad seq covers all)
     # Sort by bad_claim_seq ascending to truncate from the earliest point.
     incidents_sorted = sorted(incidents, key=lambda x: x["bad_claim_seq"])
-    _recover(incidents_sorted[0], operator=args.operator, dry_run=False)
+    _recover(incidents_sorted[0], operator=args.operator, dry_run=False, yes=args.yes)
 
     return 0
 

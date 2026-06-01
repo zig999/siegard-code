@@ -159,7 +159,7 @@ The review phase has a single operation mode (`full`). Per `principles.md` `ORCH
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
-  --event-type mode_declared \
+  --event-type operation_mode_declared \
   --data '{"phase":"review","mode":"full","rationale":"review phase has a single mode (full QA review); declared once per phase entry"}'
 ```
 

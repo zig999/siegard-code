@@ -187,7 +187,7 @@ def canonical_json(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 
 class EventType(str, Enum):
-    """Canonical event types. 28 total."""
+    """Canonical event types. 30 total."""
 
     # Task lifecycle (9)
     TASK_CREATED = "task_created"
@@ -241,6 +241,11 @@ class EventType(str, Enum):
     # manifest was consumed — a logged event (not a session side-file) so
     # consumed/orphan handoff state is derived from the log (P1/P12).
     HANDOFF_RECEIPT = "handoff_receipt"
+    # Review shared-suite-run flow (prod-hardening task 11): emitted by
+    # orchestrator-review around SHARED_SUITE_RUN. Previously undefined — the
+    # append.py calls would raise UnknownEventType at runtime (latent crash).
+    SUITE_RUN_STARTED = "suite_run_started"
+    SUITE_RUN_COMPLETED = "suite_run_completed"
 
     @classmethod
     def is_worker_emittable(cls, event_type: str) -> bool:
@@ -420,6 +425,8 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.HUMAN_RESPONSE.value:            {"escalation_seq", "action", "operator"},
     EventType.LOG_RECOVERED.value:             {"seq_truncated_from", "events_removed", "operator", "corrupt_file_path"},
     EventType.HANDOFF_RECEIPT.value:           {"manifest_id", "manifest_sha256", "consumed_by"},
+    EventType.SUITE_RUN_STARTED.value:         {"phase", "suite_run_id"},
+    EventType.SUITE_RUN_COMPLETED.value:       {"phase", "suite_run_id"},
 }
 
 

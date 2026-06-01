@@ -14,6 +14,7 @@ Usage:
 
 Exit codes: 0 = clean, 1 = errors (or warnings in --strict mode).
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -76,6 +77,28 @@ def _scan_py_event_types(directories: list[Path]) -> dict[str, list[str]]:
     return usage
 
 
+def _check_exit_criteria_scripts(skills_dir: Path) -> list[str]:
+    """Structural check (task 11, A5-F6): every phase-*-rules/exit-criteria.json
+    parses as JSON and each criterion's `script` exists on disk. Returns errors."""
+    errs: list[str] = []
+    if not skills_dir.exists():
+        return errs
+    for ec in sorted(skills_dir.glob("phase-*-rules/exit-criteria.json")):
+        try:
+            data = json.loads(ec.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            errs.append(f"{ec.parent.name}/exit-criteria.json: invalid JSON ({exc})")
+            continue
+        skill_dir = ec.parent
+        for crit in data.get("criteria", []):
+            script = crit.get("script")
+            if not script:
+                errs.append(f"{ec.parent.name}: criterion {crit.get('id')!r} has no 'script'")
+            elif not (skill_dir / script).exists():
+                errs.append(f"{ec.parent.name}: criterion {crit.get('id')!r} script not found: {script}")
+    return errs
+
+
 def main(strict: bool = False) -> int:
     errors: list[str] = []
     warnings: list[str] = []
@@ -123,6 +146,11 @@ def main(strict: bool = False) -> int:
             warnings.append(
                 f"'{et}' string in .py ({loc}) not in orch_core.EventType"
             )
+
+    # Check 5: exit-criteria.json structural integrity (task 11, A5-F6)
+    ec_errors = _check_exit_criteria_scripts(_SKILLS_DIR)
+    print(f"exit-criteria.json structural: {len(ec_errors)} error(s)")
+    errors.extend(ec_errors)
 
     # Report
     print()
