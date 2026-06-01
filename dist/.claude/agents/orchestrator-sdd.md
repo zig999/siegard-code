@@ -984,14 +984,23 @@ Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "DLQ blocks e
 **IF `effective_mode == "standard"`** (standard invocation OR improve-full invocation):
 
 ```bash
-python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
+# 1. Spec-side criteria first — the manifest must only be generated over VALID specs.
 python3 .claude/skills/phase-sdd-rules/scripts/check_all_domains_validated.py
 python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py
+
+# 2. Generate the handoff manifest (deterministic; reached only when both checks above are ok).
+python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
+
+# 3. Validate the just-generated manifest (13 rules + sha256).
+python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
 ```
 
 Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<ISO-8601>", "evidence": {...}}` and exits 0 when `status == "ok"` or 1 when `status == "blocked"`.
 
-All three must return `"status": "ok"` (and exit code 0). If so, emit:
+**Sequencing (mandatory):**
+- If `check_all_domains_validated.py` or `check_error_codes_synced.py` returns `blocked` → do NOT generate; fall through to the "any criterion not met" handling below (Validation Repair Loop / E08).
+- If `generate_handoff_manifest.py` returns `blocked` (e.g., a compliance `block_handoff` or `handoff_allowed:false` signal) → treat as criterion-not-met → same fall-through (no new escalation code).
+- Only when all four steps return `"status": "ok"` (exit code 0), emit:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -1015,16 +1024,22 @@ Set `criteria_met = ["handoff_manifest_approved", "all_domains_validated", "erro
 **IF `effective_mode == "targeted"`** (improve-targeted invocation):
 
 ```bash
-python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
+# 1. Reviewer + error-code criteria first.
 python3 .claude/skills/phase-sdd-rules/scripts/check_all_improve_reviewers_completed.py
 python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py
+
+# 2. Generate the handoff manifest (reached only when both checks above are ok).
+python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
+
+# 3. Validate the just-generated manifest (13 rules + sha256).
+python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
 ```
 
 Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<ISO-8601>", "evidence": {...}}` and exits 0 when `status == "ok"` or 1 when `status == "blocked"`.
 
 `check_all_domains_validated.py` is NOT run in targeted mode — replaced by `check_all_improve_reviewers_completed.py`, which verifies that every `sdd_improve_*_spec-reviewer` task reached `completed`.
 
-If all targeted criteria met (all three scripts return `status: ok`), emit:
+Sequencing is identical to standard mode: spec-side criteria → generate manifest → manifest gate; any `blocked` falls through to the "criterion not met" handling. Only when all four steps return `status: ok`, emit:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \

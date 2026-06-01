@@ -211,3 +211,49 @@ ORCH_PROJECT_DIR=<path> python3 .claude/skills/phase-sdd-rules/scripts/check_str
 Structural sections that trigger `domain_worker_required: true`:
 `endpoints`, `schemas`, `error_codes`, `component_props`, `state_contracts`,
 `data_models`, `auth_rules`, `event_types`, `api_contracts`
+
+---
+
+## scripts/generate_handoff_manifest.py
+
+Utility (not an exit criterion): deterministically produces `SPECS_DIR/handoff-manifest.yaml`
+from the validated specs on disk plus `triage.json`. Closes the gap where no pipeline worker
+produced the manifest the SDD exit gate requires (the phase previously dead-ended at E08).
+
+Invoked by `orchestrator-sdd.md` in Step 6 **after** `check_all_domains_validated.py` (or
+`check_all_improve_reviewers_completed.py` in targeted mode) and `check_error_codes_synced.py`
+pass, and **before** `check_handoff_manifest_approved.py`. Deterministic (no LLM): sha256 must be
+exact and the output must round-trip through `lib/minimal_yaml.py`, which `validate.py` uses.
+
+### Usage
+
+```bash
+ORCH_PROJECT_DIR=<path> SPECS_DIR=<rel> \
+  python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py \
+  --workflow-id <wid>
+```
+
+### Behavior
+
+- Enumerates domains via `glob domains/*/openapi.yaml`; builds `domains[]`, `backend_package[]`
+  (openapi + back-spec per domain are required by FLOW-037; `error-codes` / `conventions` added
+  when present), and — only if `front/front.md` exists — `frontend_artifacts` + `frontend_package[]`.
+  Omitting the frontend blocks lets the Dev orchestrator infer `stack=be` (back-only handoff).
+- `handoff.delivered_by` is the const `u-spec-orchestrator` (required by FLOW-030); `handoff.type`
+  is derived from triage (`new_domain` / `major_evolution` / `fast_track`). `change_summary` is
+  emitted only for evolution handoffs.
+- sha256 of every package file is computed at generation time; paths are stored relative to
+  `ORCH_PROJECT_DIR` so `validate.py` (`--specs-dir = ORCH_PROJECT_DIR`) resolves them.
+
+### Output (exit 0 when status=ok, exit 1 when status=blocked)
+
+```json
+{"status": "ok", "check": "handoff_manifest_generated",
+ "manifest_path": "specs/handoff-manifest.yaml", "manifest_id": "HANDOFF-20260601-120000",
+ "domains": ["auth"], "stack_implied": "be", "reason": "triage_loaded"}
+```
+
+Fail-closed: no domains, a missing required backend artifact, a `handoff_allowed: false` in
+`_validation/*-validation-result.yaml`, or a `block_handoff` / `non_compliant` in
+`_validation/*-compliance.yaml` yields `status: blocked` **without** writing the manifest. The
+orchestrator treats a blocked generation as criterion-not-met (Validation Repair Loop / E08).

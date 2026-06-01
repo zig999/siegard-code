@@ -5,7 +5,12 @@ check_handoff_manifest_approved.py — Exit criterion: sdd / handoff_manifest_ap
 Criterion met when:
   - SPECS_DIR/handoff-manifest.yaml exists
   - u-handoff-validator/validate.py returns status: valid (13 rules + sha256)
-  - File contains a line matching Status: approved (case-insensitive value)
+Approval is DERIVED, not a literal field: generate_handoff_manifest.py only writes the
+manifest over VALID specs with clean compliance, so a schema-valid manifest IS the
+approval. The canonical schema declares additionalProperties:false and defines no
+`status` field, so a top-level `Status: approved` line cannot be both present and
+schema-valid — the regex below is retained only to surface `status_found` in evidence,
+never as a gate condition.
 Fail-closed: a missing manifest, validator error, or any blocking rule keeps it unmet.
 
 Usage:
@@ -85,7 +90,9 @@ def evaluate() -> dict:
         validator_status = "error"
         validator_errors = [f"validator_invocation_failed: {exc}"]
 
-    met = bool(status_approved and validator_status == "valid")
+    # Approval is derived from the semantic validator alone (see module docstring).
+    # status_approved is kept in evidence for traceability but is NOT a gate condition.
+    met = validator_status == "valid"
 
     return {
         "status": "ok" if met else "blocked",

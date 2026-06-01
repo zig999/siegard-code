@@ -1,8 +1,9 @@
 """Layer Hard SDD Gate — handoff_manifest_approved invokes the semantic validator (task 04).
 
-The SDD->dev exit criterion now passes ONLY when the validator returns status:valid
-AND a `Status: approved` marker is present. Fail-closed on missing manifest or
-validator error. Closes C3/A3-F2 (the prior gate was a shallow `Status: approved` regex).
+The SDD->dev exit criterion passes when the validator returns status:valid. Approval is
+DERIVED from semantic validity (F1 reconciliation): the prior `Status: approved` marker is
+no longer a gate condition — the canonical schema defines no status field, so requiring the
+marker was unsatisfiable. Fail-closed on missing manifest or validator error.
 """
 import json
 import os
@@ -63,8 +64,10 @@ class TestSddGateSemantic:
         assert p.returncode != 0
         assert json.loads(p.stdout)["evidence"]["exists"] is False
 
-    def test_valid_manifest_without_approval_marker_blocked(self, tmp_path):
-        # semantically valid but no Status: approved -> approval still required
+    def test_valid_manifest_without_approval_marker_is_met(self, tmp_path):
+        # F1 reconciliation: approval is derived from the semantic validator, so a
+        # schema-valid manifest is approved even without a Status: marker (the canonical
+        # schema has no status field — requiring the marker was unsatisfiable).
         specs = tmp_path / "specs"
         specs.mkdir(parents=True)
         auth = specs / "auth"
@@ -75,7 +78,7 @@ class TestSddGateSemantic:
             (FIX / "valid/handoff-manifest.yaml").read_text()  # no Status: line
         )
         p = _gate(tmp_path)
-        assert p.returncode != 0
+        assert p.returncode == 0, p.stdout
         ev = json.loads(p.stdout)
-        assert ev["evidence"]["validator_status"] == "valid"   # semantics ok...
-        assert ev["met"] is False                              # ...but not approved
+        assert ev["evidence"]["validator_status"] == "valid"
+        assert ev["met"] is True

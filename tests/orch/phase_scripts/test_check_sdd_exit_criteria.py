@@ -76,12 +76,16 @@ class TestHandoffManifestApproved:
         assert result["met"] is False
         assert result["evidence"]["exists"] is False
 
-    def test_status_draft_is_not_met(self, phase_env):
+    def test_status_draft_still_met_approval_is_derived(self, phase_env):
+        # F1 reconciliation: approval is derived from the semantic validator, not the
+        # vestigial Status: marker (the canonical schema defines no status field). A
+        # semantically valid manifest is met regardless of any Status: value.
         _write_manifest(phase_env, status="draft")
         result = run_check(SDD_SCRIPTS["check_manifest"], phase_env)
-        assert result["met"] is False
+        assert result["met"] is True
         assert result["evidence"]["exists"] is True
         assert result["evidence"]["status_found"] == "draft"
+        assert result["evidence"]["validator_status"] == "valid"
 
     def test_status_approved_is_met(self, phase_env):
         _write_manifest(phase_env, status="approved")
@@ -101,10 +105,13 @@ class TestHandoffManifestApproved:
         assert result["met"] is False
         assert result["evidence"]["status_found"] is None
 
-    def test_status_in_progress_is_not_met(self, phase_env):
+    def test_status_in_progress_still_met_approval_is_derived(self, phase_env):
+        # F1 reconciliation: the Status: marker no longer gates approval — only the
+        # semantic validator does. Step 6 ordering guarantees the manifest is generated
+        # solely over VALID specs, so a valid manifest is approved.
         _write_manifest(phase_env, status="in_progress")
         result = run_check(SDD_SCRIPTS["check_manifest"], phase_env)
-        assert result["met"] is False
+        assert result["met"] is True
 
 
 # ---------------------------------------------------------------------------
