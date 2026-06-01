@@ -773,10 +773,15 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 #### 5.1 — Select batch
 
-From ready queue (sorted by tier priority, then creation seq), select up to the concurrency ceiling for this `effective_mode`. Ceilings are declared authoritatively in `dist/.claude/skills/phase-sdd-rules/SKILL.md` § "Concurrency ceiling (RESOURCE_LIMITS)":
+From the ready queue (sorted by tier priority, then creation seq), select up to the batch ceiling **returned by the state machine** for this `effective_mode` (A6-F2 — the cap is Python-owned, not a prose literal):
 
-- **`effective_mode == "standard"`:** up to **2 tasks** per iteration
-- **`effective_mode == "targeted"`:** up to **1 task** per iteration
+```bash
+MAX_CONCURRENT=$(python3 .claude/lib/sm_runner.py --machine sdd --state select_batch \
+  --inputs "{\"effective_mode\": \"$effective_mode\"}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['max_concurrent'])")
+```
+
+Select up to `$MAX_CONCURRENT` tasks (the SM returns 2 for `standard`, 1 for `targeted`).
 
 > Reason for targeted limit: in targeted mode, multiple parallel spec domains are dispatched with no dependency between them. Running 2+ workers simultaneously increases the probability of simultaneous parent-context overflow, which causes both workers to stop at the same time — the dominant failure pattern. Sequential dispatch at cost of throughput is acceptable because targeted pipelines are short (2 tasks per domain at most).
 

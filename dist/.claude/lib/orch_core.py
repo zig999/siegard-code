@@ -2640,6 +2640,10 @@ TEST_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
         lambda i: i.get("task_type") and i.get("stack") in ("be", "fe", "fullstack"),
     ):
         Action("select_worker", {}),
+
+    # A6-F2 (task 09): batch ceiling in Python (mirror REVIEW R9).
+    ("select_batch", lambda i: True):
+        Action("set_max_concurrent", {"max_concurrent": 2}),
 }
 
 
@@ -2850,6 +2854,11 @@ DEV_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
         Action("select_worker", {}),
     ("dispatch_impl_task", lambda i: True):
         Action("error", {"reason": "no_resolvable_stack"}),
+
+    # A6-F2 (task 09): per-phase batch ceiling in Python (mirror REVIEW R9) — the
+    # concurrency cap is returned by the SM, not a prose literal in the prompt.
+    ("select_batch", lambda i: True):
+        Action("set_max_concurrent", {"max_concurrent": 2}),
 }
 
 
@@ -3079,6 +3088,10 @@ SDD_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
         Action("dispatch_repair_pipeline", {}),  # cycle_n + domains populated by wrapper
     ("exit_criteria_failed", lambda i: True):
         Action("escalate_e08", {}),  # reason populated by wrapper
+
+    # A6-F2 (task 09): batch ceiling — standard=2 / targeted=1 (populated by wrapper).
+    ("select_batch", lambda i: True):
+        Action("set_max_concurrent", {}),
 }
 
 
@@ -3140,6 +3153,12 @@ class SddStateMachine(StateMachine):
                     "repair_cycles_attempted": cycles,
                     "reason": reason,
                 },
+            )
+        if state == "select_batch" and action.name == "set_max_concurrent":
+            mode = inputs.get("effective_mode")
+            return Action(
+                "set_max_concurrent",
+                {"max_concurrent": 1 if mode == "targeted" else 2},
             )
         return action
 

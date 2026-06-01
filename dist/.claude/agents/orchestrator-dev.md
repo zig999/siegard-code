@@ -714,7 +714,14 @@ After all syntheses, re-read state.
 
 #### 5.1 — Select batch
 
-From ready queue (sorted by tier priority then creation seq), select up to **2 tasks**.
+From the ready queue (sorted by tier priority then creation seq), select up to the batch ceiling **returned by the state machine** (A6-F2 — the cap is Python-owned, not a prose literal):
+
+```bash
+MAX_CONCURRENT=$(python3 .claude/lib/sm_runner.py --machine dev --state select_batch --inputs '{}' \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['max_concurrent'])")
+```
+
+Select up to `$MAX_CONCURRENT` tasks.
 
 Look up worker (D9 — state machine resolves task_stack vs project_stack fallback, then `select_worker.py` resolves the actual subagent name):
 
