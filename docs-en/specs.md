@@ -80,19 +80,27 @@ Para cada domain identificado no SPECS_DIR:
      → INVALID(retryable): volta ao spec-back (max 2 tentativas)
      → INVALID(non-retryable): escalation E05
 
-  5. spec-front
-     Escreve feature.spec.md, component.spec.md, flows/
+  (Passos 1-4 são o "back leg", criados POR DOMAIN.)
+
+Após o back leg de TODOS os domains — e somente se `triage.ui_task == true` — roda um
+ÚNICO "front leg" por requisito (o Front Spec Agent é ativado uma vez e compõe todos os domains):
+
+  5. spec-front (uma vez; task_id sdd_front; deps = spec-validator de todos os domains)
+     Escreve front.md, feature.spec.md, component.spec.md, flows/
      Artefatos: todos os arquivos frontend
 
-  6. spec-validator-front
-     Cross-valida spec principal + front spec
-     → VALID: domain completo
+  6. spec-validator (front pass) (uma vez; task_id sdd_front_spec-validator; deps = sdd_front)
+     Cross-valida specs principais + front spec
+     → VALID: front leg completo
      → INVALID: volta ao spec-front
 
-Após todos os domains:
+Se `ui_task == false` (back-only): o front leg é pulado (task_skipped) e nenhum artefato frontend é produzido.
+
+Após o back leg (e o front leg, se houve):
 
   7. spec-compliance (cross-domain)
      Verifica handoff-manifest.yaml approval
+     deps: sdd_front_spec-validator se houve front leg, senão todos os spec-validator de back
      Sincroniza error codes com error-codes.md
      Artefato: atualiza error-codes.md se necessário
 ```

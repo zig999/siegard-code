@@ -77,16 +77,17 @@ Step 7 → Avalia return → se phase_complete: volta ao Step 3 (loop)
 | **Standard** | Primeiro run ou phase reentrada normal | Scan completo de domains, gate E99, pipeline completo |
 | **Fast-track (improve)** | `improve-scope.json` existe em `.orch/` | Patches direcionados, sem gate E99, pipeline truncado por `mode_hint` |
 
-**Pipeline por domain (modo standard):**
+**Pipeline (modo standard):**
 
 ```
-spec-writer → spec-reviewer → spec-back → spec-validator
-                                              ↓
-                           spec-front → spec-validator-front
-                                              ↓
-                                   (todos os domains)
-                                              ↓
-                                    spec-compliance
+back leg (POR DOMAIN):
+  spec-writer → spec-reviewer → spec-back → spec-validator
+
+front leg (UMA VEZ por requisito, só se triage.ui_task == true):
+  spec-front (deps: spec-validator de todos os domains) → spec-validator (front pass)
+
+cross-domain:
+  spec-compliance (deps: front-pass validator se houve front leg, senão todos os back validators)
 ```
 
 **Workers spawned:**

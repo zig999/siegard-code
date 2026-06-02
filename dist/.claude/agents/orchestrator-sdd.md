@@ -57,36 +57,47 @@ You return exactly one JSON envelope when done (see §Return contract).
 
 ## Spec pipeline order
 
-For each domain, tasks are created and dispatched in this strict order.
-Each task depends on the previous task in the chain for its domain.
+The back leg runs **per domain**; the front leg runs **once per requirement** across all domains,
+and only when the requirement involves UI (`triage.ui_task == true`).
+
+Per domain (back leg) — each task depends on the previous one for its domain:
 
 ```
 spec-triage (always first, synchronous)
     ↓
-spec-writer → spec-reviewer → spec-back → spec-validator → spec-front → spec-validator
+spec-writer → spec-reviewer → spec-back → spec-validator
 ```
 
-After all domains complete the full pipeline, a single cross-domain task is dispatched:
+After **all** domains finish the back leg, IF `triage.ui_task == true`, a **single** cross-requirement
+front leg runs (the Front Spec Agent is activated once per requirement and composes all domains):
 
 ```
-spec-compliance  (depends on all per-domain spec-validator tasks)
+spec-front (deps: all per-domain spec-validator) → spec-validator (front pass)
 ```
 
-Task IDs follow the pattern: `sdd_{domain}_{step}` (e.g. `sdd_auth_spec-writer`).
-For the second `spec-validator` pass (after `spec-front`), use step name `spec-validator-front`.
+Finally, a single cross-domain compliance task:
+
+```
+spec-compliance
+  deps: sdd_front_spec-validator   when the front leg ran (ui_task == true)
+        all per-domain spec-validator tasks   otherwise (back-only)
+```
+
+Task IDs: per-domain back tasks use `sdd_{domain}_{step}` (e.g. `sdd_auth_spec-writer`). The front
+leg is **global**, not per-domain: `sdd_front` and `sdd_front_spec-validator`.
 
 Pipeline task types and their step identifiers:
 
-| Step | task.type | task_id pattern |
-|------|-----------|-----------------|
-| 0 (triage) | `spec-triage` | `sdd_triage` |
-| 1 | `spec-writer` | `sdd_{domain}_spec-writer` |
-| 2 | `spec-reviewer` | `sdd_{domain}_spec-reviewer` |
-| 3 | `spec-back` | `sdd_{domain}_spec-back` |
-| 4 | `spec-validator` | `sdd_{domain}_spec-validator` |
-| 5 | `spec-front` | `sdd_{domain}_spec-front` |
-| 6 | `spec-validator` (front pass) | `sdd_{domain}_spec-validator-front` |
-| 7 (cross-domain) | `spec-compliance` | `sdd_compliance` |
+| Step | Scope | task.type | task_id |
+|------|-------|-----------|---------|
+| 0 (triage) | once | `spec-triage` | `sdd_triage` |
+| 1 | per domain | `spec-writer` | `sdd_{domain}_spec-writer` |
+| 2 | per domain | `spec-reviewer` | `sdd_{domain}_spec-reviewer` |
+| 3 | per domain | `spec-back` | `sdd_{domain}_spec-back` |
+| 4 | per domain | `spec-validator` | `sdd_{domain}_spec-validator` |
+| 5 (front leg — only if `ui_task`) | once | `spec-front` | `sdd_front` |
+| 6 (front leg — only if `ui_task`) | once | `spec-validator` (front pass) | `sdd_front_spec-validator` |
+| 7 (cross-domain) | once | `spec-compliance` | `sdd_compliance` |
 
 ---
 
@@ -292,6 +303,7 @@ Extract and hold from `triage.json`:
 - `mode_hint`: `full | fast-track:minor | fast-track:patch`
 - `affected_specs`: list (used in Step 4 Targeted)
 - `greenfield`: bool
+- `ui_task`: bool — gates the front leg in Step 4 standard. If absent, default to `true` (conservative: run the front leg).
 - `requirement`: task description (passed to workers as context)
 
 **Triage routing (S4-S6, via state machine):**
@@ -443,9 +455,12 @@ Classify pipeline state for each domain:
 | Classification | Condition |
 |----------------|-----------|
 | `new` | No sdd tasks exist for this domain |
-| `in_progress` | Some sdd tasks exist but pipeline not complete |
-| `complete` | All 6 pipeline steps are in terminal status |
+| `in_progress` | Some sdd tasks exist but the back leg is not complete |
+| `complete` | All 4 back-leg steps (writer → reviewer → back → validator) are in terminal status |
 | `failed` | Any pipeline step is in `dlq` |
+
+> The front leg (`sdd_front`, `sdd_front_spec-validator`) and `sdd_compliance` are **global**, not
+> per-domain — they are tracked once for the whole requirement, not in this per-domain table.
 
 Build a pipeline state table for the progress panel:
 
@@ -487,6 +502,7 @@ Requirement: {triage.requirement}
 type:        {triage.type}
 mode_hint:   {triage.mode_hint}
 greenfield:  {triage.greenfield}
+ui_task:     {triage.ui_task}  →  front leg: {"will run" if ui_task else "SKIPPED (back-only)"}
 domains:     {triage.domains or "derived from existing specs"}
 affected_specs:
 {for each spec in triage.affected_specs}
@@ -530,7 +546,7 @@ Stop.
 
 For each domain from Step 2 with classification `new`:
 
-Emit the full pipeline as `task_created` events with enforced dependencies:
+Emit the **back leg** as `task_created` events with enforced dependencies (4 tasks per domain):
 
 ```bash
 # Step 1 — spec-writer (no deps)
@@ -560,31 +576,52 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --event-type task_created \
   --task-id sdd_{domain}_spec-validator \
   --data '{"phase":"sdd","deps":["sdd_{domain}_spec-back"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
-
-# Step 5 — spec-front
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type task_created \
-  --task-id sdd_{domain}_spec-front \
-  --data '{"phase":"sdd","deps":["sdd_{domain}_spec-validator"],"tier":"standard","type":"spec-front","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
-
-# Step 6 — spec-validator (front pass)
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type task_created \
-  --task-id sdd_{domain}_spec-validator-front \
-  --data '{"phase":"sdd","deps":["sdd_{domain}_spec-front"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
 ```
 
-After all per-domain tasks are created, create the cross-domain compliance task:
+> Do NOT create per-domain front tasks. The Front Spec Agent runs **once per requirement** and
+> composes all domains, so a single global front leg is created after every `new` domain's back leg.
+
+**Front leg — only if `triage.ui_task == true`.** After the back tasks for ALL `new` domains exist,
+emit ONE global `spec-front` task (deps = **every** domain's `spec-validator`, since it must read all
+approved domains) and ONE front-pass `spec-validator`:
 
 ```bash
-# deps: all spec-validator-front tasks across all domains
+# spec-front — once per requirement; spec = {specs_dir} (all domains)
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_front \
+  --data '{"phase":"sdd","deps":[<all sdd_{domain}_spec-validator task IDs>],"tier":"standard","type":"spec-front","spec":"{specs_dir}"}'
+
+# spec-validator (front pass) — once; depends on sdd_front
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_front_spec-validator \
+  --data '{"phase":"sdd","deps":["sdd_front"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}"}'
+```
+
+**Back-only — if `triage.ui_task == false`.** Do NOT create the front leg. Per DECLARATIVE_TRUNCATION,
+record the skip so the absence of front artifacts is auditable:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_skipped \
+  --task-id sdd_front_skip \
+  --data '{"phase":"sdd","reason":"ui_task_false_back_only","skipped_steps":["spec-front","spec-validator-front"]}'
+```
+
+Finally, create the cross-domain compliance task. Its deps depend on whether the front leg ran:
+
+```bash
+# deps: ["sdd_front_spec-validator"]             when ui_task == true
+#       [<all sdd_{domain}_spec-validator IDs>]   when ui_task == false (back-only)
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
   --task-id sdd_compliance \
-  --data '{"phase":"sdd","deps":[<all sdd_{domain}_spec-validator-front task IDs>],"tier":"standard","type":"spec-compliance","spec":"{specs_dir}"}'
+  --data '{"phase":"sdd","deps":[<see comment above>],"tier":"standard","type":"spec-compliance","spec":"{specs_dir}"}'
 ```
 
 Re-run Step 1 after all task_created events to refresh state.
