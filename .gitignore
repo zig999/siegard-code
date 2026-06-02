@@ -11,6 +11,9 @@ examples
 extras/
 skills-lock.json
 tests
+!/tests/
+__pycache__/
+.orch/
 ./docs
 # pytest coverage artifact
 .coverage
