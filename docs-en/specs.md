@@ -191,36 +191,62 @@ O validator usa o skill `u-spec-validation` para verificar:
 
 ## Handoff Manifest
 
-O `handoff-manifest.yaml` é o artefato que faz a bridge entre a fase SDD e a fase Dev. Deve ser aprovado como parte do exit criterion da fase SDD.
+O `handoff-manifest.yaml` é o artefato que faz a bridge entre a fase SDD e a fase Dev. É **gerado por `generate_handoff_manifest.py`** (rodado por `orchestrator-sdd` no Step 6, sobre specs já VALID) e validado pelo gate `handoff_manifest_approved`. A aprovação é **derivada**: não há campo `approval` — um manifesto que passa nas 13 regras do `u-handoff-validator` sobre specs VALID já é o handoff aprovado.
 
-**Schema:**
+**Schema** (fonte canônica: `u-shared-templates/handoff-manifest.schema.yaml`):
 ```yaml
-handoff_type: spec_first | fast_track | major_evolution | hotfix
-stack: be | fe | fullstack
-dev_impact: full | partial | no_action
-specs_dir: ./specs
-changed_files:
-  - path: specs/payment/openapi.yaml
-    domains: [payment]
-    impact: new | modified | deleted
-approval:
-  status: approved | draft | rejected
-  reviewer: <name>
-  approved_at: <ISO timestamp>
+handoff:
+  id: HANDOFF-<YYYYMMDD-HHMMSS>
+  delivered_by: u-spec-orchestrator        # const exigida por FLOW-030 (identificador de protocolo)
+  delivered_at: <YYYY-MM-DDTHH:MM:SSZ>
+  layer: semi-permanent
+  type: new_domain | major_evolution | fast_track | reverse_eng
+domains:                                   # >= 1
+  - name: <domain>
+    spec_version: <semver>
+    back_version: <semver>
+    openapi_version: <semver>
+    compliance_report: <path-ou-mensagem>
+frontend_artifacts:                        # omitido em handoffs back-only
+  front_md_version: <semver>
+  features: [{ name, path }]
+  flows: [{ name, path }]
+backend_package:                           # >= 1
+  - path: specs/domains/<domain>/openapi.yaml
+    artifact: conventions | error-codes | openapi | spec | back-spec
+    sha256: <64-hex>
+frontend_package:                          # presente só quando há specs front
+  - path: <path>
+    artifact: conventions | error-codes | openapi | spec | front | feature-spec | component-spec | flow
+    sha256: <64-hex>
+change_summary:                            # apenas em evolução — ausente em new_domain
+  type: patch | minor | major
+  cr: <CR-NN | none>
+  changed_files: [<path>]
+  dev_impact: no_action | reevaluate_task_contracts | stop_domain_task_contracts
 ```
 
-**Regras de validação** (13 regras do `u-handoff-validator`):
+> **Não existe campo `stack`.** O `orchestrator-dev` infere o stack via `parse_manifest_fields()`:
+> só `backend_package` → `be`; só `frontend_package` → `fe`; ambos → `fullstack`. Um handoff
+> back-only omite `frontend_artifacts`/`frontend_package` e resolve para `stack=be`.
+
+**Regras de validação** (13 regras, `u-handoff-validator/validate.py`; `(be)`/`(fe)` = roda conforme o caller):
 
 | Rule ID | Severity | O que verifica |
 |---------|----------|---------------|
-| FLOW-030 | blocking | `handoff_type` é valor válido |
-| FLOW-031 | blocking | `stack` é `be`, `fe`, ou `fullstack` |
-| FLOW-032 | blocking | `dev_impact` é valor válido |
-| HDF-010 | blocking | `specs_dir` existe e é acessível |
-| HDF-020 | blocking | `changed_files` não está vazio (exceto se `dev_impact=no_action`) |
-| HDF-021 | warning | Cada path em `changed_files` existe no filesystem |
-| HDF-030 | blocking | `approval.status` é `approved` para avançar |
-| HDF-040 | blocking | `approval.approved_at` é timestamp válido ISO 8601 |
+| FLOW-030 | blocking | `handoff.delivered_by` == `u-spec-orchestrator` |
+| FLOW-031 | blocking | `domains[]` tem ≥ 1 entrada |
+| FLOW-032 | blocking (be) | `backend_package[]` tem ≥ 1 entrada |
+| FLOW-033 | blocking | `new_domain` NÃO inclui `change_summary` |
+| FLOW-034 | blocking | `major_evolution`/`fast_track`/`reverse_eng` incluem `change_summary` |
+| FLOW-035 | blocking | `change_summary.dev_impact` é enum válido |
+| FLOW-036 | blocking | `fast_track` → `type` ∈ {patch, minor}; `major_evolution` → `major` |
+| FLOW-037 | blocking (be) | `backend_package` inclui os artifacts `openapi` e `back-spec` |
+| HDF-010 | blocking | `handoff.type` ∈ {new_domain, major_evolution, fast_track, reverse_eng} |
+| HDF-020 | blocking (be) | sha256 de cada `backend_package` confere com o arquivo em disco |
+| HDF-021 | blocking (fe) | sha256 de cada `frontend_package` confere com o arquivo em disco |
+| HDF-030 | blocking | `change_summary.dev_impact = stop_domain_task_contracts` → caller paralisa domains afetados |
+| HDF-040 | blocking (fe) | `frontend_artifacts` presente → contém `front_md_version`, `features`, `flows` |
 
 ---
 

@@ -296,6 +296,8 @@ python3 .claude/scripts/dlq_triage.py [--task-id <id>] [--json]
 
 O sistema usa o padrão `escalation` + `human_response` para comunicação assíncrona com o humano. **Nenhum orchestrator bloqueia aguardando input** — emite uma escalation, para, e o humano re-invoca o orchestrator após responder.
 
+> **Gates interativos (caminho usual):** quando a escalation tem `severity: info` **e** `options` (ex.: `E99_human_confirmation_required`), o **meta-orchestrator** a apresenta via `AskUserQuestion` (regra M5, estado `escalation_active` em `orch_core.py`), grava o `human_response` da escolha e **retoma o phase orchestrator na mesma invocação** — o humano NÃO roda `append.py` manualmente. O fluxo manual abaixo aplica-se a escalations sem `options` ou de severidade warning/critical (`surface_error`). Como o meta só expõe `code` + `reason` + `options`, o `reason` da E99 carrega o resumo de decisão (domains, front-leg).
+
 ### Fluxo
 
 ```

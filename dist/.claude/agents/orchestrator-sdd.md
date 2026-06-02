@@ -517,7 +517,9 @@ execution_policy:
 Options: confirm_proceed | abort
 ```
 
-Emit escalation:
+Emit escalation. The meta-orchestrator surfaces only `code` + `reason` + `options` to the human (via
+AskUserQuestion) — the panel above is sub-agent text that does NOT reach the user. So embed the
+decision summary (domains + the front-leg decision) into `reason`, substituting concrete values:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -526,7 +528,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{
     "code": "E99_human_confirmation_required",
     "severity": "info",
-    "reason": "SDD phase requires human confirmation before dispatching spec workers.",
+    "reason": "SDD confirmation before first dispatch. trigger={trigger}; domains={triage.domains}; front leg (ui_task={triage.ui_task}): {will run | SKIPPED if back-only}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}. If the front-leg decision is wrong (back-only vs fullstack misclassified), choose abort.",
     "options": ["confirm_proceed", "abort"],
     "evidence": [],
     "suggested_actions": ["confirm_proceed — start spec worker dispatch", "abort — stop the workflow"]

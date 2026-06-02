@@ -1,6 +1,7 @@
 # handoff-manifest — canonical template
-# Produced by: u-spec-orchestrator
-# Consumed by: u-fe-orchestrator-core, u-be-orchestrator-core (session start detection)
+# Produced by: generate_handoff_manifest.py (run by orchestrator-sdd in SDD Step 6)
+# Consumed by: orchestrator-dev / orchestrator-review / orchestrator-test (via parse_manifest_fields)
+# Note: handoff.delivered_by stays the const "u-spec-orchestrator" — it is the FLOW-030 protocol id, not an agent.
 # Schema: .claude/skills/u-shared-templates/handoff-manifest.schema.yaml
 # Layer: semi-permanent — stored at {SPECS_DIR}/handoff-manifest.yaml
 # Rules:

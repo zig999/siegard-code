@@ -142,7 +142,7 @@ Antes de qualquer fase, o `orchestrator` roda três checks (`orch-infra`). Qualq
 
 ### 5.2 Gates humanos (assíncronos via `escalation` + `human_response`)
 
-Nenhum orchestrator bloqueia esperando input. Ele **emite uma escalation, para, e o humano reinvoca** após responder.
+Nenhum orchestrator bloqueia esperando input. Ele **emite uma escalation, para, e o humano reinvoca** após responder. Exceção (caminho usual): escalations `info` **com `options`** (ex.: gate de confirmação `E99`) são apresentadas interativamente pelo meta-orchestrator via `AskUserQuestion`, que grava o `human_response` e retoma na mesma invocação — sem `append.py` manual.
 
 | Fase | Código | Quando | Opções |
 |------|--------|--------|--------|
