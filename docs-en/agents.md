@@ -83,7 +83,7 @@ Step 7 → Avalia return → se phase_complete: volta ao Step 3 (loop)
 back leg (POR DOMAIN):
   spec-writer → spec-reviewer → spec-back → spec-validator
 
-front leg (UMA VEZ por requisito, só se triage.ui_task == true):
+front leg (UMA VEZ por requisito, só se triage.stack ∈ {fe, fullstack}, i.e. ui_task == true):
   spec-front (deps: spec-validator de todos os domains) → spec-validator (front pass)
 
 cross-domain:

@@ -303,7 +303,8 @@ Extract and hold from `triage.json`:
 - `mode_hint`: `full | fast-track:minor | fast-track:patch`
 - `affected_specs`: list (used in Step 4 Targeted)
 - `greenfield`: bool
-- `ui_task`: bool — gates the front leg in Step 4 standard. If absent, default to `true` (conservative: run the front leg).
+- `stack`: `fe | be | fullstack` — authoritative front/back/both decision from `classify_stack.py`. If absent (legacy triage), derive it from `ui_task` (`fullstack` when `ui_task` is true/absent, else `be`).
+- `ui_task`: bool — **derived** from `stack` (`ui_task = stack in {fe, fullstack}`). Gates the front leg in Step 4 standard. If absent, default to `true` (conservative: run the front leg).
 - `requirement`: task description (passed to workers as context)
 
 **Triage routing (S4-S6, via state machine):**
@@ -484,9 +485,38 @@ billing        | spec-writer     | pending
 Read the log for the most recent `escalation` event with `data.code == "E99_human_confirmation_required"` from the sdd phase.
 
 If found, look for a subsequent `human_response` event:
+- If `human_response.data.action == "force_fullstack"` or `"force_backend_only"`: the human is
+  overriding the triage stack decision → apply the **Stack correction** below, then proceed to Step 4
+  (treated as confirmation).
 - If `human_response.data.action == "confirm_proceed"`: confirmation received → skip to Step 4.
 - If `human_response.data.action == "abort"`: human aborted → output `{"status": "blocked", "last_seq": <last_seq>, "summary": "aborted by human at confirmation gate"}` and stop.
 - If no `human_response` after the escalation: confirmation still pending → output `{"status": "escalated", "last_seq": <last_seq>, "summary": "awaiting human confirmation"}` and stop.
+
+**Stack correction (`force_fullstack` | `force_backend_only`):**
+
+The triage stack was wrong; the human-chosen action is the corrected intent. Rewrite `triage.json`
+deterministically (the `human_response` event is itself the append-only audit record of the override),
+then update the held `stack`/`ui_task` values so Step 4 uses the corrected decision:
+
+```
+force_fullstack    → stack=fullstack, ui_task=true   (front leg WILL run)
+force_backend_only → stack=be,        ui_task=false  (front leg skipped)
+```
+
+```bash
+python3 - "<workflow_id>" "<fullstack|be>" "<true|false>" <<'PY'
+import json, os, sys
+from pathlib import Path
+wid, new_stack, ui_task = sys.argv[1], sys.argv[2], sys.argv[3] == "true"
+p = Path(os.environ.get("ORCH_PROJECT_DIR", ".")) / ".orch" / "sessions" / wid / "triage.json"
+t = json.loads(p.read_text(encoding="utf-8"))
+t["stack"], t["ui_task"] = new_stack, ui_task
+p.write_text(json.dumps(t, indent=2), encoding="utf-8")
+print(json.dumps({"updated": True, "stack": new_stack, "ui_task": ui_task}))
+PY
+```
+
+Set the in-memory `stack` and `ui_task` to the corrected values before continuing to Step 4.
 
 **If no prior E99 escalation exists:**
 
@@ -502,7 +532,8 @@ Requirement: {triage.requirement}
 type:        {triage.type}
 mode_hint:   {triage.mode_hint}
 greenfield:  {triage.greenfield}
-ui_task:     {triage.ui_task}  →  front leg: {"will run" if ui_task else "SKIPPED (back-only)"}
+stack:       {triage.stack}  →  front leg: {"will run" if ui_task else "SKIPPED (back-only)"}
+ui_task:     {triage.ui_task}  (derived from stack)
 domains:     {triage.domains or "derived from existing specs"}
 affected_specs:
 {for each spec in triage.affected_specs}
@@ -514,7 +545,7 @@ execution_policy:
   pipeline:                {triage.execution_policy.pipeline}
   regression_test_required: {triage.execution_policy.regression_test_required}
 
-Options: confirm_proceed | abort
+Options: confirm_proceed | force_fullstack | force_backend_only | abort
 ```
 
 Emit escalation. The meta-orchestrator surfaces only `code` + `reason` + `options` to the human (via
@@ -528,10 +559,10 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{
     "code": "E99_human_confirmation_required",
     "severity": "info",
-    "reason": "SDD confirmation before first dispatch. trigger={trigger}; domains={triage.domains}; front leg (ui_task={triage.ui_task}): {will run | SKIPPED if back-only}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}. If the front-leg decision is wrong (back-only vs fullstack misclassified), choose abort.",
-    "options": ["confirm_proceed", "abort"],
+    "reason": "SDD confirmation before first dispatch. trigger={trigger}; stack={triage.stack}; domains={triage.domains}; front leg: {will run | SKIPPED (back-only)}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}. If the stack is wrong, correct it here: force_fullstack (add the front leg) or force_backend_only (drop it) — no need to abort.",
+    "options": ["confirm_proceed", "force_fullstack", "force_backend_only", "abort"],
     "evidence": [],
-    "suggested_actions": ["confirm_proceed — start spec worker dispatch", "abort — stop the workflow"]
+    "suggested_actions": ["confirm_proceed — start spec worker dispatch with stack={triage.stack}", "force_fullstack — override to fullstack and run the front leg", "force_backend_only — override to back-only and skip the front leg", "abort — stop the workflow"]
   }'
 ```
 

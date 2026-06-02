@@ -46,6 +46,7 @@ File written to: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json`
   "workflow_id": "{workflow_id}",
   "trigger": "u-spec | u-improve",
   "requirement": "{requirement text — available to ALL downstream workers}",
+  "stack": "fe | be | fullstack",
   "ui_task": true,
   "greenfield": true,
   "domains": ["{slug}"],
@@ -71,6 +72,8 @@ File written to: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json`
 ```
 
 **Field notes:**
+- `stack`: front/back/both decision produced by `classify_stack.py` (Step 1b). `be` runs the back leg only; `fe` and `fullstack` run the front leg. Authoritative — `orchestrator-sdd` derives the front-leg gate from it.
+- `ui_task`: **derived** (`ui_task = stack in {"fe", "fullstack"}`). Retained only for orchestrator back-compat; never set it independently of `stack`.
 - `domains`: populated for **greenfield** (derived from requirement); empty `[]` for non-greenfield. The orchestrator uses this list to create `spec-writer` tasks when no domain specs exist yet.
 - `requirement`: canonical task description — the orchestrator injects this into the spawn prompt of every downstream worker so no worker needs to re-read triage.json to get context.
 - `affected_specs`: populated for targeted/improve dispatch; empty `[]` for greenfield.
@@ -161,15 +164,41 @@ Set `trigger: u-improve`, `greenfield: false`. Proceed to Step 1b.
 
 ---
 
-## Step 1b — UI task detection
+## Step 1b — Stack classification (fe | be | fullstack)
 
-Applied to `requirement` text. Classification is automatic — no human input.
+Applied to `requirement` text. Classification is automatic, deterministic, and
+**co-presence aware** — do NOT classify by hand and do NOT apply keyword judgment.
+Run the classifier and store its output verbatim:
 
-**UI signal keywords** (any match → `ui_task: true`):
-`component`, `screen`, `page`, `layout`, `modal`, `dialog`, `form`, `button`, `card`, `table`, `sidebar`, `navigation`, `header`, `footer`, `theme`, `typography`, `icon`, `color`, `spacing`, `padding`, `margin`, `animation`, `hover`, `tooltip`, `dropdown`, `input`, `checkbox`, `stepper`, `tab`, `drawer`
+```bash
+python3 .claude/skills/u-spec-triage/scripts/classify_stack.py \
+  --requirement "<requirement text>"
+```
 
-**Suppression rule** — override to `ui_task: false` if requirement contains any of:
-`API`, `endpoint`, `route`, `service`, `repository`, `migration`, `cron`, `background job`, `webhook`, `database`
+Output:
+
+```json
+{"stack":"fe|be|fullstack","ui_task":<bool>,"ui_signals":[...],"backend_signals":[...],"rationale":"..."}
+```
+
+Decision rule (implemented by the script — never override it):
+
+| UI signals | Backend signals | `stack` | front leg |
+|------------|-----------------|---------|-----------|
+| present | present | `fullstack` | runs |
+| present | absent | `fe` | runs |
+| absent | present | `be` | skipped |
+| absent | absent | `fullstack` (conservative default) | runs |
+
+Store `stack` and `ui_task` from the script output. `ui_task` is derived
+(`ui_task = stack in {"fe","fullstack"}`) and kept only for orchestrator back-compat.
+
+> **Why this replaced the old keyword suppression:** a single backend keyword
+> (`API`, `endpoint`, `database`, …) must NOT suppress the front leg when UI
+> signals are also present. The previous unconditional suppression rule silently
+> collapsed fullstack requirements to back-only. Co-presence now resolves to
+> `fullstack`. If the classifier is wrong, the human corrects it at the E99 gate
+> (`force_fullstack` / `force_backend_only`) — see `orchestrator-sdd` Step 3.
 
 ---
 
@@ -417,6 +446,7 @@ Emit to stdout exactly:
 
 trigger: {u-spec | u-improve}
 requirement: {requirement}
+stack: {fe | be | fullstack}
 ui_task: {true | false}
 greenfield: {true | false}
 domains: {domains list — populated for greenfield}
@@ -446,6 +476,7 @@ STOP. Do not modify any spec. Do not dispatch any agent.
 | Rule | Description |
 |------|-------------|
 | `classification_always_runs` | Steps 1b–2.6 run for both triggers. Improve flow uses `improvement_task` from improve-scope.json as the classification input; standard flow uses `requirement` from task spec |
+| `stack_classification_deterministic` | `stack` and `ui_task` come from `classify_stack.py` (Step 1b) verbatim. Hand-classification, keyword judgment, or independent `ui_task` overrides are prohibited. Co-presence of UI + backend signals → `fullstack` (never suppressed) |
 | `greenfield_domain_extraction` | Greenfield produces `domains` list from requirement analysis — no filesystem scan possible. Orchestrator uses this list for spec-writer task creation |
 | `greenfield_mode_hint` | Greenfield always produces `mode_hint: full` — no structural diff is possible |
 | `requirement_propagation` | `triage.json.requirement` is the canonical task description. Orchestrator injects it into the spawn prompt of every downstream worker |

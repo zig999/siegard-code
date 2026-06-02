@@ -28,8 +28,9 @@ Output (exit 0 when status=ok, exit 1 when status=blocked):
      "manifest_path": "...", "manifest_id": "...", "domains": [...],
      "stack_implied": "be|fe|fullstack", "reason": "..."}
 
-Fail-closed: any irresolvable input, or a compliance/validation block signal,
-yields status=blocked WITHOUT writing an approved manifest.
+Fail-closed: any irresolvable input, a compliance/validation block signal, or a
+triage stack/front mismatch (declared fullstack|fe but no front artifacts, fix
+P0-1) yields status=blocked WITHOUT writing an approved manifest.
 """
 import argparse
 import hashlib
@@ -310,6 +311,17 @@ def generate(project_dir: Path, specs_dir: Path, workflow_id: str) -> dict:
                 return _blocked(f"missing_required_backend_artifact:{required}", manifest_path=None)
 
     frontend_artifacts, frontend_package = _frontend(specs_dir, project_dir)
+
+    # P0-1 guard: if triage declared a front-bearing stack (fullstack|fe) but no
+    # front artifacts exist, the front leg was wrongly skipped or silently failed.
+    # Fail closed instead of emitting a back-only manifest that hides the gap —
+    # this is the downstream half of the fix; the triage classifier is the upstream
+    # half. Legacy triage without a `stack` field is exempt (declared_stack None).
+    declared_stack = triage.get("stack")
+    if declared_stack in ("fullstack", "fe") and frontend_artifacts is None:
+        return _blocked("stack_mismatch_front_expected_but_missing",
+                        detail={"declared_stack": declared_stack},
+                        manifest_path=None)
 
     now = datetime.now(timezone.utc)
     manifest: dict = {

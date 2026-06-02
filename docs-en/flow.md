@@ -68,7 +68,7 @@ A fase SDD inicia **sempre** com um worker de triage (`u-spec-triage`) que escre
 
 | Modo | Quando | Comportamento |
 |------|--------|---------------|
-| `standard` | `/u-spec` novo, ou improve com mudança ampla | Back leg por domain: writer → reviewer → back → validator. Front leg uma vez por requisito (só se `ui_task == true`): spec-front → spec-validator. Depois `spec-compliance`. Exit exige `all_domains_validated`. |
+| `standard` | `/u-spec` novo, ou improve com mudança ampla | Back leg por domain: writer → reviewer → back → validator. Front leg uma vez por requisito (só se `triage.stack` ∈ {`fe`,`fullstack`}, i.e. `ui_task == true`): spec-front → spec-validator. Depois `spec-compliance`. Exit exige `all_domains_validated`. |
 | `targeted` | improve com mudança localizada | Só `domain_task_type` + `spec-reviewer` por spec afetada; pula writer/validators/compliance. Exit usa `all_improve_reviewers_completed` no lugar de `all_domains_validated`. |
 | (implementation_only) | improve sem mudança de spec | SDD encerra imediatamente via `task_skipped`; segue direto para Dev. |
 

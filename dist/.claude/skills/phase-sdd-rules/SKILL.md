@@ -254,6 +254,8 @@ ORCH_PROJECT_DIR=<path> SPECS_DIR=<rel> \
 ```
 
 Fail-closed: no domains, a missing required backend artifact, a `handoff_allowed: false` in
-`_validation/*-validation-result.yaml`, or a `block_handoff` / `non_compliant` in
-`_validation/*-compliance.yaml` yields `status: blocked` **without** writing the manifest. The
-orchestrator treats a blocked generation as criterion-not-met (Validation Repair Loop / E08).
+`_validation/*-validation-result.yaml`, a `block_handoff` / `non_compliant` in
+`_validation/*-compliance.yaml`, or a triage stack/front mismatch (`triage.stack` ∈ {`fullstack`,
+`fe`} but no front artifacts on disk — `stack_mismatch_front_expected_but_missing`, fix P0-1) yields
+`status: blocked` **without** writing the manifest. The orchestrator treats a blocked generation as
+criterion-not-met (Validation Repair Loop / E08).

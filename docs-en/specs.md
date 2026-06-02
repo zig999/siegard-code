@@ -82,7 +82,12 @@ Para cada domain identificado no SPECS_DIR:
 
   (Passos 1-4 são o "back leg", criados POR DOMAIN.)
 
-Após o back leg de TODOS os domains — e somente se `triage.ui_task == true` — roda um
+A decisão front/back/both é `triage.stack` (`fe | be | fullstack`), produzida deterministicamente
+por `classify_stack.py` (co-presença de sinais UI + backend → `fullstack`; nunca suprimida por uma
+keyword de backend isolada). `ui_task` é derivado (`stack ∈ {fe, fullstack}`).
+
+Após o back leg de TODOS os domains — e somente se o front leg estiver ativo (`triage.stack` ∈
+{`fe`, `fullstack`}, i.e. `ui_task == true`) — roda um
 ÚNICO "front leg" por requisito (o Front Spec Agent é ativado uma vez e compõe todos os domains):
 
   5. spec-front (uma vez; task_id sdd_front; deps = spec-validator de todos os domains)
@@ -94,7 +99,7 @@ Após o back leg de TODOS os domains — e somente se `triage.ui_task == true` �
      → VALID: front leg completo
      → INVALID: volta ao spec-front
 
-Se `ui_task == false` (back-only): o front leg é pulado (task_skipped) e nenhum artefato frontend é produzido.
+Se `triage.stack == be` (`ui_task == false`, back-only): o front leg é pulado (task_skipped) e nenhum artefato frontend é produzido. Se o stack estiver errado, o humano corrige no gate E99 (`force_fullstack` / `force_backend_only`).
 
 Após o back leg (e o front leg, se houve):
 
