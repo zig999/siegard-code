@@ -527,6 +527,70 @@ def _find_active_workflow(workflows: dict[str, dict]) -> tuple[str, dict] | None
     return max(active, key=lambda item: item[1]["last_seq"] or 0)
 
 
+def _open_workflows(workflows: dict[str, dict], *, show_all: bool = False) -> list[tuple[str, dict]]:
+    """Selectable workflows, most-recent first.
+
+    "Open" = real workflow (not the orphan bucket) that is not done. With
+    show_all=True the orphan bucket and completed workflows are included too.
+    """
+    items = []
+    for wf_id, w in workflows.items():
+        if not show_all:
+            if wf_id == UNKNOWN_WORKFLOW or w.get("status") == "done":
+                continue
+        items.append((wf_id, w))
+    items.sort(key=lambda kv: -(kv[1]["last_seq"] or 0))
+    return items
+
+
+def _focused_workflow(workflows: dict[str, dict], ui: "UIState | None") -> tuple[str | None, dict | None]:
+    """Resolve the workflow in focus for single-workflow rendering.
+
+    Explicit selection wins when still present; otherwise fall back to the
+    most-recent open workflow (or the most-recent of any, last resort). Pure:
+    never mutates `ui` — reopening the picker is decided in the live loop.
+    """
+    if ui is not None and ui.selected_wf and ui.selected_wf in workflows:
+        return ui.selected_wf, workflows[ui.selected_wf]
+    open_wfs = _open_workflows(workflows)
+    if open_wfs:
+        return open_wfs[0]
+    if workflows:
+        return max(workflows.items(), key=lambda kv: kv[1]["last_seq"] or 0)
+    return None, None
+
+
+def _reresolve_focus(workflows: dict[str, dict], ui: "UIState") -> None:
+    """After a poll, repair the focus if the selected workflow vanished.
+
+    One open workflow left → auto-focus it. Several → drop the selection and
+    reopen the picker. None → leave it (the waiting screen takes over).
+    """
+    if ui.selected_wf and ui.selected_wf not in workflows:
+        open_wfs = _open_workflows(workflows)
+        if len(open_wfs) == 1:
+            ui.selected_wf = open_wfs[0][0]
+        elif open_wfs:
+            ui.selected_wf = None
+            ui.picker = True
+
+
+def _init_focus(workflows: dict[str, dict], ui: "UIState") -> None:
+    """First-frame focus decision (after the initial index load).
+
+    --workflow seed (already on ui.selected_wf) is honored. Otherwise: exactly
+    one open workflow auto-focuses; two or more open the picker; none leaves the
+    waiting screen.
+    """
+    if ui.selected_wf and ui.selected_wf in workflows:
+        return
+    open_wfs = _open_workflows(workflows)
+    if len(open_wfs) == 1:
+        ui.selected_wf = open_wfs[0][0]
+    elif len(open_wfs) >= 2:
+        ui.picker = True
+
+
 def _wf_phases(wf: dict) -> dict:
     """Convert workflow phase_details to SimpleNamespace objects for rendering."""
     from types import SimpleNamespace
@@ -604,6 +668,11 @@ class UIState:
         self.scroll = 0       # first visible display row (TASKS viewport top)
         self.detail = False   # detail panel open for the selected task
         self.events = False   # recent-events feed open
+        # Single-workflow focus model (default live view).
+        self.selected_wf: str | None = None   # workflow in focus (None = not chosen yet)
+        self.picker = False                    # workflow-selector screen open
+        self.picker_show_all = False           # include done/orphan workflows in the picker
+        self.wf_sel = 0                        # cursor index within the picker list
 
 
 def _alloc_widths(avail: int, spec: list[tuple[str, int, int]]) -> dict[str, int]:
@@ -1235,10 +1304,88 @@ def render_events(stdscr: Any, project_dir: Path | None, rows: int, cols: int) -
     stdscr.refresh()
 
 
+def _wf_counts(w: dict) -> tuple[int, int, int, int, int]:
+    """(done, total, running, pending, failed) from a workflow's task_statuses."""
+    done = total = running = pending = failed = 0
+    for ts in w["task_statuses"].values():
+        total += 1
+        s = ts.get("status")
+        if s in ("completed", "skipped"):
+            done += 1
+        elif s == "running":
+            running += 1
+        elif s in ("pending", "ready", "scheduled"):
+            pending += 1
+        elif s in ("failed", "dlq"):
+            failed += 1
+    return done, total, running, pending, failed
+
+
+def _wf_last_ts(w: dict) -> str | None:
+    """Most recent activity timestamp across the workflow's tasks."""
+    stamps = [ts.get("last_event_at") for ts in w["task_statuses"].values() if ts.get("last_event_at")]
+    return max(stamps) if stamps else None
+
+
+def render_picker(stdscr: Any, workflows: dict[str, dict], ui: UIState,
+                  rows: int, cols: int) -> list[str]:
+    """Full-screen workflow selector. Returns the displayed workflow ids in
+    order so the caller can map ui.wf_sel → id on Enter."""
+    stdscr.erase()
+    open_wfs = _open_workflows(workflows, show_all=ui.picker_show_all)
+    ids = [wf_id for wf_id, _ in open_wfs]
+    if ids:
+        ui.wf_sel = max(0, min(ui.wf_sel, len(ids) - 1))
+    else:
+        ui.wf_sel = 0
+
+    title = f"SIEGARD MONITOR — select a workflow"
+    suffix = f"{len(ids)} open · a: all" if not ui.picker_show_all else f"{len(ids)} total"
+    _addstr(stdscr, 0, 0, title, curses.color_pair(C_HEADER) | curses.A_BOLD)
+    _addstr(stdscr, 0, max(0, cols - len(suffix) - 1), suffix,
+            curses.color_pair(C_DIM) | curses.A_DIM)
+    _hline(stdscr, 1, 0, "─", cols - 1)
+
+    if not ids:
+        _addstr(stdscr, 3, 2, "(no open workflows — press 'a' to include done/orphan, or 'q' to quit)",
+                curses.color_pair(C_DIM) | curses.A_DIM)
+    else:
+        row = 3
+        for i, (wf_id, w) in enumerate(open_wfs):
+            if row >= rows - 2:
+                break
+            selected = (i == ui.wf_sel)
+            cursor = "▶" if selected else " "
+            status = w.get("status", "unknown")
+            badge = "● DONE" if status == "done" else ("● LIVE" if status == "active" else "● ?")
+            phase = w.get("current_phase") or "—"
+            done, total, running, pending, failed = _wf_counts(w)
+            bd = []
+            if running:
+                bd.append(f"▶{running}")
+            if pending:
+                bd.append(f"·{pending}")
+            if failed:
+                bd.append(f"✗{failed}")
+            last = _short_ts(_wf_last_ts(w))
+            line = (f"{cursor} {_trunc(wf_id, 24):<24}  {_trunc('[' + phase + ']', 12):<12}  "
+                    f"{badge:<7} {done}/{total:<3} {' '.join(bd):<12} last {last}")
+            attr = curses.color_pair(C_RUNNING) | curses.A_BOLD if selected else curses.color_pair(C_DIM)
+            _addstr(stdscr, row, 1, _trunc(line, cols - 2), attr)
+            row += 1
+
+    _hline(stdscr, rows - 1, 0, "─", cols - 1)
+    _addstr(stdscr, rows - 1, 0, " ↑/↓ move   Enter: follow   a: show done/orphan   q: quit ",
+            curses.color_pair(C_DIM) | curses.A_DIM)
+    stdscr.refresh()
+    return ids
+
+
 def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None, log_path: Path,
                   workflows: dict[str, dict] | None = None,
                   project_dir: Path | None = None,
-                  ui: UIState | None = None) -> None:
+                  ui: UIState | None = None,
+                  multi: bool = False) -> None:
     rows, cols = stdscr.getmaxyx()
     stdscr.erase()
 
@@ -1250,14 +1397,23 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
 
     row = 0
 
-    # Resolve active workflow for per-workflow PHASES and TASKS rendering.
-    _active = _find_active_workflow(workflows or {})
-    active_wf_id, active_wf = _active if _active else (None, None)
+    # Workflow selector — full-screen, single-workflow mode only.
+    if ui is not None and ui.picker and not multi:
+        render_picker(stdscr, workflows or {}, ui, rows, cols)
+        return
+
+    # Resolve the focused workflow. multi → most-recent active (legacy aggregate
+    # header/PHASES); single → explicit selection with fallback.
+    if multi:
+        _active = _find_active_workflow(workflows or {})
+        active_wf_id, active_wf = _active if _active else (None, None)
+    else:
+        active_wf_id, active_wf = _focused_workflow(workflows or {}, ui)
     active_phases = _wf_phases(active_wf) if active_wf else {}
     active_tasks  = _wf_tasks(active_wf)  if active_wf else {}
 
-    # Build the unified TASKS row model (phase headers + tasks) once. The task
-    # entries — in order — back both selection/scroll and the detail panel.
+    # Build the TASKS row model once. The task entries — in order — back both
+    # selection/scroll and the detail panel.
     tasks_src = active_tasks if active_tasks else (state.tasks if state else {})
     if active_phases:
         phase_order = [n for n, _ in sorted(active_phases.items(), key=lambda kv: kv[1].order)]
@@ -1271,9 +1427,9 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
             status_map[tid] = t.status if isinstance(t.status, TaskStatus) else TaskStatus(t.status)
         except ValueError:
             status_map[tid] = TaskStatus.PENDING
-    # TASKS spans ALL workflows (workflow → phase → task). The active-workflow
-    # tasks_src above still feeds the focused PHASES summary at the top.
-    rows_model = (_build_rows_multi(workflows) if workflows
+    # multi → all workflows nested (workflow → phase → task); single → just the
+    # focused workflow's phases and tasks.
+    rows_model = (_build_rows_multi(workflows) if (multi and workflows)
                   else _build_rows(tasks_src, phase_order, status_map))
     flat_tasks = [e["task"] for e in rows_model if e["kind"] == "task"]
     if ui is not None and flat_tasks:
@@ -1311,6 +1467,10 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
         badge = "● DONE" if active_wf["status"] == "done" else "● LIVE"
         wf_label = _trunc(active_wf_id or "—", max(10, cols - 50))
         header = f"SIEGARD MONITOR  {wf_label}  [{phase_label}]  seq={active_wf['last_seq']}  {badge}"
+        # Hint that other workflows exist and can be switched to (single mode).
+        n_open = len(_open_workflows(workflows or {}))
+        if not multi and n_open > 1:
+            header = f"{header}   ({n_open} wf · w: switch)"
     else:
         phase_label = state.current_phase or "—"
         badge = "● DONE" if state.run_status == "completed" else "● LIVE"
@@ -1492,14 +1652,16 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
         return
 
     # ---- Agents ----
-    if workflows:
+    # multi → aggregate across all workflows; single → just the focused one.
+    agent_wfs = list(workflows.values()) if multi else ([active_wf] if active_wf else [])
+    if agent_wfs:
         all_running: list[dict] = []
         done_count = 0
         failed_count = 0
         dlq_count = 0
         skipped_count = 0
         tier_map: dict[str, str | None] = {}
-        for w in workflows.values():
+        for w in agent_wfs:
             all_running.extend(_filter_orchestrators(w["agents_running"], False))
             done_count += len(_filter_orchestrators(w["agents_executed"], False))
             failed_count += len(_filter_orchestrators(w["agents_failed"], False))
@@ -1738,7 +1900,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--once", action="store_true",
                    help="Render one frame to stdout and exit")
     p.add_argument("--workflow", default=None,
-                   help="Filter --once output to a single workflow_id")
+                   help="Focus a single workflow_id (live: skip the selector; --once: filter)")
+    p.add_argument("--multi", action="store_true",
+                   help="Live: show all workflows aggregated (legacy view; default focuses one)")
     p.add_argument("--running-only", action="store_true",
                    help="Hide workflows whose status is 'done' (--once only)")
     p.add_argument("--show-orchestrators", action="store_true",
@@ -1764,7 +1928,8 @@ def run_once(project_dir: Path, args: argparse.Namespace) -> int:
     return 1 if error else 0
 
 
-def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
+def run_live(stdscr: Any, project_dir: Path, interval: float,
+             multi: bool = False, initial_wf: str | None = None) -> None:
     log_path = project_dir / ".orch" / "log.jsonl"
 
     curses.cbreak()
@@ -1777,6 +1942,8 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
     error: LoadError | None = None
     workflows: dict[str, dict] = {}
     ui = UIState()
+    ui.selected_wf = initial_wf       # --workflow seed (single mode); skips the picker
+    focus_initialized = False
 
     tick_ms = 100  # key responsiveness
     ticks_per_poll = max(1, int(interval * 1000 / tick_ms))
@@ -1792,7 +1959,36 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
         except curses.error:
             key = -1
 
-        if key in (ord("q"), ord("Q")):
+        if ui.picker and not multi:
+            # --- Picker key handling (single-workflow selector) ---
+            if key in (ord("q"), ord("Q")):
+                return
+            elif key == 27:  # ESC: back to focus if one is chosen, else quit
+                if ui.selected_wf and ui.selected_wf in workflows:
+                    ui.picker = False
+                    dirty = True
+                else:
+                    return
+            elif key in (curses.KEY_DOWN, ord("j")):
+                ui.wf_sel += 1
+                dirty = True
+            elif key in (curses.KEY_UP, ord("k")):
+                ui.wf_sel = max(0, ui.wf_sel - 1)
+                dirty = True
+            elif key in (ord("a"), ord("A")):  # toggle done/orphan in the list
+                ui.picker_show_all = not ui.picker_show_all
+                dirty = True
+            elif key in (10, 13, curses.KEY_ENTER):  # select the highlighted workflow
+                open_ids = [wid for wid, _ in _open_workflows(workflows, show_all=ui.picker_show_all)]
+                if open_ids:
+                    ui.wf_sel = max(0, min(ui.wf_sel, len(open_ids) - 1))
+                    ui.selected_wf = open_ids[ui.wf_sel]
+                    ui.picker = False
+                    ui.sel = 0
+                    dirty = True
+            elif key == curses.KEY_RESIZE:
+                dirty = True
+        elif key in (ord("q"), ord("Q")):
             return
         elif key == 27:  # ESC: close an open panel, else quit
             if ui.detail or ui.events:
@@ -1801,6 +1997,11 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
                 dirty = True
             else:
                 return
+        elif key in (ord("w"), ord("W")) and not multi:  # open the workflow selector
+            ui.picker = True
+            ui.detail = False
+            ui.events = False
+            dirty = True
         elif key in (ord("e"), ord("E")):  # toggle recent-events feed
             ui.events = not ui.events
             ui.detail = False
@@ -1839,6 +2040,12 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
                 last_stat = current_stat
                 state, error = _load_state(project_dir)
                 workflows, _ = _collect_workflow_index(project_dir)
+                if not multi:
+                    if not focus_initialized:
+                        _init_focus(workflows, ui)
+                        focus_initialized = True
+                    else:
+                        _reresolve_focus(workflows, ui)
                 dirty = True
 
         # --- Time-based redraw: keep elapsed/stale and the clock advancing ---
@@ -1848,7 +2055,7 @@ def run_live(stdscr: Any, project_dir: Path, interval: float) -> None:
             dirty = True
 
         if dirty:
-            render_curses(stdscr, state, error, log_path, workflows, project_dir, ui)
+            render_curses(stdscr, state, error, log_path, workflows, project_dir, ui, multi)
             dirty = False
 
         time.sleep(tick_ms / 1000)
@@ -1866,7 +2073,7 @@ def main() -> int:
         return run_once(project_dir, args)
 
     try:
-        curses.wrapper(run_live, project_dir, args.interval)
+        curses.wrapper(run_live, project_dir, args.interval, args.multi, args.workflow)
     except KeyboardInterrupt:
         pass
     except Exception as exc:  # noqa: BLE001
