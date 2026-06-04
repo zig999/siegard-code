@@ -1,19 +1,8 @@
-# INVALID: status=valid but errors[] is non-empty — violates if/then schema rule
-validation_envelope:
-  validated_by: u-handoff-validator
-  timestamp: "2026-04-18T13:58:00Z"
-  caller: u-be-orchestrator-core
-  layer: ephemeral
-
+# INVALID: status=valid but errors[] is non-empty — violates the if/then schema rule
 status: valid
-
-checks:
-  - rule: FLOW-030
-    status: pass
-    severity: blocking
-
 errors:
-  - rule: HDF-020
-    message: "should not be here when status=valid"
-
+  - 'FLOW-030: delivered_by must be "u-spec-orchestrator"'
 warnings: []
+halt_signal: false
+validated_by: u-handoff-validator
+caller: u-be-orchestrator-core

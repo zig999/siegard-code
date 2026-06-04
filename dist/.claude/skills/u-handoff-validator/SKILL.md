@@ -28,7 +28,7 @@ This skill consolidates rules that previously lived inline in `u-be-orchestrator
 
 ## Outputs
 
-`validate.py` prints a single JSON envelope to stdout (see **Envelope shape**) and signals validity via exit code (`0` valid / `1` invalid). The caller acts only on `status`, `errors[]` (rule-id-prefixed strings), and `halt_signal`. (The older `handoff-validation-envelope.schema.yaml` / `checks[]` shape predates the deterministic rewrite and is superseded — reconcile that artifact separately.)
+`validate.py` prints a single JSON envelope to stdout (see **Envelope shape**) and signals validity via exit code (`0` valid / `1` invalid). The caller acts only on `status`, `errors[]` (rule-id-prefixed strings), and `halt_signal`. The envelope conforms to `handoff-validation-envelope.schema.yaml`.
 
 ## Validation rules
 
@@ -90,7 +90,7 @@ The caller MUST:
 }
 ```
 
-`errors[]` are rule-id-prefixed strings (not structured objects). The SDD→Dev gate (`check_handoff_manifest_approved.py`) consumes `status` (must be `valid`) and surfaces `errors[]`; orchestrators additionally honor `halt_signal`.
+`errors[]` are rule-id-prefixed strings (not structured objects). This shape conforms to `handoff-validation-envelope.schema.yaml`. The SDD→Dev gate (`check_handoff_manifest_approved.py`) consumes `status` (must be `valid`) and surfaces `errors[]`; orchestrators additionally honor `halt_signal`.
 
 ## Versioning
 

@@ -1,35 +1,17 @@
 # handoff-validation-envelope — canonical template
-# Produced by: u-handoff-validator
-# Consumed by: u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator
+# Produced by: u-handoff-validator/validate.py (printed as one JSON object to stdout)
+# Consumed by: check_handoff_manifest_approved.py (SDD->Dev gate) + the BE/FE/Spec orchestrators
 # Schema: .claude/skills/u-shared-templates/handoff-validation-envelope.schema.yaml
 # Layer: ephemeral — never persisted; held in the caller's session state only
 # Rules:
 #   - status: valid requires errors: []
-#   - checks[] lists every rule executed, pass or fail
-#   - errors[] contains only blocking failures; warnings[] contains non-blocking ones
-#   - The caller acts on rule IDs; do not parse message text
-
-validation_envelope:
-  validated_by: u-handoff-validator
-  timestamp: <YYYY-MM-DDTHH:MM:SSZ>
-  manifest_id: HANDOFF-<YYYYMMDD-HHMMSS>
-  manifest_sha256: <64-char sha256 of manifest file>
-  caller: u-be-orchestrator-core | u-fe-orchestrator-core | u-spec-orchestrator
-  layer: ephemeral
+#   - errors[]/warnings[] are rule-id-prefixed strings (e.g. "FLOW-030: ...") — act on the id, not the prose
+#   - halt_signal: true when change_summary.dev_impact = stop_domain_task_contracts (HDF-030)
+#   - caller echoes --caller; validate.py evaluates all rules regardless of caller
 
 status: valid | invalid
-
-checks:
-  - rule: FLOW-030
-    status: pass
-    severity: blocking
-  - rule: FLOW-031
-    status: pass
-    severity: blocking
-
-errors:
-  - rule: HDF-020
-    message: "sha256 mismatch for backend_package entry"
-    path: $.backend_package[0].sha256
-
+errors: []
 warnings: []
+halt_signal: false
+validated_by: u-handoff-validator
+caller: u-spec-orchestrator | u-be-orchestrator-core | u-fe-orchestrator-core

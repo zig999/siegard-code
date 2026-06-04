@@ -1,28 +1,9 @@
-# Valid envelope shape, but reporting status=invalid due to sha256 mismatch
-validation_envelope:
-  validated_by: u-handoff-validator
-  timestamp: "2026-04-18T13:58:00Z"
-  manifest_id: HANDOFF-20260418-120000
-  manifest_sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-  caller: u-fe-orchestrator-core
-  layer: ephemeral
-
+# Valid envelope shape reporting status=invalid (a real failure result) — must pass the schema
 status: invalid
-
-checks:
-  - rule: FLOW-030
-    status: pass
-    severity: blocking
-  - rule: FLOW-031
-    status: pass
-    severity: blocking
-  - rule: HDF-021
-    status: fail
-    severity: blocking
-
 errors:
-  - rule: HDF-021
-    message: "sha256 mismatch for frontend_package entry"
-    path: $.frontend_package[0].sha256
-
+  - 'HDF-021: sha256 mismatch for frontend_package entry'
+  - 'FLOW-031: handoff must contain at least one domain'
 warnings: []
+halt_signal: false
+validated_by: u-handoff-validator
+caller: u-fe-orchestrator-core
