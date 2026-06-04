@@ -5,9 +5,14 @@
 #   - HDF-NNN covers new rules introduced with this skill
 #
 # Field semantics:
-#   applies_to: list of caller identities that must run the rule
+#   applies_to: DESCRIPTIVE ONLY — which caller the rule matters to. The deployed
+#     implementation (validate.py) evaluates ALL rules regardless of --caller; rule
+#     scoping is data-driven: FLOW-037 by handoff.type, HDF-021 only when a
+#     frontend_package is present, HDF-040 only when frontend_artifacts is present.
 #   severity: blocking (populates errors[]) | warning (populates warnings[])
-#   check.type: declarative predicate kind — the skill implementation evaluates it
+#   check.type: declarative description — validate.py hard-codes the equivalent check
+#     in stdlib Python. This file is documentation, NOT loaded at runtime; keep it in
+#     sync with validate.py (the source of truth) when rules change.
 
 rules:
   - id: FLOW-030
@@ -49,7 +54,7 @@ rules:
         equals: new_domain
 
   - id: FLOW-034
-    description: "major_evolution and fast_track handoffs MUST include change_summary"
+    description: "major_evolution, fast_track, and reverse_eng handoffs MUST include change_summary"
     severity: blocking
     applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
     check:
@@ -57,7 +62,7 @@ rules:
       path: $.change_summary
       when:
         path: $.handoff.type
-        in: [major_evolution, fast_track]
+        in: [major_evolution, fast_track, reverse_eng]
 
   - id: FLOW-035
     description: "change_summary.dev_impact must be a valid enum value"
@@ -70,7 +75,7 @@ rules:
       optional: true
 
   - id: FLOW-036
-    description: "fast_track requires change_summary.type in [patch, minor]; major_evolution requires major"
+    description: "change_summary.type must match handoff.type: fast_track -> [patch, minor]; major_evolution -> [major]; reverse_eng -> [patch, minor, major]"
     severity: blocking
     applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
     check:
@@ -82,15 +87,21 @@ rules:
         - when: { path: $.handoff.type, equals: major_evolution }
           path: $.change_summary.type
           allowed: [major]
+        - when: { path: $.handoff.type, equals: reverse_eng }
+          path: $.change_summary.type
+          allowed: [patch, minor, major]
 
   - id: FLOW-037
-    description: "backend_package must include both openapi and back-spec artifacts"
+    description: "for new_domain and major_evolution, backend_package must include both openapi and back-spec artifacts"
     severity: blocking
     applies_to: [u-be-orchestrator-core, u-spec-orchestrator]
     check:
-      type: contains_all
+      type: contains_all_when
       path: $.backend_package[*].artifact
       required: [openapi, back-spec]
+      when:
+        path: $.handoff.type
+        in: [new_domain, major_evolution]
 
   - id: HDF-010
     description: "handoff.type must be in enum"

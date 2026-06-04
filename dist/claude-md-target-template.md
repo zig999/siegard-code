@@ -309,45 +309,96 @@ Orchestrators refuse to spawn if `nesting_depth >= 3`. If this error appears, th
 
 ## Handoff Manifest
 
-<!-- handoff-manifest.yaml is the delivery contract between the SDD phase and the Dev phase.
-     orchestrator-dev reads it at Step 2 to route workers and decide whether to proceed.
-     Missing or incorrect fields here cause silent wrong-stack dispatch or vacuous completion. -->
+<!-- handoff-manifest.yaml is the delivery contract between the SDD phase and the Dev/Review/Test phases.
+     Generated deterministically by orchestrator-sdd (generate_handoff_manifest.py) over validated specs,
+     validated by u-handoff-validator (validate.py — 13 rules + sha256), and consumed by the Dev/Review/Test
+     orchestrators (via parse_manifest_fields). It is a pure function of the on-disk specs — do not hand-edit. -->
 
 **File location:** `{specs_dir}/handoff-manifest.yaml`
 
-**Required fields consumed by orchestrator-dev:**
+**Validation (the gate):**
+
+```bash
+python3 .claude/skills/u-handoff-validator/validate.py \
+  --manifest {specs_dir}/handoff-manifest.yaml --specs-dir .
+```
+
+`status: valid` (exit 0) is the gate. **Approval is derived, not a field:** a schema-valid manifest that passes the validator IS the approval — there is no `approval_status` field. The SDD→Dev gate (`check_handoff_manifest_approved.py`) runs this validator and proceeds only on `status: valid`.
+
+**Worker dispatch** is inferred from artifact presence, not from a `stack` field: `backend_package` present → BE workers; `frontend_package` present → FE workers; both → fullstack (parallel). Do not add a `stack` field — it is not in the canonical schema and the generator never emits it.
+
+**Structure (canonical — `u-shared-templates/handoff-manifest.schema.yaml`):**
 
 ```yaml
-# Determines worker dispatch: "be" → u-be-*, "fe" → u-fe-*, "fullstack" → both in parallel.
-# CRITICAL: missing defaults to "be" — fullstack projects silently lose all FE workers.
-stack: {be|fe|fullstack}
-
 handoff:
-  # Describes the delivery type — informs task scoping in u-planning.
-  type: {new_domain|enhancement|bugfix|refactor}
+  id: HANDOFF-YYYYMMDD-HHMMSS
+  delivered_by: u-spec-orchestrator                 # const — FLOW-030
+  delivered_at: {ISO-8601 Z, e.g. 2026-06-04T12:00:00Z}
+  layer: semi-permanent
+  type: {new_domain|major_evolution|fast_track|reverse_eng}   # HDF-010
 
-  # Controls whether the dev phase proceeds or short-circuits.
-  # "no_action" causes the phase to complete with zero tasks (vacuous success).
-  # Ensure this is correct before invoking /u-dev.
-  dev_impact: {proceed|no_action}
+domains:                                            # ≥ 1 entry — FLOW-031
+  - name: {domain}
+    spec_version: {x.y.z}
+    back_version: {x.y.z}
+    openapi_version: {x.y.z}
+    compliance_report: {path or "Validation passed. No blocking issues."}
 
-  # Scopes the developer to specific files. Empty list = full spec scope.
-  changed_files:
-    - {e.g. backend/src/modules/auth/service/auth.service.ts}
-    - {e.g. frontend/src/features/login/hooks/useLogin.ts}
+backend_package:                                    # ≥ 1 entry — FLOW-032
+  # For new_domain/major_evolution must include both openapi AND back-spec — FLOW-037
+  - path: {specs path}
+    artifact: {conventions|error-codes|openapi|spec|back-spec}
+    sha256: {64-hex — verified against file contents, HDF-020}
 
-# Set by u-handoff-validator after approval. Dev orchestrator refuses to run without this.
-approval_status: approved
+# frontend_artifacts + frontend_package: present only when the handoff carries a front. Omit for back-only.
+frontend_artifacts:                                 # when present, all 3 subfields required — HDF-040
+  front_md_version: {x.y.z}
+  features: [{name, path}, ...]
+  flows: [{name, path}, ...]
+frontend_package:
+  - path: {specs path}
+    artifact: {conventions|error-codes|openapi|spec|front|feature-spec|component-spec|flow}
+    sha256: {64-hex — verified, HDF-021}
+
+# change_summary: FORBIDDEN for new_domain (FLOW-033); REQUIRED for major_evolution/fast_track/reverse_eng (FLOW-034).
+change_summary:
+  type: {patch|minor|major}                         # must match handoff.type — FLOW-036
+                                                    #   fast_track → patch|minor; major_evolution → major; reverse_eng → patch|minor|major
+  cr: {CR-NN or none}
+  changed_files: [{path}, ...]
+  dev_impact: {no_action|reevaluate_task_contracts|stop_domain_task_contracts}   # FLOW-035
+                                                    #   stop_domain_task_contracts → orchestrator halts affected domains (HDF-030)
 ```
+
+> **Schema strictness:** the canonical schema is `additionalProperties: false` at every level — unknown or misnested keys (a top-level `stack`/`approval_status`, or `dev_impact`/`changed_files` placed under `handoff` instead of `change_summary`) are schema-invalid. `validate.py` checks only the 13 rules below and ignores extra keys, so do not rely on it to catch them — keep the manifest to the structure above.
+
+**Blocking rules (`u-handoff-validator`):**
+
+| Rule | Requirement |
+|---|---|
+| FLOW-030 | `handoff.delivered_by` == `u-spec-orchestrator` |
+| HDF-010 | `handoff.type` in `{new_domain, major_evolution, fast_track, reverse_eng}` |
+| FLOW-031 | `domains[]` ≥ 1 |
+| FLOW-032 | `backend_package[]` ≥ 1 |
+| FLOW-037 | `backend_package` includes `openapi` + `back-spec` (for new_domain/major_evolution) |
+| HDF-020 / HDF-021 | every `backend_package` / `frontend_package` entry's `sha256` matches file contents |
+| FLOW-033 | `new_domain` must NOT include `change_summary` |
+| FLOW-034 | `major_evolution` / `fast_track` / `reverse_eng` MUST include `change_summary` |
+| FLOW-035 | `change_summary.dev_impact` in `{no_action, reevaluate_task_contracts, stop_domain_task_contracts}` |
+| FLOW-036 | `change_summary.type` matches `handoff.type` (fast_track→patch\|minor; major_evolution→major; reverse_eng→patch\|minor\|major) |
+| HDF-030 | `dev_impact: stop_domain_task_contracts` raises a halt signal — caller halts affected domains |
+| HDF-040 | `frontend_artifacts`, when present, includes `front_md_version`, `features`, `flows` |
 
 **Failure modes:**
 
-| Missing field | Symptom | Recovery |
+| Condition | Symptom | Recovery |
 |---|---|---|
-| `stack` | Defaults to "be"; FE workers never dispatched | Add field; re-run `/u-dev` |
-| `dev_impact: no_action` | Phase completes instantly with zero tasks | Correct impact; re-run `/u-dev` |
-| `approval_status` missing or not "approved" | Dev phase refuses to start | Run `/u-spec` review gate or set manually |
-| `changed_files` empty | Developers use full spec scope (slower, less focused) | Populate with affected file paths |
+| Validator `status: invalid` | SDD→Dev gate stays blocked (fail-closed) | Read `errors[]`; fix the offending rule; re-run `/u-spec` |
+| `change_summary` present on a `new_domain` handoff | FLOW-033 blocks | Remove `change_summary` — a new domain carries no diff |
+| `change_summary` missing on evolution / fast_track / reverse_eng | FLOW-034 blocks | Add `change_summary` (`type`/`cr`/`changed_files`/`dev_impact`) |
+| `sha256` stale (spec edited after generation) | HDF-020/021 mismatch | Regenerate the manifest — never hand-edit hashes |
+| `frontend_artifacts` present but missing a subfield | HDF-040 blocks | Add `front_md_version` / `features` / `flows` |
+| Declared fullstack/fe but no front specs on disk | Generator fails closed (`stack_mismatch_front_expected_but_missing`) | Produce the front specs or fix the triage stack |
 
 ---
 
