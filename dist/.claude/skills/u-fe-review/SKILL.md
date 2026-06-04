@@ -64,6 +64,9 @@ Audit one or more frontend files against the complete set of quality rules used 
 | CQ-12 | `console.log` / `console.error` / `console.warn` in non-test file | Medium | yes — remove line |
 | CQ-13 | Hardcoded color value (hex, rgb, hsl, oklch literal) not inside token definition | Medium | no — requires token mapping |
 | CQ-14 | Hardcoded spacing or font-size literal (px, rem) not inside token definition | Medium | no — requires token mapping |
+| CQ-15 | Component file longer than 300 lines | Medium | no — requires decomposition into subcomponents |
+| CQ-16 | Dashboard widget without its own data fetch, skeleton, or `ErrorBoundary` (single request hydrating the whole dashboard) | Medium | no — requires data/boundary restructuring |
+| CQ-17 | Array index used as React `key` in a dynamic list | Medium | no — requires a stable unique id from the data |
 
 ### 2. Design system compliance
 
@@ -136,6 +139,7 @@ slop_category: warn                         # flag as Medium
 | A11-05 | `role="button"` on a `<button>` element (redundant) | Low | yes — remove redundant role |
 | A11-06 | Color used as sole conveyor of state (error class with no icon or text) | Medium | no — requires content change |
 | A11-07 | Touch target smaller than 44×44px (inline `width`/`height` < 44px on interactive element) | Medium | yes — set min-width/min-height to 2.75rem |
+| A11-08 | `<input>`/`<select>`/`<textarea>` in an error state without `aria-invalid` (WCAG 2.2 AA) | Medium | no — requires error-state wiring |
 
 ---
 
@@ -148,7 +152,7 @@ dependencies:
   required:
     - skill: u-fe-standards
       path: .claude/skills/u-fe-standards/SKILL.md
-      used_in: [CQ-01..CQ-14, VD-01..VD-16, A11-01..A11-07]
+      used_in: [CQ-01..CQ-17, VD-01..VD-16, A11-01..A11-08]
       on_missing:
         status: error
         reason: dependency_not_found

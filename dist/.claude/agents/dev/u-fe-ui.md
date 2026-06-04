@@ -190,7 +190,7 @@ When finished, notify the **Orchestrator-Dev** that the specification is ready a
 > Content embedded directly in the system prompt to benefit from Claude Code's automatic caching.
 > The Orchestrator **MUST NOT** re-inject these skills in the activation prompt.
 > **Source:** `.claude/skills/u-fe-ui/SKILL.md`
-> **Last synced:** 2026-04-11
+> **Last synced:** 2026-06-04
 
 ### SKILL: u-fe-ui
 
@@ -317,16 +317,18 @@ Each row maps a UI-NN state (from feature.spec.md §2) to its visual form.
 |--------|-------|-----------------|-----------------|
 | [user action] | FL-XX | [what happens — from §3] | [animation / state change] |
 
-**Accessibility (WCAG 2.1 AA):**
+**Accessibility (WCAG 2.2 AA):**
 
 | Element | Requirement |
 |---|---|
 | Keyboard navigation | Tab order matches visual reading order; modals and drawers trap focus; Esc closes them |
 | ARIA roles | Use semantic HTML first (`<button>`, `<nav>`, `<main>`); add `role=` only when HTML semantics are insufficient |
 | Dynamic state announcements | Use `aria-live="polite"` for async updates (loading → content); `aria-live="assertive"` for critical errors only |
-| Form inputs | Every `<input>` has an associated `<label>` or `aria-labelledby`; error messages use `aria-describedby` |
+| Form inputs | Every `<input>` has an associated `<label>` or `aria-labelledby`; invalid inputs set `aria-invalid` and link the message via `aria-describedby` |
+| Focus visibility (SC 2.4.11) | Focus indicator visible and never fully obscured by sticky headers, overlays, or other content |
 | Images | Informative images: descriptive `alt`. Decorative images: `alt=""`. Icon-only buttons: `aria-label` |
 | Color contrast | Normal text: 4.5:1 minimum. Large text (≥ 18 pt or ≥ 14 pt bold) and UI components: 3:1 minimum |
+| Target size (SC 2.5.8) | Interactive targets ≥ 24×24px CSS; project floor stricter — ≥ 32px any context, ≥ 44×44px mobile |
 | Error/status states | Never use color as the sole indicator — pair with icon, text, or pattern |
 
 **Responsive breakpoints:**

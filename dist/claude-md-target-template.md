@@ -108,17 +108,17 @@ stack:
 apps:
   frontend:
     path: {e.g. frontend}/
-    dev: {e.g. npm --filter frontend dev}
-    build: {e.g. npm --filter frontend build}
+    dev: {e.g. npm run dev -w frontend}
+    build: {e.g. npm run build -w frontend}
   backend:
     path: {e.g. backend}/
-    dev: {e.g. npm --filter backend dev}
-    build: {e.g. npm --filter backend build}
+    dev: {e.g. npm run dev -w backend}
+    build: {e.g. npm run build -w backend}
 sessions_dir: {e.g. docs/sessions}
 runtime_dir: {e.g. docs/runtime/logs}
 
 # --- Review phase (orchestrator-review) ---
-# test_command must emit JSON: vitest --reporter=json | jest --json | pytest --tb=json
+# test_command must emit JSON: vitest --reporter=json | jest --json | pytest --json-report (pytest-json-report plugin)
 test_command: {e.g. npx vitest run --reporter=json}
 build_command: {e.g. npm run build}   # empty string "" skips build step
 
@@ -140,7 +140,7 @@ max_parallel_workers: {e.g. 2}
 
 # --- Frontend config (u-fe-developer, u-fe-qa-docs) ---
 i18n: {true|false}   # default: false — enables hardcoded-string checks in QA
-accessibility: {none|wcag-2.1-aa|wcag-2.2-aa}   # default: none
+accessibility: {none|wcag-2.1-aa|wcag-2.2-aa}   # default: none — recommended baseline: wcag-2.2-aa
 
 # --- QA feature flags (BE and FE — activates extra checks in qa phase) ---
 observability_required: {true|false}   # default: false
@@ -160,7 +160,7 @@ docs_update_policy: {on-pr|on-merge|manual}   # default: manual
 # Accepted values: gdpr, pci_dss, hipaa, sox, lgpd
 compliance: []   # e.g. [gdpr, lgpd]
 
-# --- Design system (u-ui-design) ---
+# --- Design system (u-ui-design) [REMOVE IF NOT APPLICABLE — non-Tailwind or back-end-only projects] ---
 design_system:
   tailwind_integration: {theme}   # "theme" = CSS-first config via @theme in theme.css
 
@@ -183,8 +183,8 @@ design_system:
 
 | Task      | Command                                 |
 |-----------|-----------------------------------------|
-| dev (fe)  | {e.g. npm --filter frontend dev}        |
-| dev (be)  | {e.g. npm --filter backend dev}         |
+| dev (fe)  | {e.g. npm run dev -w frontend}           |
+| dev (be)  | {e.g. npm run dev -w backend}            |
 | build     | {e.g. npm run build}                    |
 | test      | {e.g. npm run test}                     |
 | lint      | {e.g. npm run lint}                     |
@@ -413,11 +413,18 @@ Required protocol:
 - role: {e.g. BFF client — consumes the same REST routes as the frontend}
 - auth: {e.g. JWT in Authorization: Bearer header}
 - contract: {e.g. tools generated from BFF openapi.yaml}
-- direct_supabase_access: false
+- direct_{service}_access: {true|false} — {e.g. direct_db_access: false — consumes BFF routes only}
 
 ---
 
 ## Stack — Frontend [REMOVE IF NOT APPLICABLE]
+
+<!-- Fixed-stack profile: if this project uses Vite + React 19 + TypeScript (strict) + Tailwind v4
+     + shadcn/ui + TanStack Query/Router/Table + React Hook Form + Zod, paste the contents of
+     dist/claude-md-fragments/fe-stack-react-tailwind-tanstack.md below this line. That fragment
+     fixes the data layer (TanStack Query), component contract (className/cn, CVA, ref-as-prop),
+     forms (RHF+Zod), tables (TanStack Table + URL state), and responsive rules (named breakpoints
+     + container queries). Omit the fragment for any other stack. -->
 
 ### {CSS Framework — e.g. Tailwind CSS v4}
 

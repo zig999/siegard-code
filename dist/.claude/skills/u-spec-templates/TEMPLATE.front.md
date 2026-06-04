@@ -110,11 +110,14 @@ src/
 
 > Minimum requirements that all components and screens must meet. Feature-specific requirements go in each .feature.spec.md §8.
 
-- **Minimum standard:** WCAG 2.1 AA
+- **Minimum standard:** WCAG 2.2 AA
 - **Keyboard navigation:** all actions accessible via Tab + Enter/Space
 - **Focus management:** on modal/drawer open, focus first interactive element; on close, return to trigger
+- **Focus visibility (SC 2.4.11):** focus indicator never fully obscured by sticky headers or overlays
 - **ARIA roles:** use semantic roles (role="dialog", role="alert", aria-live for updates)
+- **Form fields:** invalid inputs set `aria-invalid` and link the message via `aria-describedby`
 - **Contrast:** minimum 4.5:1 for normal text, 3:1 for large text
+- **Target size (SC 2.5.8):** interactive targets ≥ 24×24px CSS (project floor stricter — ≥ 32px any context, ≥ 44×44px mobile)
 - **Images:** descriptive alt on content images; alt="" on decorative images
 
 ---

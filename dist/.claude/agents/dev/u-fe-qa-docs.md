@@ -253,6 +253,10 @@ Run the following checks against the files listed in the "Modified files" sectio
 | No commented-out code blocks | Search for `// ` comment blocks that appear to be disabled code | Quality BUG (Low) |
 | No inline CSS (`style=` / `style={{`) | Search for `style=` in JSX — already covered by ESLint, but verify | Quality BUG (Medium) |
 | ErrorBoundary present at page/route level | For Task Contracts that add new pages, confirm `<ErrorBoundary>` wraps the page component | Quality BUG (High) |
+| No type assertion `as` to silence the compiler | Search for `as ` casts (excluding `as const`) without a justifying comment | Quality BUG (Medium) |
+| No component file > 300 lines | Count lines of each modified component file | Quality BUG (Medium) |
+| No array index as `key` in dynamic lists | Search modified `.tsx` for `key={...index...}` in `.map()` over reorderable/insertable data | Quality BUG (Medium) |
+| Dashboard widget isolation | For dashboard Task Contracts, confirm each widget has its own data fetch, skeleton, and `ErrorBoundary` (no single request hydrating the whole dashboard) | Quality BUG (Medium) |
 
 > If `CLAUDE.md` declares `i18n: true`: also search modified `.tsx` files for hardcoded user-facing strings (quoted text rendered in JSX without `t()`). Record as Quality BUG (Medium) per occurrence.
 
@@ -588,6 +592,9 @@ A Task Contract can only move to `Done` when **all** items below are checked:
 - [ ] No inline CSS (`style=` / `style={{`) — Medium BUG
 - [ ] ErrorBoundary at page/route level for new pages — High BUG if missing
 - [ ] No hardcoded user-facing strings when `i18n: true` — Medium BUG
+- [ ] No type assertion `as` to silence the compiler (`as const` allowed) — Medium BUG
+- [ ] No component file > 300 lines — Medium BUG
+- [ ] No array index as `key` in dynamic lists — Medium BUG
 
 **Tests:**
 - [ ] All acceptance criteria have at least one corresponding test
@@ -663,6 +670,9 @@ These criteria apply to both writing (Developer) and validation (QA).
 | Code splitting | Routes use `React.lazy` + `Suspense` | All pages imported eagerly — BUG Medium |
 | Animation accessibility | Animations wrapped in `@media (prefers-reduced-motion: no-preference)` | Animation without guard — BUG Medium |
 | i18n (when `i18n: true`) | No hardcoded user-facing strings — all text via translation keys | Hardcoded string in rendered output — BUG Medium |
+| Component size | Component file ≤ 300 lines | Component file > 300 lines — BUG Medium |
+| List `key` stability | Dynamic-list items keyed by a stable unique id | Array index as `key` in a reorderable/insertable/deletable list — BUG Medium |
+| Dashboard widget isolation | Each widget owns its data fetch, skeleton, and `ErrorBoundary` | Single request hydrates the whole dashboard, or a widget lacks its own boundary/skeleton — BUG Medium |
 
 **Rules:** test behavior not implementation. Each AC must have ≥1 test. API tests cover success AND error. Avoid tests that always pass.
 
@@ -700,14 +710,16 @@ For every Task Contract, mandatory checks:
 - [ ] Behavior on network timeout — loading state interrupted correctly?
 - [ ] Behavior with malformed payload or missing field — crash or graceful fallback?
 
-**Interaction and accessibility (WCAG 2.1 AA):**
+**Interaction and accessibility (WCAG 2.2 AA):**
 - [ ] Interactive elements work with keyboard (Tab, Enter, Esc, Space for toggles)
 - [ ] Images have meaningful `alt` text; decorative images use `alt=""`
 - [ ] Forms have associated `<label>` or `aria-label` for every input
-- [ ] Focus indicator is visible on all focusable elements
+- [ ] Invalid fields expose `aria-invalid` + `aria-describedby` for the error message
+- [ ] Focus indicator is visible on all focusable elements and never fully obscured by overlays (SC 2.4.11)
 - [ ] Dynamic content updates announced via `aria-live` or focus management
 - [ ] ARIA roles are semantically correct
 - [ ] Color is not the only means of conveying information
+- [ ] Interactive targets ≥ 24×24px CSS (SC 2.5.8); project floor stricter — ≥ 32px any context, ≥ 44×44px mobile
 - [ ] Contrast ratio meets WCAG AA: 4.5:1 for normal text, 3:1 for large text and UI components
 
 **Responsive design:**

@@ -211,7 +211,7 @@ Never use free-form logs.
 
 This project builds and ships an **event-driven orchestration engine** for Claude Code workflows. The engine manages tasks, workers, retries, failures, and phase-based state — without encoding business logic from downstream projects.
 
-> Canonical reference: `extras/WORKFLOW_REFERENCE.md`
+> Canonical reference: `extras/phases.md`
 
 ### Architecture
 
@@ -253,7 +253,7 @@ These invariants are enforced across all artifacts in this project:
 ### Constraints
 
 - Zero external Python dependencies — stdlib 3.10+ only
-- Do not deviate from `extras/WORKFLOW_REFERENCE.md` without explicit instruction
+- Do not deviate from `extras/phases.md` without explicit instruction
 - Do not implement business logic from downstream projects
 
 ---

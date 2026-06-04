@@ -225,7 +225,7 @@ Task state is tracked through the event log. Emit `task_completed` with `artifac
 > Content embedded directly in the system prompt to benefit from Claude Code's automatic caching.
 > The Orchestrator **MUST NOT** re-inject these skills in the activation prompt.
 > **Source:** `.claude/skills/u-fe-development/SKILL.md` and `.claude/skills/u-fe-standards/SKILL.md`
-> **Last synced:** 2026-04-11
+> **Last synced:** 2026-06-04
 
 ### SKILL: u-fe-development
 
@@ -259,6 +259,19 @@ If `CLAUDE.md` does not cover a given point, use the defaults from this skill an
 ---
 
 ## Mandatory flow before coding
+
+### Decision order — resolve before writing any component
+
+Stop at the first step that resolves the need:
+
+1. Does a component already exist in the project's shared UI layer (`design-system/components.md` catalog or the shared components directory)? Use it.
+2. Is there an equivalent component in the project's component library (declared in `CLAUDE.md`)? Add and use it.
+3. Is there a semantic token for the value? Use the token — never the raw value.
+4. Is there a similar feature/entity already implemented? Follow the same pattern.
+5. Does the change respect the project's architecture rules (dependency direction, no sibling-feature imports)? If not, reorganize before coding.
+6. Does it respect the accessibility standard declared in `CLAUDE.md` (`u-fe-standards §4`)? If not, fix it before delivering.
+
+Generate **only what the Task Contract asks for** — no stories, visual-regression, token pipeline, i18n, or ADR unless required.
 
 ```
 1. Read the full Task Contract (narrative + all acceptance criteria)
@@ -399,6 +412,11 @@ try {
 - `TODO` without a Task Contract or issue reference (`// TODO(TC-12): remove after migration`)
 - Changing code outside the Task Contract's scope without creating a separate technical Task Contract
 - Inline CSS — using `style=""` in JSX or `style={{}}` in React components is prohibited; use CSS classes, CSS Modules, or Tailwind
+- Type assertions (`as`) to silence the compiler — narrow with `unknown` + type guards (`as const` is the only accepted use)
+- Component file longer than 300 lines — split into subcomponents before delivering
+- Array index as React `key` in a dynamic list (reorderable/insertable/deletable) — use a stable unique id from the data
+
+> TypeScript guidance: derive types from validation schemas with `z.infer`; use `satisfies` to check literals without widening; model mutually exclusive shapes as discriminated unions.
 
 ### Linting configuration for inline CSS
 
@@ -516,6 +534,9 @@ These criteria apply to both writing (Developer) and validation (QA).
 | Error Boundary | Each new page wrapped in `<ErrorBoundary>` with non-empty fallback | Missing ErrorBoundary at page level — High BUG |
 | Code splitting | Routes use `React.lazy` + `Suspense` | All pages imported eagerly — Medium BUG |
 | Animation accessibility | Animations wrapped in `@media (prefers-reduced-motion: no-preference)` | Animation without guard — Medium BUG |
+| Component size | Component file ≤ 300 lines | Component file > 300 lines — Medium BUG |
+| List `key` stability | Dynamic-list items keyed by a stable unique id | Array index as `key` in a reorderable/insertable/deletable list — Medium BUG |
+| Dashboard widget isolation | Each widget owns its data fetch, skeleton, and `ErrorBoundary` | Single request hydrates the whole dashboard, or a widget lacks its own boundary/skeleton — Medium BUG |
 
 **Rules:** test behavior not implementation. Each AC must have ≥1 test. API tests must cover success AND error. Avoid tests that always pass.
 
@@ -599,10 +620,12 @@ For every Task Contract, mandatory checks:
 - [ ] Behavior on network timeout — loading state interrupted correctly?
 - [ ] Behavior with malformed payload or missing field — crash or graceful fallback?
 
-**Interaction and accessibility:**
+**Interaction and accessibility (WCAG 2.2 AA):**
 - [ ] Interactive elements work with keyboard (Tab, Enter, Esc)
 - [ ] Images have alt text; forms have associated labels
-- [ ] Focus indicator is visible on focusable elements
+- [ ] Invalid fields expose `aria-invalid` + `aria-describedby` for the error message
+- [ ] Focus indicator is visible on focusable elements and never fully obscured by overlays (SC 2.4.11)
+- [ ] Interactive targets ≥ 24×24px CSS (SC 2.5.8); project floor stricter — ≥ 32px any context, ≥ 44×44px mobile
 
 > **Developer:** handle the applicable scenarios for your Task Contract and document them in the delivery file.
 > **QA:** verify that applicable scenarios were handled and have corresponding tests.

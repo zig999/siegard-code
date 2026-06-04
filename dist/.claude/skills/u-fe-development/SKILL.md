@@ -177,6 +177,19 @@ The `on_subagent_stop` hook synthesizes `task_failed` if this rule is not follow
 
 ## Mandatory flow before coding
 
+### Decision order — resolve before writing any component
+
+Stop at the first step that resolves the need:
+
+1. Does a component already exist in the project's shared UI layer (`design-system/components.md` catalog or the shared components directory)? Use it.
+2. Is there an equivalent component in the project's component library (declared in `CLAUDE.md`)? Add and use it.
+3. Is there a semantic token for the value? Use the token — never the raw value.
+4. Is there a similar feature/entity already implemented? Follow the same pattern.
+5. Does the change respect the project's architecture rules (dependency direction, no sibling-feature imports)? If not, reorganize before coding.
+6. Does it respect the accessibility standard declared in `CLAUDE.md` (`u-fe-standards §4`)? If not, fix it before delivering.
+
+Generate **only what the Task Contract asks for**. Do not create stories, visual-regression, token pipeline, i18n, or ADR unless the Task Contract explicitly requires it.
+
 ```
 1. Read the full Task Contract (narrative + all acceptance criteria)
    → emit checkpoint: spec_validated
@@ -251,6 +264,10 @@ Prefer per-UI-module commits when the Task Contract involves multiple components
 - Prefer `type` over `interface` — use `interface` only when extension or implementation is needed (e.g., `implements`, `extends` from third parties)
 - Components with more than 3 render conditionals -> extract subcomponents
 - `any` is forbidden — use `unknown` + type guard (already covered in prohibitions)
+- Derive types from validation schemas with `z.infer` — never hand-maintain a type in parallel with its schema
+- Use `satisfies` to check a literal against a type without widening it
+- Model mutually exclusive shapes as discriminated unions (a literal discriminant field) — not optional-field bags
+- Type assertions (`as`) to silence the compiler are forbidden — narrow with `unknown` + type guards instead (`as const` is the only accepted use)
 
 ---
 
@@ -456,6 +473,14 @@ export function ProductListPage() {
 - Wrapping the entire app in a single `ErrorBoundary` without page-level boundaries.
 - Empty fallback (`fallback={<></>}`) — silent failures are invisible to users and monitoring.
 
+### Dashboard and widget isolation
+
+A dashboard composed of independently loadable widgets must isolate each widget:
+
+- Each widget owns its **own data fetch** — never hydrate the whole dashboard from a single request.
+- Each widget owns its **own loading skeleton**.
+- Each widget is wrapped in its **own `ErrorBoundary`** — one failing widget must not blank the entire dashboard.
+
 ---
 
 ## Internationalization (i18n)
@@ -483,6 +508,8 @@ If `CLAUDE.md` does not declare `i18n`, mark as `N/A — i18n not configured` in
 - Inline CSS — using `style=""` in JSX or `style={{}}` in React components is forbidden; use CSS classes, CSS Modules, or Tailwind
 - `dangerouslySetInnerHTML` without DOMPurify sanitization — **Security risk: XSS**
 - Hardcoded user-facing strings when `i18n: true` is declared in `CLAUDE.md`
+- Component file longer than 300 lines — split into subcomponents before delivering
+- Array index as React `key` in a dynamic list (reorderable, insertable, or deletable) — use a stable unique id from the data
 
 ---
 
@@ -513,6 +540,7 @@ If `CLAUDE.md` does not declare `i18n`, mark as `N/A — i18n not configured` in
 | Prop drilling beyond 2 levels | Tightly couples unrelated components | Use a feature store or Context for shared state within a feature |
 | Reading from a sibling’s internal state via ref | Creates invisible coupling | Lift state to the closest common ancestor or a store |
 | Conditional hook calls | Violates Rules of Hooks — causes crashes | Move conditions inside the hook or use a separate component per condition |
+| Array index as `key` in dynamic lists | Index shifts on reorder/insert/delete — React mis-associates state and DOM nodes | Use a stable unique id from the data (`item.id`) |
 
 ### Linting configuration
 

@@ -56,6 +56,9 @@ This skill is the **single source of truth** for the quality standards the Devel
 | Code splitting | Routes use `React.lazy` + `Suspense` — no eager import of page components | All pages imported eagerly — Medium BUG |
 | Bundle imports | Named imports only for tree-shaking (`import { format } from 'date-fns'`) | `import *` from large library — Medium BUG |
 | Animation accessibility | Animations and transitions wrapped in `@media (prefers-reduced-motion: no-preference)` | Animation without `prefers-reduced-motion` — Medium BUG |
+| Component size | Component file ≤ 300 lines — split into subcomponents past that | Component file > 300 lines — Medium BUG |
+| List `key` stability | Dynamic-list items keyed by a stable unique id | Array index used as `key` in a reorderable/insertable/deletable list — Medium BUG |
+| Dashboard widget isolation | Each independently loadable dashboard widget owns its data fetch, its skeleton, and its `ErrorBoundary` | Single request hydrates the whole dashboard, or a widget lacks its own boundary/skeleton — Medium BUG |
 
 ---
 
@@ -127,7 +130,7 @@ This skill is the **single source of truth** for the quality standards the Devel
 
 ## 4. Edge Case Checklist
 
-> **Accessibility single source of truth:** this section (§4 WCAG 2.1 AA checklist) is the canonical accessibility reference. All other files that reference accessibility (UI spec, design system implementation.md, QA checklist) defer to this section.
+> **Accessibility single source of truth:** this section (§4 WCAG 2.2 AA checklist) is the canonical accessibility reference. All other files that reference accessibility (UI spec, design system implementation.md, QA checklist) defer to this section.
 
 ### Handling patterns
 
@@ -157,15 +160,18 @@ This skill is the **single source of truth** for the quality standards the Devel
 - [ ] Behavior with network timeout — loading state interrupted correctly?
 - [ ] Behavior with malformed payload or missing field — crash or graceful fallback?
 
-### Interaction and accessibility (WCAG 2.1 AA)
+### Interaction and accessibility (WCAG 2.2 AA)
 - [ ] Interactive elements work with keyboard (Tab, Enter, Esc, Space for toggles)
 - [ ] Images have meaningful `alt` text; decorative images use `alt=""`
 - [ ] Forms have associated `<label>` or `aria-label` for every input
+- [ ] Invalid fields expose `aria-invalid` and link their message via `aria-describedby`
 - [ ] Focus indicator visible on all focusable elements (`outline` not suppressed without replacement)
+- [ ] Focus is never fully hidden by sticky headers, overlays, or other content (WCAG 2.2 SC 2.4.11 Focus Not Obscured)
 - [ ] Dynamic content updates announced via `aria-live` or focus management (e.g., modals trap focus)
 - [ ] ARIA roles are semantically correct (`role="button"` only on non-button elements that behave as buttons)
 - [ ] Color is not the only means of conveying information (error state uses icon + text, not red color alone)
 - [ ] Contrast ratio meets WCAG AA: 4.5:1 for normal text, 3:1 for large text and UI components
+- [ ] Interactive targets meet WCAG 2.2 SC 2.5.8 Target Size (Minimum) — ≥ 24×24px CSS. Project floor is stricter: ≥ 32px in any context and ≥ 44×44px on mobile (see Responsive design)
 
 ### Responsive design
 - [ ] Layout is usable at 320px (mobile), 768px (tablet), 1024px (desktop), and 1440px (wide)
