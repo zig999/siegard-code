@@ -14,12 +14,11 @@ Its sole purpose is to design, build, and refine agent and skill structures that
 ```
 siegard-code/
 ├── dist/              # Distribution root — production artifacts (see below)
-│   └── .claude/       # Deployed as <target>/.claude/ via install.sh
+│   └── .claude/       # Copied manually into <target>/.claude/ (see Installation)
 ├── docs-en/           # End-user documentation (English) for downstream projects
 ├── docs/              # Internal project documentation (diagrams, flow maps)
 ├── extras/            # Reference specs, architecture docs, event schemas — NOT published
 ├── tests/             # Test suite that validates dist/ artifacts
-├── install.sh         # Deployment script: syncs dist/ → <target>/.claude/
 ├── skills-lock.json   # Locks external skill versions (analogous to package-lock.json)
 └── assets/            # Static assets (logo, images)
 ```
@@ -34,13 +33,19 @@ siegard-code/
 | `extras/` | Reference specs and architecture docs | Read-only during implementation — edit only when architecture changes |
 | `tests/` | Automated validation of `dist/` | Must pass before promoting to `dist/` |
 
-### install.sh
+### Installation (manual copy)
 
-Copies and replaces files from `dist/` into `<target-project>/.claude/`. Does not remove existing files in the destination.
+There is no install script. Installation is a manual copy of the contents of `dist/.claude/` into `<target-project>/.claude/`. Consequence for every artifact in `dist/`: it must be **self-describing** — provenance, version, and usage context must travel inside the copied files themselves, because no tooling runs at install time.
 
-```bash
-./install.sh <path-to-target-project>
-```
+Provenance mechanism: `dist/.claude/siegard-manifest.json` (versioned inventory, SHA-256 per file) + `dist/.claude/scripts/verify_install.py` (integrity check runnable inside the target). Both travel with the copy.
+
+### Release flow (versioned distribution)
+
+1. Change artifacts in `dist/` and pass the test suite
+2. `python3 gen_manifest.py` — regenerates the manifest (use `--version X.Y.Z` to bump)
+3. Suite green again (`tests/test_manifest_integrity.py` fails on a stale manifest) → commit → tag `vX.Y.Z`
+
+> Any commit that touches `dist/` MUST regenerate the manifest — the suite enforces this.
 
 ### skills-lock.json
 
@@ -287,8 +292,30 @@ Always use `claude-sonnet-4-6` unless explicitly instructed otherwise.
 
 Each skill must follow this standard:
 
+### Frontmatter standard (MANDATORY)
+
+Every directory under `dist/.claude/skills/` MUST contain a `SKILL.md` that begins with valid YAML frontmatter. This applies to ALL skill types — executable skills, phase-rules skills, and resource bundles (template/schema directories). No exceptions.
+
+```yaml
+---
+name: <skill-name>            # MUST equal the directory name exactly
+description: <see rules>      # routing signal — written for the dispatcher, not for humans
+user-invocable: true|false    # explicit boolean, never omitted
+allowed-tools: <tool list>    # MANDATORY when the skill executes tools (P6 — least privilege)
+---
+```
+
+Rules:
+
+* `description` MUST state: what the skill does, who consumes it, and `Not user-invocable` when applicable. In English, single paragraph, trigger-oriented — skill routing is driven by this field
+* `name` MUST equal the directory name — divergence breaks discovery and cross-references
+* `allowed-tools` lives in frontmatter ONLY — never as a `## allowed-tools` prose section in the body (frontmatter is the single source; prose is not enforced)
+* Resource bundles (templates, schemas, globals) ship a `SKILL.md` index: frontmatter + table of files with producer/consumer per file
+* Enforcement: `tests/test_layer1_skill_frontmatter.py` validates all of the above — it MUST pass before promoting any skill to `dist/`
+
 ### Checklist before publishing a skill
 
+* [ ] `SKILL.md` frontmatter valid per the Frontmatter standard (`name` == directory, `description`, `user-invocable`, `allowed-tools` when applicable)
 * [ ] Documentation in `README.md` is complete
 * [ ] At least 3 test cases covered
 * [ ] Edge case behavior validated
@@ -299,7 +326,7 @@ Each skill must follow this standard:
 
 ## Distribution Directory (`./dist`)
 
-All production-ready artifacts are located in `./dist`. Its contents are deployed as `<target>/.claude/` by `install.sh`.
+All production-ready artifacts are located in `./dist`. Its contents are deployed by manually copying `dist/.claude/` into `<target>/.claude/` — no install tooling runs, so every artifact must carry its own provenance and context.
 
 ```
 dist/
