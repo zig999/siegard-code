@@ -1,12 +1,13 @@
+---
+name: orch-report
+description: Worker reporting skill — emit task_progress, task_completed, and task_failed events to the orchestration log via emit.py. Event types are restricted by a hard in-code guard-rail; worker identity comes from ORCH_WORKER_ID and cannot be overridden by the caller. Loaded by every worker as its only write path to the log. Not user-invocable.
+user-invocable: false
+allowed-tools: Bash(python3 *)
+---
+
 # orch-report
 
 Worker reporting skill: emit task progress and completion events to the orchestration log.
-
-## allowed-tools
-
-```
-Bash(python3 *)
-```
 
 ## Security boundary
 

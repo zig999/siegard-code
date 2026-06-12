@@ -1,13 +1,13 @@
+---
+name: orch-log
+description: Append, read, and verify the append-only orchestration event log (.orch/log.jsonl). Provides append.py (lock + hash chain + schema validation), read.py (filtered queries), and verify.py (hash-chain integrity). Loaded by orchestrators and workers that emit or inspect events. Not user-invocable — callers run the scripts directly.
+user-invocable: false
+allowed-tools: Bash(python3 *), Read
+---
+
 # orch-log
 
 Event log skill: append, read, and verify the orchestration JSONL log.
-
-## allowed-tools
-
-```
-Bash(python3 *)
-Read
-```
 
 ## scripts/append.py
 

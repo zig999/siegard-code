@@ -8,10 +8,10 @@ dependencies:
     - skill: u-fe-standards
       path: .claude/skills/u-fe-standards/SKILL.md
       sections: ["§2.2 Code quality", "§3 Visual design", "§4 Accessibility"]
-      on_missing: halt — report status: error / reason: dependency_not_found / dependency: u-fe-standards
+      on_missing: "halt — report status: error / reason: dependency_not_found / dependency: u-fe-standards"
     - skill: u-ui-design
       path: .claude/skills/u-ui-design/anti-patterns.md
-      on_missing: halt — report status: error / reason: dependency_not_found / dependency: u-ui-design/anti-patterns.md
+      on_missing: "halt — report status: error / reason: dependency_not_found / dependency: u-ui-design/anti-patterns.md"
   optional:
     - artifact: design-system/tokens.md
       resolve_order:

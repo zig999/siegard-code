@@ -1,6 +1,8 @@
 ---
 name: u-context-enricher
 description: Transforms vague software development requests (code, refactor, debug, feature implementation) into structured, unambiguous task specifications optimized for LLM execution. Use this skill only when the user explicitly invokes it via /u-context-enricher, "enrich this context", "prepare this task", or similar explicit invocation. The skill outputs a YAML specification covering scope, constraints, acceptance criteria, technical best practices, and project context. It resolves all ambiguities through multiple-choice questions via AskUserQuestion before producing output, because guessing intent propagates errors into the downstream code.
+user-invocable: true
+invocation: /u-context-enricher
 ---
 
 # Context Enricher

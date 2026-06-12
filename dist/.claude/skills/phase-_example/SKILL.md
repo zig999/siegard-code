@@ -1,3 +1,10 @@
+---
+name: phase-_example
+description: Scaffold template for phase-{name}-rules skills. Copy the directory to phase-{name}-rules, replace {name} placeholders, implement the exit-criteria checkers and select_worker.py routing, and declare exit-criteria.json. Reference template only — never dispatched at runtime. Not user-invocable.
+user-invocable: false
+allowed-tools: Bash(python3 *), Read, Glob, Grep
+---
+
 # phase-{name}-rules
 
 Phase rules skill for `{name}` phase. Provides exit criteria checkers, worker routing table,
@@ -12,17 +19,6 @@ The orchestrator calls this skill's scripts directly. No inter-skill communicati
 ### Output
 
 Every script in `scripts/` returns a JSON object to stdout and exits 0 on success or 1 on error.
-
----
-
-## allowed-tools
-
-```
-Bash(python3 *)
-Read
-Glob
-Grep
-```
 
 ---
 

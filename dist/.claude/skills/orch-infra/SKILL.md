@@ -1,12 +1,13 @@
+---
+name: orch-infra
+description: Shared infrastructure checks run at the start of every orchestrator cycle — run_preflight.py, run_integrity.py, run_circuit_check.py. Any non-zero exit blocks the cycle with status blocked. Loaded by all orchestrators. Not user-invocable — orchestrators run the scripts directly.
+user-invocable: false
+allowed-tools: Bash(python3 *)
+---
+
 # orch-infra
 
 Shared infrastructure skill: run preflight, integrity, and circuit-breaker checks at the start of every orchestrator cycle.
-
-## allowed-tools
-
-```
-Bash(python3 *)
-```
 
 ## Usage contract
 

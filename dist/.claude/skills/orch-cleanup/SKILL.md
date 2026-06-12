@@ -1,13 +1,13 @@
+---
+name: orch-cleanup
+description: Runtime cleanup — garbage-collect orphan blobs (gc_orphan_blobs.py) and purge temporary .orch/ files (purge.py). Pre-conditions enforced before any run — no active workers, log integrity verified. Maintenance use only; never run while a workflow is active. Not user-invocable — callers run the scripts directly.
+user-invocable: false
+allowed-tools: Bash(python3 *), Read
+---
+
 # orch-cleanup
 
 Runtime cleanup skill: garbage-collect orphan blobs and purge temporary `.orch/` files.
-
-## allowed-tools
-
-```
-Bash(python3 *)
-Read
-```
 
 ## Pre-conditions
 

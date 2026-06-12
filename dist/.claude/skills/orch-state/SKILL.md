@@ -1,13 +1,13 @@
+---
+name: orch-state
+description: Reduce the event log to derived state. Provides reduce.py (full OrchState JSON), summary.py (compact summary), current_phase.py (active phase), and detect_mode.py (run mode). Single source of derived state for orchestrators (P1/P2 — log is the truth, state is derived). Not user-invocable — orchestrators run the scripts directly.
+user-invocable: false
+allowed-tools: Bash(python3 *), Read
+---
+
 # orch-state
 
 State inspection skill: reduce event log to OrchState, print summaries, query current phase.
-
-## allowed-tools
-
-```
-Bash(python3 *)
-Read
-```
 
 ## scripts/reduce.py
 
