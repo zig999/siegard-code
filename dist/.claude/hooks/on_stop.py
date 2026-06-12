@@ -192,11 +192,14 @@ def _detect_stale_orchestrator(state, events: list) -> dict | None:
     ]
     if heartbeats:
         last_hb = max(heartbeats, key=lambda e: e.seq)
+        # Narrow scope: only malformed-timestamp parsing may be swallowed here.
+        # A broad `except Exception` masked an AttributeError (.timestamp vs .ts)
+        # that silently disabled this freshness check — see LE-01.
         try:
             age = (parse_iso(now_iso()) - parse_iso(last_hb.ts)).total_seconds()
             if age < STALE_THRESHOLD_SECONDS:
                 return None
-        except Exception:
+        except (ValueError, TypeError):
             pass
 
     return {

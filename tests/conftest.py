@@ -20,6 +20,45 @@ _LIB = _REPO_ROOT / "dist" / ".claude" / "lib"
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
+
+# ─── orch_core path isolation ────────────────────────────────────────────────
+# orch_core computes its path globals ONCE, at first import, from the
+# ORCH_PROJECT_DIR env var (default: relative "./.orch"). Two leak vectors
+# made test results depend on collection ORDER:
+#   1. Whoever imports orch_core FIRST bakes the paths for the whole session.
+#      monitor.py mutates ORCH_PROJECT_DIR at ITS import (CLI bootstrap), so
+#      collecting tests/test_monitor_grouping.py before any orch fixture froze
+#      ABSOLUTE repo-root paths — unredirected tests then wrote to the repo's
+#      own .orch/ and read each other's logs.
+#   2. monitor helpers (_load_state, _collect_workflow_index, …) redirect
+#      orch_core.ORCH_DIR/LOG_PATH per call BY DESIGN (the TUI follows
+#      --project-dir) and never restore.
+# Fix: import orch_core HERE (conftest is imported before any test module is
+# collected), snapshot the pristine relative paths, and restore them after
+# every test.
+
+import orch_core as _orch_core_pristine_import  # noqa: E402  (see comment above)
+
+_ORCH_PATH_GLOBALS = (
+    "ORCH_DIR", "LOG_PATH", "LOCK_PATH", "STATE_DIR", "DLQ_DIR",
+    "AUDIT_DIR", "METRICS_DIR", "BLOBS_DIR", "WORKERS_DIR", "CONFIG_PATH",
+)
+
+_ORCH_PRISTINE_PATHS = {
+    n: getattr(_orch_core_pristine_import, n)
+    for n in _ORCH_PATH_GLOBALS
+    if hasattr(_orch_core_pristine_import, n)
+}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_orch_core_paths():
+    yield
+    import orch_core as _oc  # same module object unless a test reloaded it
+    for name, value in _ORCH_PRISTINE_PATHS.items():
+        setattr(_oc, name, value)
+
+
 # ─── Dist artifact helpers ────────────────────────────────────────────────────
 
 

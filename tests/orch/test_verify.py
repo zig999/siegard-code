@@ -210,9 +210,14 @@ class TestVerifyAuditMode:
 # ---------------------------------------------------------------------------
 
 class TestVerifyLogPathOverride:
-    def test_override_path(self, tmp_path):
-        """verify_chain with explicit log_path works independently of module paths."""
-        alt_path = tmp_path / "alt_log.jsonl"
+    def test_override_path(self, tmp_orch):
+        """verify_chain with explicit log_path works independently of module paths.
+
+        Uses tmp_orch (not bare tmp_path): ensure_dirs/append_event below touch
+        ALL path globals — with pristine relative paths they would create a
+        stray .orch/ in the repo root (cwd) as a side effect.
+        """
+        alt_path = tmp_orch / "alt_log.jsonl"
 
         # Write a single valid event directly
         import orch_core as oc

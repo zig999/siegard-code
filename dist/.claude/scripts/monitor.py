@@ -55,6 +55,7 @@ def _early_resolve_project_dir() -> Path:
     return Path(".").resolve()
 
 _project_dir_early = _early_resolve_project_dir()
+_prev_orch_env = os.environ.get("ORCH_PROJECT_DIR")
 os.environ["ORCH_PROJECT_DIR"] = str(_project_dir_early)
 
 # ---------------------------------------------------------------------------
@@ -77,10 +78,20 @@ from orch_core import (  # noqa: E402
     load_blob_data,
 )
 
+# The env mutation above exists only so orch_core (just imported) computes its
+# paths from the resolved project dir when monitor runs as a CLI. Restore the
+# previous value so importing monitor AS A LIBRARY (tests, tooling) does not
+# leak the CLI bootstrap into the host process — every monitor function takes
+# project_dir explicitly and re-points orch_core per call.
+if _prev_orch_env is None:
+    os.environ.pop("ORCH_PROJECT_DIR", None)
+else:
+    os.environ["ORCH_PROJECT_DIR"] = _prev_orch_env
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 MIN_COLS = 80
 MIN_ROWS = 24
 
@@ -276,6 +287,7 @@ def _new_workflow_record() -> dict[str, Any]:
         "agents_skipped": [],    # last terminal event = task_skipped (expected non-execution)
         "phase_details": {},   # phase_name → {status, order, entered_at, completed_at, approved_at, criteria_met}
         "task_statuses": {},   # task_id → current task state dict
+        "heartbeats": {},      # phase_name → ts of the last orchestrator_heartbeat
     }
 
 
@@ -392,6 +404,10 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
             pname = data.get("phase")
             if pname and pname in pd_map:
                 pd_map[pname]["status"] = "active"
+        elif et == "orchestrator_heartbeat":
+            pname = data.get("phase")
+            if pname:
+                w["heartbeats"][pname] = event.ts
 
         # --- task_statuses: per-task_id current state (for TASKS section) ---
         if et in _TASK_EVENT_TYPES and event.task_id:
@@ -408,6 +424,7 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
                 "created_at": None,
                 "last_event_at": None,
                 "last_failure_reason": None,
+                "last_error": None,
                 "next_retry_at": None,
                 # Eixo A — rich fields previously discarded (now carried for the UI):
                 "phase": data.get("phase"),
@@ -451,6 +468,7 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
             elif et == "task_failed":
                 ts["status"] = "failed"
                 ts["last_failure_reason"] = data.get("reason")
+                ts["last_error"] = data.get("error") or ts["last_error"]
             elif et == "task_scheduled_retry":
                 ts["status"] = "scheduled"
                 ts["next_retry_at"] = data.get("next_retry_at")
@@ -459,6 +477,7 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
             elif et == "task_dlq":
                 ts["status"] = "dlq"
                 ts["last_failure_reason"] = data.get("reason")
+                ts["last_error"] = data.get("last_error") or ts["last_error"]
             elif et == "task_skipped":
                 ts["status"] = "skipped"
                 ts["last_failure_reason"] = data.get("reason") or ts["last_failure_reason"]
@@ -631,6 +650,7 @@ def _wf_tasks(wf: dict) -> dict:
             created_at=ts.get("created_at"),
             last_event_at=ts.get("last_event_at"),
             last_failure_reason=ts.get("last_failure_reason"),
+            last_error=ts.get("last_error"),
             next_retry_at=ts.get("next_retry_at"),
             # Eixo A — rich fields:
             phase=ts.get("phase"),
@@ -668,6 +688,7 @@ class UIState:
         self.scroll = 0       # first visible display row (TASKS viewport top)
         self.detail = False   # detail panel open for the selected task
         self.events = False   # recent-events feed open
+        self.dispatch = False # dispatch-decisions panel open (Spec A)
         # Single-workflow focus model (default live view).
         self.selected_wf: str | None = None   # workflow in focus (None = not chosen yet)
         self.picker = False                    # workflow-selector screen open
@@ -745,6 +766,7 @@ def _task_detail_lines(t: Any) -> list[tuple[str, str]]:
         ("artifacts", _fmt(getattr(t, "artifacts", []))),
         ("progress",  _fmt(getattr(t, "last_progress", None))),
         ("failure",   _fmt(getattr(t, "last_failure_reason", None))),
+        ("error",     _fmt(getattr(t, "last_error", None))),
         ("next_retry", _fmt(getattr(t, "next_retry_at", None))),
         ("created",   _fmt(getattr(t, "created_at", None))),
         ("claimed",   _fmt(getattr(t, "claimed_at", None))),
@@ -782,6 +804,51 @@ def _fmt_dur(seconds: float | None) -> str:
     if s < 3600:
         return f"{s // 60}m{s % 60:02d}s"
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+# Mirrors STALE_THRESHOLD_SECONDS in hooks/on_stop.py (_detect_stale_orchestrator)
+# so the live TUI and the session-end hook agree on what "stalled" means.
+ORCH_HEARTBEAT_STALE_S = 900
+
+
+def _orchestrator_stall(wf: dict | None, threshold: int = ORCH_HEARTBEAT_STALE_S) -> dict | None:
+    """Detect a stalled-but-alive orchestrator for the live TUI.
+
+    Alert condition: the focused workflow's current phase is active, it has
+    open (non-terminal) tasks, NONE of them is running (a running worker means
+    the orchestrator is legitimately blocked waiting on the Agent tool), and
+    the last orchestrator_heartbeat for that phase — or the phase entry, when
+    no heartbeat was ever emitted — is older than `threshold` seconds.
+
+    Returns {"phase", "age", "last_heartbeat", "open_tasks"} or None.
+    """
+    if not wf or wf.get("status") != "active":
+        return None
+    phase = wf.get("current_phase")
+    if not phase:
+        return None
+    pd = (wf.get("phase_details") or {}).get(phase) or {}
+    if pd.get("status") != "active":
+        return None  # paused/pending phases are waiting by design, not stalled
+    open_statuses = [
+        ts.get("status") for ts in (wf.get("task_statuses") or {}).values()
+        if ts.get("phase") == phase
+        and ts.get("status") not in ("completed", "dlq", "skipped", "cancelled")
+    ]
+    if not open_statuses:
+        return None
+    if any(s == "running" for s in open_statuses):
+        return None
+    hb_ts = (wf.get("heartbeats") or {}).get(phase)
+    age = _elapsed_s(hb_ts or pd.get("entered_at"))
+    if age is None or age < threshold:
+        return None
+    return {
+        "phase": phase,
+        "age": age,
+        "last_heartbeat": hb_ts,
+        "open_tasks": len(open_statuses),
+    }
 
 
 def _stale_threshold(tier: str | None) -> int:
@@ -1115,12 +1182,15 @@ def render_plain_multi(workflows: dict[str, dict], error: str | None,
                 detail = f"retry@{_short_ts(t.next_retry_at)}"
             elif s in (TaskStatus.FAILED, TaskStatus.DLQ):
                 detail = getattr(t, "last_failure_reason", None) or ""
+                err = getattr(t, "last_error", None)
+                if err:
+                    detail = f"{detail} — {err}" if detail else str(err)
             elif s in (TaskStatus.PENDING, TaskStatus.READY):
                 dstate, unmet = e["dep"]
                 detail = "waiting: " + ", ".join(unmet) if dstate == "blocked" else "ready"
             if getattr(t, "attempts", 1) > 1 and s != TaskStatus.RUNNING:
                 detail = f"×{t.attempts}/{t.max_attempts}  {detail}".rstrip()
-            detail = detail[:40]
+            detail = detail[:80]
             print(f"     {icon} {t.task_id[:18]:<18} [{s.value:<10}] {worker[:22]:<22} {ts}  {detail}".rstrip())
         print()
 
@@ -1240,6 +1310,107 @@ def render_detail(stdscr: Any, task: Any, rows: int, cols: int,
 
     _hline(stdscr, rows - 1, 0, "─", cols - 1)
     _addstr(stdscr, rows - 1, 0, " Enter/Esc: back   q: quit ",
+            curses.color_pair(C_DIM) | curses.A_DIM)
+    stdscr.refresh()
+
+
+def _collect_dispatch_decisions(project_dir: Path | None, n: int = 8) -> list[dict]:
+    """Most-recent-first dispatch_decision records for the dispatch panel.
+
+    Each record: {seq, ts, phase, batch: list, rationale: str, constraints: dict}.
+    Blob-externalized payloads are resolved; malformed entries degrade to
+    empty fields rather than raising.
+    """
+    try:
+        import orch_core as _oc
+        if project_dir is not None:
+            _oc.ORCH_DIR = project_dir / ".orch"
+            _oc.LOG_PATH = _oc.ORCH_DIR / "log.jsonl"
+        events = list(read_events_filtered(event_type="dispatch_decision", tail=n))
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[dict] = []
+    for ev in events:
+        data = ev.data
+        if is_blob_ref(data):
+            try:
+                data = load_blob_data(ev)
+            except Exception:  # noqa: BLE001
+                data = {}
+        batch = data.get("batch")
+        constraints = data.get("constraints")
+        out.append({
+            "seq": ev.seq,
+            "ts": ev.ts,
+            "phase": data.get("phase"),
+            "batch": batch if isinstance(batch, list) else [],
+            "rationale": str(data.get("rationale") or ""),
+            "constraints": constraints if isinstance(constraints, dict) else {},
+        })
+    out.reverse()  # most recent first
+    return out
+
+
+def render_dispatch(stdscr: Any, project_dir: Path | None, rows: int, cols: int) -> None:
+    """Full-screen dispatch-decisions panel (toggle 'd') — Spec A.
+
+    Answers "why is this task in the batch?": batch composition, the
+    orchestrator's rationale, and the applied constraints (batch ceiling,
+    context-budget mitigations) straight from dispatch_decision events.
+    """
+    stdscr.erase()
+    _addstr(stdscr, 0, 0, "DISPATCH DECISIONS", curses.color_pair(C_HEADER) | curses.A_BOLD)
+    _hline(stdscr, 1, 0, "─", cols - 1)
+
+    decisions = _collect_dispatch_decisions(project_dir, n=8)
+    row = 2
+    if not decisions:
+        _addstr(stdscr, row, 2, "(no dispatch_decision events yet)",
+                curses.color_pair(C_DIM) | curses.A_DIM)
+    else:
+        for d in decisions:
+            if row >= rows - 2:
+                break
+            head = f"seq={d['seq']}  {_short_ts(d['ts'])}  phase={d['phase'] or '—'}  batch={len(d['batch'])}"
+            _addstr(stdscr, row, 1, _trunc(head, cols - 2),
+                    curses.color_pair(C_RUNNING) | curses.A_BOLD)
+            row += 1
+            if d["rationale"] and row < rows - 2:
+                _addstr(stdscr, row, 3, _trunc(f"rationale: {d['rationale']}", cols - 4),
+                        curses.color_pair(C_DIM))
+                row += 1
+            for i, b in enumerate(d["batch"]):
+                if row >= rows - 2:
+                    break
+                if not isinstance(b, dict):
+                    b = {}
+                branch = "└─" if i == len(d["batch"]) - 1 else "├─"
+                meta = "·".join(p for p in (b.get("tier"), b.get("stack")) if p)
+                line = f"{branch} {b.get('task_id') or '—'}  {b.get('worker_type') or '—'}"
+                if meta:
+                    line += f"  {meta}"
+                _addstr(stdscr, row, 3, _trunc(line, cols - 4), curses.color_pair(C_DIM))
+                row += 1
+            cons = d["constraints"]
+            bits = []
+            if cons.get("max_batch") is not None:
+                bits.append(f"max_batch={cons['max_batch']}")
+            ce = cons.get("context_estimate")
+            over = [c for c in (ce if isinstance(ce, list) else [])
+                    if isinstance(c, dict) and c.get("over_threshold")]
+            if over:
+                migs = ", ".join(
+                    f"{c.get('task_id', '?')}→{c.get('mitigation') or 'none'}" for c in over
+                )
+                bits.append(f"context: {len(over)} over threshold ({migs})")
+            if bits and row < rows - 2:
+                _addstr(stdscr, row, 3, _trunc("constraints: " + " · ".join(bits), cols - 4),
+                        curses.color_pair(C_DIM) | curses.A_DIM)
+                row += 1
+            row += 1  # spacer between decisions
+
+    _hline(stdscr, rows - 1, 0, "─", cols - 1)
+    _addstr(stdscr, rows - 1, 0, " d/Esc: back   q: quit ",
             curses.color_pair(C_DIM) | curses.A_DIM)
     stdscr.refresh()
 
@@ -1439,6 +1610,9 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
     if ui is not None and ui.events:
         render_events(stdscr, project_dir, rows, cols)
         return
+    if ui is not None and ui.dispatch:
+        render_dispatch(stdscr, project_dir, rows, cols)
+        return
     if ui is not None and ui.detail and flat_tasks:
         render_detail(stdscr, flat_tasks[ui.sel], rows, cols, project_dir)
         return
@@ -1577,6 +1751,21 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
         code = esc.get("code", "?")
         reason = _trunc(esc.get("reason", ""), cols - 20)
         _addstr(stdscr, row, 0, f"  ⚠  ESCALATION {code}: {reason}",
+                curses.color_pair(C_ALERT) | curses.A_BOLD)
+        row += 1
+
+    # Spec C — stalled-but-alive orchestrator (open tasks, no worker running,
+    # no heartbeat within the threshold). Recomputed every frame so the alert
+    # appears/disappears on the time-based redraw, not only on log changes.
+    stall = _orchestrator_stall(active_wf)
+    if stall:
+        if stall["last_heartbeat"]:
+            hb_lbl = f"last heartbeat {_fmt_dur(stall['age'])} ago"
+        else:
+            hb_lbl = f"no heartbeat for {_fmt_dur(stall['age'])} (since phase entry)"
+        msg = (f"  ⚠  ORCHESTRATOR STALLED [{stall['phase']}]: {hb_lbl}"
+               f" · {stall['open_tasks']} open task(s) — re-invoke /u-orchestrator")
+        _addstr(stdscr, row, 0, _trunc(msg, cols - 1),
                 curses.color_pair(C_ALERT) | curses.A_BOLD)
         row += 1
 
@@ -1846,6 +2035,9 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
             detail = f"retry@{_short_ts(t.next_retry_at)}"
         elif status in (TaskStatus.FAILED, TaskStatus.DLQ) and t.last_failure_reason:
             detail = t.last_failure_reason
+            err = getattr(t, "last_error", None)
+            if err:
+                detail = f"{detail} — {err}"
         elif status in (TaskStatus.PENDING, TaskStatus.READY):
             dstate, unmet = e["dep"]
             if dstate == "blocked":
@@ -1881,7 +2073,7 @@ def render_curses(stdscr: Any, state: OrchState | None, error: LoadError | None,
     _hline(stdscr, rows - 1, 0, "─", cols - 1)
     now = datetime.now().strftime("%H:%M:%S")
     pos = f"{ui.sel + 1}/{ntasks}" if (ui and ntasks) else f"{ntasks}"
-    footer = f" ↑↓ select · Enter detail · e events · q quit    {pos}    {now} "
+    footer = f" ↑↓ select · Enter detail · e events · d dispatch · q quit    {pos}    {now} "
     _addstr(stdscr, rows - 1, 0, _trunc(footer, cols - 1), curses.color_pair(C_DIM) | curses.A_DIM)
 
     stdscr.refresh()
@@ -1991,9 +2183,10 @@ def run_live(stdscr: Any, project_dir: Path, interval: float,
         elif key in (ord("q"), ord("Q")):
             return
         elif key == 27:  # ESC: close an open panel, else quit
-            if ui.detail or ui.events:
+            if ui.detail or ui.events or ui.dispatch:
                 ui.detail = False
                 ui.events = False
+                ui.dispatch = False
                 dirty = True
             else:
                 return
@@ -2001,10 +2194,17 @@ def run_live(stdscr: Any, project_dir: Path, interval: float,
             ui.picker = True
             ui.detail = False
             ui.events = False
+            ui.dispatch = False
             dirty = True
         elif key in (ord("e"), ord("E")):  # toggle recent-events feed
             ui.events = not ui.events
             ui.detail = False
+            ui.dispatch = False
+            dirty = True
+        elif key in (ord("d"), ord("D")):  # toggle dispatch-decisions panel
+            ui.dispatch = not ui.dispatch
+            ui.detail = False
+            ui.events = False
             dirty = True
         elif key in (curses.KEY_DOWN, ord("j")):
             ui.sel += 1
