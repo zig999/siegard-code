@@ -92,6 +92,13 @@ class TestMetaPhaseRouting:
         assert r.name == "spawn_phase_orchestrator"
         assert r.params["subagent_type"] == subagent
 
+    def test_M7_done_routes_workflow_complete(self):
+        """HF-03: 'done' is the terminal marker (to_phase of the final
+        phase_transitioned) — re-entering phase routing with it must report
+        completion, never error('unknown_phase')."""
+        r = self.sm.evaluate("phase_entry", {"current_phase": "done"})
+        assert r.name == "workflow_complete"
+
     def test_M7_unknown_phase_returns_error(self):
         r = self.sm.evaluate("phase_entry", {"current_phase": "qa"})
         assert r.name == "error"

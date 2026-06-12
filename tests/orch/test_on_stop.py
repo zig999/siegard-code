@@ -280,3 +280,80 @@ def test_last_error_contains_required_keys(tmp_path):
     err = _read_last_error(tmp_path)
     for key in ("generated_at", "workflow_id", "run_status", "last_seq", "last_error_event"):
         assert key in err, f"Missing key in last_error.json: {key}"
+
+
+# ---------------------------------------------------------------------------
+# LE-01 regression — _detect_stale_orchestrator must read Event.ts (the real
+# field), not Event.timestamp (nonexistent). Before the fix, line ~196 raised
+# AttributeError (swallowed by try/except, killing the freshness check) and
+# line ~206 raised AttributeError out of the function whenever heartbeats
+# existed.
+# Uses the local tmp_orch fixture (monkeypatched paths, no module reload) to
+# preserve class identity for the rest of the session.
+# ---------------------------------------------------------------------------
+
+def _load_on_stop_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("on_stop_under_test", HOOK)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestStaleOrchestratorDetector:
+    def _seed_active_phase_with_pending_task(self, orch_core):
+        orch_core.append_event(
+            agent="orchestrator", event_type="phase_declared",
+            data={"workflow_id": "wf-hb",
+                  "phases": [{"name": "dev", "order": 1, "required": True}]})
+        orch_core.append_event(
+            agent="orchestrator", event_type="phase_entered",
+            data={"phase": "dev", "order": 1, "workflow_id": "wf-hb"})
+        orch_core.append_event(
+            agent="orchestrator-dev", event_type="task_created", task_id="dev_tc_001",
+            data={"phase": "dev", "deps": [], "tier": "standard",
+                  "type": "impl", "spec": "x"})
+
+    def test_fresh_heartbeat_suppresses_alert(self, tmp_orch):
+        """A heartbeat younger than the stale threshold must return None."""
+        import orch_core
+        self._seed_active_phase_with_pending_task(orch_core)
+        orch_core.append_event(
+            agent="orchestrator-dev", event_type="orchestrator_heartbeat",
+            data={"phase": "dev"})
+        mod = _load_on_stop_module()
+        state = orch_core.reduce_all()
+        events = list(orch_core.read_events_filtered(event_type=None))
+        assert mod._detect_stale_orchestrator(state, events) is None
+
+    def test_stale_heartbeat_reports_last_heartbeat_ts(self, tmp_orch, monkeypatch):
+        """A heartbeat older than the threshold must produce a diagnostic
+        whose last_heartbeat equals the heartbeat event's ts field."""
+        from datetime import timedelta
+        import orch_core
+        self._seed_active_phase_with_pending_task(orch_core)
+        hb = orch_core.append_event(
+            agent="orchestrator-dev", event_type="orchestrator_heartbeat",
+            data={"phase": "dev"})
+        mod = _load_on_stop_module()
+        # Advance the detector's clock 16 minutes past the heartbeat (threshold 900s)
+        future = (orch_core.parse_iso(orch_core.now_iso())
+                  + timedelta(seconds=960)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        monkeypatch.setattr(mod, "now_iso", lambda: future)
+        state = orch_core.reduce_all()
+        events = list(orch_core.read_events_filtered(event_type=None))
+        stale = mod._detect_stale_orchestrator(state, events)
+        assert stale is not None
+        assert stale["stale_orchestrator"] == "dev"
+        assert stale["last_heartbeat"] == hb.ts
+
+    def test_no_heartbeat_with_pending_tasks_alerts(self, tmp_orch):
+        """No heartbeats at all + pending tasks → diagnostic with last_heartbeat None."""
+        import orch_core
+        self._seed_active_phase_with_pending_task(orch_core)
+        mod = _load_on_stop_module()
+        state = orch_core.reduce_all()
+        events = list(orch_core.read_events_filtered(event_type=None))
+        stale = mod._detect_stale_orchestrator(state, events)
+        assert stale is not None
+        assert stale["last_heartbeat"] is None

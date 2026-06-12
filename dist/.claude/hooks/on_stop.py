@@ -193,7 +193,7 @@ def _detect_stale_orchestrator(state, events: list) -> dict | None:
     if heartbeats:
         last_hb = max(heartbeats, key=lambda e: e.seq)
         try:
-            age = (parse_iso(now_iso()) - parse_iso(last_hb.timestamp)).total_seconds()
+            age = (parse_iso(now_iso()) - parse_iso(last_hb.ts)).total_seconds()
             if age < STALE_THRESHOLD_SECONDS:
                 return None
         except Exception:
@@ -203,7 +203,7 @@ def _detect_stale_orchestrator(state, events: list) -> dict | None:
         "stale_orchestrator": state.current_phase,
         "pending_tasks": len(pending),
         "pending_task_ids": [t.task_id for t in pending],
-        "last_heartbeat": heartbeats[-1].timestamp if heartbeats else None,
+        "last_heartbeat": heartbeats[-1].ts if heartbeats else None,
         "action_required": (
             "Orchestrator stopped making progress with active tasks remaining. "
             "Re-invoke /u-orchestrator — the log is intact and execution will resume "

@@ -6,7 +6,13 @@ Zero external dependencies — Python 3.10+ stdlib only.
 """
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover — Windows (fcntl is POSIX-only)
+    fcntl = None  # type: ignore[assignment]
+    _HAS_FCNTL = False
+    import msvcrt
 import hashlib
 import json
 import os
@@ -112,9 +118,37 @@ def ensure_dirs() -> None:
 # Locking
 # ---------------------------------------------------------------------------
 
+def _lock_acquire_nb(fd: int) -> None:
+    """Acquire an exclusive non-blocking lock on fd.
+
+    Cross-platform seam: POSIX flock when available, msvcrt byte-range lock
+    on Windows. Raises BlockingIOError on both platforms when the lock is
+    already held, so the LogLock polling loop is platform-agnostic.
+    """
+    if _HAS_FCNTL:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    else:  # pragma: no cover — exercised via fake-msvcrt subprocess test
+        os.lseek(fd, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            # msvcrt raises plain OSError/PermissionError when the byte is
+            # locked elsewhere; normalize to BlockingIOError for the caller.
+            raise BlockingIOError(str(exc)) from exc
+
+
+def _lock_release(fd: int) -> None:
+    """Release the lock acquired by _lock_acquire_nb."""
+    if _HAS_FCNTL:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    else:  # pragma: no cover — exercised via fake-msvcrt subprocess test
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+
 class LogLock:
     """
-    Exclusive POSIX lock on the log lock file.
+    Exclusive lock on the log lock file (POSIX flock; msvcrt on Windows).
 
     Non-blocking with polling loop and timeout.
     Releases automatically on context exit, even on exception.
@@ -139,7 +173,7 @@ class LogLock:
         start = time.monotonic()
         while True:
             try:
-                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _lock_acquire_nb(self._fd)
                 return self
             except BlockingIOError:
                 if time.monotonic() - start >= self._timeout_s:
@@ -152,7 +186,7 @@ class LogLock:
 
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         if self._fd is not None:
-            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            _lock_release(self._fd)
             os.close(self._fd)
             self._fd = None
 
@@ -2839,6 +2873,11 @@ META_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
         Action("spawn_phase_orchestrator", {"subagent_type": "orchestrator-review"}),
     ("phase_entry", lambda i: i.get("current_phase") == "test"):
         Action("spawn_phase_orchestrator", {"subagent_type": "orchestrator-test"}),
+    # Terminal marker: "done" is the to_phase of the final phase_transitioned
+    # (orchestrator-test exit). It is never a dispatchable phase — re-entering
+    # phase routing with it means the workflow already completed.
+    ("phase_entry", lambda i: i.get("current_phase") == "done"):
+        Action("workflow_complete", {}),
     ("phase_entry", lambda i: True):
         Action("error", {"reason": "unknown_phase"}),  # phase populated by wrapper
 }

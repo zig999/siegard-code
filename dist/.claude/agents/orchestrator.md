@@ -380,6 +380,9 @@ SUBAGENT=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.std
 If `$ACTION == "error"` (current_phase not in routing table):
 Output `{"status": "error", "reason": "unknown_phase", "detail": "<current_phase> has no entry in routing table", "last_seq": <n>}` and stop.
 
+If `$ACTION == "workflow_complete"` (current_phase is the terminal `"done"` marker):
+The workflow already completed — never spawn a phase orchestrator for `done`. Return to Step 3 (terminal state check) and emit the completion report.
+
 If `$ACTION == "spawn_phase_orchestrator"`: spawn `$SUBAGENT` (one of `orchestrator-{sdd,dev,review,test}`).
 
 Derive `workflow_type` and `requirement` from the `phase_declared` event before spawning:

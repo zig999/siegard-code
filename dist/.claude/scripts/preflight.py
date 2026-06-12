@@ -14,7 +14,14 @@ Exit codes:
 Output: single JSON object on stdout. All other output on stderr.
 """
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows — fcntl is POSIX-only; msvcrt fallback below
+    fcntl = None
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None
 import json
 import os
 import platform
@@ -89,25 +96,35 @@ def check_python_version() -> CheckResult:
 
 def check_flock_works() -> CheckResult:
     def _run() -> CheckResult:
+        if fcntl is None and msvcrt is None:
+            return CheckResult(
+                ok=False, reason="no file-locking mechanism available (fcntl and msvcrt both missing)"
+            )
         try:
             with tempfile.NamedTemporaryFile(suffix=".lock", delete=False) as tf:
                 lock_path = tf.name
             try:
                 with open(lock_path, "w") as f:
-                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    fcntl.flock(f, fcntl.LOCK_UN)
-                return CheckResult(ok=True, reason="POSIX flock works")
+                    if fcntl is not None:
+                        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        fcntl.flock(f, fcntl.LOCK_UN)
+                        return CheckResult(ok=True, reason="POSIX flock works")
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                    return CheckResult(ok=True, reason="msvcrt file locking works (Windows)")
             finally:
                 try:
                     os.unlink(lock_path)
                 except OSError:
                     pass
         except (ImportError, AttributeError):
-            return CheckResult(ok=False, reason="fcntl not available (non-POSIX system)")
+            return CheckResult(ok=False, reason="file-locking module not available")
         except BlockingIOError:
-            return CheckResult(ok=False, reason="flock returned EWOULDBLOCK unexpectedly")
+            return CheckResult(ok=False, reason="lock returned EWOULDBLOCK unexpectedly")
         except OSError as exc:
-            return CheckResult(ok=False, reason=f"flock failed: {exc}")
+            return CheckResult(ok=False, reason=f"file locking failed: {exc}")
     return _timed(_run)
 
 

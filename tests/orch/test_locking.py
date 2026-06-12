@@ -196,3 +196,77 @@ class TestLogLockConcurrency:
         expected_count = thread_count * events_per_thread
         assert len(seqs) == expected_count
         assert sorted(seqs) == list(range(1, expected_count + 1)), "Seqs must be unique and sequential"
+
+
+# ---------------------------------------------------------------------------
+# LE-02 regression — cross-platform locking seam (fcntl on POSIX, msvcrt on
+# Windows). orch_core must be importable without fcntl, and LogLock must
+# drive the platform seam, not fcntl directly.
+# ---------------------------------------------------------------------------
+
+class TestLockPlatformSeam:
+    def test_posix_path_active_on_this_platform(self):
+        assert orch_core._HAS_FCNTL is True
+
+    def test_loglock_polls_through_acquire_seam(self, tmp_orch, monkeypatch):
+        """LogLock's polling loop must call _lock_acquire_nb and honor
+        BlockingIOError until timeout — proving the seam is the single
+        locking entry point."""
+        calls = []
+
+        def always_held(fd):
+            calls.append(fd)
+            raise BlockingIOError("simulated: lock held elsewhere")
+
+        monkeypatch.setattr(orch_core, "_lock_acquire_nb", always_held)
+        with pytest.raises(orch_core.LockTimeoutError):
+            with orch_core.LogLock(timeout_s=0.2):
+                pass
+        assert len(calls) >= 2  # polled more than once before timing out
+
+    def test_windows_fallback_importable_and_locks(self, tmp_path):
+        """Simulate Windows in a subprocess: block 'import fcntl', install a
+        fake msvcrt, import orch_core fresh, and exercise LogLock. Verifies
+        (a) orch_core imports without fcntl and (b) acquire/release route
+        through msvcrt.locking with LK_NBLCK/LK_UNLCK."""
+        import subprocess
+        import sys as _sys
+        import textwrap
+
+        dist_lib = Path(__file__).parent.parent.parent / "dist" / ".claude" / "lib"
+        driver = textwrap.dedent("""
+            import builtins, os, sys, types
+
+            calls = []
+            fake = types.ModuleType("msvcrt")
+            fake.LK_NBLCK = 2
+            fake.LK_UNLCK = 0
+            def locking(fd, mode, nbytes):
+                calls.append((mode, nbytes))
+            fake.locking = locking
+            sys.modules["msvcrt"] = fake
+
+            real_import = builtins.__import__
+            def no_fcntl(name, *args, **kwargs):
+                if name == "fcntl":
+                    raise ImportError("simulated Windows: No module named 'fcntl'")
+                return real_import(name, *args, **kwargs)
+            builtins.__import__ = no_fcntl
+
+            sys.path.insert(0, sys.argv[1])
+            os.environ["ORCH_PROJECT_DIR"] = sys.argv[2]
+            import orch_core
+
+            assert orch_core._HAS_FCNTL is False, "_HAS_FCNTL must be False without fcntl"
+            with orch_core.LogLock(timeout_s=1.0):
+                pass
+            assert (fake.LK_NBLCK, 1) in calls, f"acquire not routed via msvcrt: {calls}"
+            assert (fake.LK_UNLCK, 1) in calls, f"release not routed via msvcrt: {calls}"
+            print("WINDOWS_FALLBACK_OK")
+        """)
+        r = subprocess.run(
+            [_sys.executable, "-c", driver, str(dist_lib), str(tmp_path)],
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 0, f"stderr: {r.stderr}\nstdout: {r.stdout}"
+        assert "WINDOWS_FALLBACK_OK" in r.stdout
