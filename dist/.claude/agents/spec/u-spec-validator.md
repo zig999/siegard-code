@@ -28,6 +28,7 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 - Orchestrator requests revalidation after a correction
 
 ## Expected Inputs
+- **Requirement (UI intent)** — injected by the Orchestrator into this agent's activation prompt (the `Requirement:` line; origin: `triage.requirement`). Used by the front-phase control-traceability check (Mode 1b, step 5b) as the authoritative declaration of which screen controls/fields were requested.
 - `domains/{domain}/openapi.yaml` (one per domain in the requirement)
 - `domains/{domain}/{domain}.spec.md` (one per domain)
 - `domains/{domain}/back/{domain}.back.md` (when available — back phase)
@@ -63,6 +64,7 @@ Executed after the Front Spec Agent completes ALL frontend artifacts for the req
 3. Cross-ref error codes: every error.code in §6 exists in the global catalog AND in an error response of the corresponding domain's `openapi.yaml`
 4. §5 field existence: every field listed in §5 exists in the `requestBody` schema of the corresponding operationId in `openapi.yaml` — flag missing fields as blocking. Verify §5 contains no technical constraint columns (Rule, minLength, pattern, etc.) — presence is a warning (duplication risk)
 5. Minimum states covered in each feature spec (§2): loading, success, error, empty
+5b. **UI control traceability (anti-invention):** enumerate every interactive control declared in each feature spec's §2 — filter, search input, sort control, pagination, bulk action. For each, confirm a traceable origin in the **Requirement (UI intent)** received in the activation prompt, OR an adjacent `<!-- TO CONFIRM ... -->` marker. A control with neither is a **blocking** inconsistency (responsible: Front Spec Agent): the spec exposes an affordance the requirement did not request (e.g., filters auto-added to a list table). Data availability in `openapi.yaml` (query parameters, list/collection endpoints) does NOT by itself justify a control — only the Requirement does (per `u-spec-front` *Source-of-truth split*). This check is the validator-side enforcement of that split; do not approve a control the producer invented from endpoint shape or convention.
 6. Every flow references features that have a corresponding `.feature.spec.md`
 6b. **FL-NN vs §3 consistency:** for each FL-NN in flow.md §4 — (a) if the Behavior involves a redirect: confirm there is a matching Side Effect row in the source feature's `feature.spec.md §3`; (b) if the Condition references a UI state: confirm it exists in the source feature's `feature.spec.md §2` or is covered by `front.md §5`. Inverse: for each cross-feature redirect Side Effect in `feature.spec.md §3`, confirm a FL-NN or `front.md §5` entry covers it. Mismatches are warning-level inconsistencies. FL-NN referencing a route without `.feature.spec.md` is blocking.
 7. front.md stack consistent with the project's CLAUDE.md
@@ -251,6 +253,7 @@ When the final result is **VALID** for all domains in the requirement, generate 
 - [x] All UCs have a corresponding endpoint in openapi.yaml
 - [x] All BRs are present in .back.md
 - [x] All openapi.yaml states are handled in the feature specs (§2) that consume each domain
+- [x] Every interactive control in feature specs (§2) traces to the Requirement (UI intent) or a `TO CONFIRM` marker — no auto-added filter/search/sort/pagination/bulk-action
 - [x] All error.codes are in the global catalog
 - [x] Cross-domain dependencies verified (bidirectional, no drafts)
 - [x] Prefixes follow the global pattern (UC, BR, ST, EV, UI, FL)

@@ -181,7 +181,7 @@ The `on_subagent_stop` hook synthesizes `task_failed` if this rule is not follow
 
 Stop at the first step that resolves the need:
 
-1. Does a component already exist in the project's shared UI layer (`design-system/components.md` catalog or the shared components directory)? Use it.
+1. Before writing any UI markup, inspect the DS primitive layer (`components/ui/`, per `CLAUDE.md`). If an equivalent primitive exists (Card, Badge, Table, Form…), use it **by composition** — never reimplement it by hand (`u-fe-standards §2.2 Primitive reuse`; anti-pattern `reimplemented-primitive`). The `design-system/components.md` catalog is the source of truth for which primitives are cataloged.
 2. Is there an equivalent component in the project's component library (declared in `CLAUDE.md`)? Add and use it.
 3. Is there a semantic token for the value? Use the token — never the raw value.
 4. Is there a similar feature/entity already implemented? Follow the same pattern.
@@ -294,12 +294,15 @@ Each type of state has its place — mixing responsibilities leads to subtle bug
 
 ```
 src/
-├── components/          <- reusable components
-│   └── [component]/
-│       ├── [component].tsx
-│       ├── [component].types.ts
-│       └── __tests__/
-│           └── [component].spec.tsx
+├── components/
+│   └── ui/              <- DS primitives (Card, Badge, Table, Form…) — cataloged in design-system/components.md
+│       └── [primitive]/
+│           ├── [primitive].tsx
+│           ├── [primitive].types.ts
+│           └── __tests__/[primitive].spec.tsx
+├── features/            <- feature modules (domain logic + data live here)
+│   └── [feature]/
+│       └── components/  <- feature-local components: compose ui/ primitives; bound to one feature
 ├── pages/               <- screens (one folder per route/screen)
 │   └── [page]/
 │       ├── index.tsx
@@ -312,6 +315,8 @@ src/
 ```
 
 > Adapt according to the structure defined in `CLAUDE.md`.
+
+> **DS primitive vs feature-local:** the criterion for what belongs in `components/ui/` (DS primitive) versus `features/<feature>/components/` (feature-local) is defined in `design-system/components.md` → "Catalog Membership". Promoting a feature-local component into `components/ui/` is a design-system spec change (CR) — the Developer flags the need; it never adds primitives to the catalog ad hoc.
 
 ---
 

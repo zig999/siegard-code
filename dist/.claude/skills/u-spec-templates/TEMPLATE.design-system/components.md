@@ -5,6 +5,28 @@
 
 ---
 
+## Catalog Membership — DS Primitive vs Feature-Local
+
+> Decide before creating any component. This catalog lists **DS primitives only**.
+> Adding a component here is a design-system spec change (new `component.spec.md` + a Changelog CR entry in `_index.md`). The Developer never adds a primitive to the catalog ad hoc — it flags the need so the `component-spec-gate` routes it to `u-fe-spec-writer`.
+
+| Trait | DS primitive (`components/ui/`) | Feature-local (`features/<feature>/components/`) |
+|---|---|---|
+| Domain knowledge | None — purely presentational | Encodes domain / business rules |
+| Reuse | Used (or reusable) by ≥ 2 features | Bound to a single feature |
+| Data | No fetch/mutation — data arrives via props | May own its feature's data/flow |
+| Composition | Is composed FROM | Composes primitives |
+| Spec artifact | Has `component.spec.md` + a row in this catalog | No catalog entry required |
+
+**Promotion trigger:** a feature-local component needed by a 2nd feature → promote it to `components/ui/` via CR (`component.spec.md` + catalog row + Changelog entry). Until promoted, never copy it across features.
+
+**Forbidden:**
+- Cataloging a component that carries domain / business logic (it is feature-local)
+- Duplicating a feature-local component into a second feature instead of promoting it
+- Adding a primitive to `components/ui/` without a `component.spec.md`
+
+---
+
 ## 12. Component Catalog
 
 <!-- INSTRUCTION: For each component, document which tokens are used in each visual slot, for each relevant state. Add components as they appear in specified screens. Typical slots: bg (background), border, text, icon, shadow. After the token table, add Do/Don't pairs for the most critical components. -->

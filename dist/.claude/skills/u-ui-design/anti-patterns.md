@@ -82,6 +82,16 @@
 
 ---
 
+### Architecture
+
+| id | category | name | detection_condition | threshold | absolute |
+|---|---|---|---|---|---|
+| `reimplemented-primitive` | quality | Reimplemented DS primitive | UI markup hand-rolls a structure equivalent to a primitive available in the DS primitive layer (`components/ui/`: Card, Badge, Table, Form…) instead of composing it | — | — |
+
+> Detection is semantic (review / QA level) — not statically automatable by a linter. Enforcement points: the Developer decision order (`u-fe-development`) and `u-fe-standards §2.2 Primitive reuse`; this id is for audit reporting.
+
+---
+
 ## Absolute Enforcement Patterns
 
 Rules marked `absolute` must be detected and rejected in **all** contexts. No design direction or intensity overrides them.
@@ -150,6 +160,7 @@ box-shadow: inset 4px 0 0 var(--color-action); /* inset box-shadow is not a vali
 | `layout-transition` | animated properties | width / height / padding / margin |
 | `transition-all` | transition property | `transition: all` or `transition-property: all` |
 | `bounce-easing` | cubic-bezier control points | any y ∉ [0, 1] |
+| `reimplemented-primitive` | equivalent primitive in `components/ui/` | hand-rolled markup duplicates an available primitive instead of composing it |
 | `radius-single-side` | border sides active | border-radius on element with single-side border only |
 | `reduced-motion-missing` | animation context | any animation outside `@media (prefers-reduced-motion: no-preference)` |
 

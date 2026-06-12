@@ -57,6 +57,7 @@ This skill is the **single source of truth** for the quality standards the Devel
 | Bundle imports | Named imports only for tree-shaking (`import { format } from 'date-fns'`) | `import *` from large library — Medium BUG |
 | Animation accessibility | Animations and transitions wrapped in `@media (prefers-reduced-motion: no-preference)` | Animation without `prefers-reduced-motion` — Medium BUG |
 | Component size | Component file ≤ 300 lines — split into subcomponents past that | Component file > 300 lines — Medium BUG |
+| Primitive reuse | UI markup composes existing primitives from the DS primitive layer declared in `CLAUDE.md` (convention: `components/ui/` — Card, Badge, Table, Form…) | Hand-rolled markup duplicating an available primitive instead of composing it — Medium BUG (`reimplemented-primitive`) |
 | List `key` stability | Dynamic-list items keyed by a stable unique id | Array index used as `key` in a reorderable/insertable/deletable list — Medium BUG |
 | Dashboard widget isolation | Each independently loadable dashboard widget owns its data fetch, its skeleton, and its `ErrorBoundary` | Single request hydrates the whole dashboard, or a widget lacks its own boundary/skeleton — Medium BUG |
 

@@ -51,7 +51,7 @@ visual_personality:
 |---|---|---|
 | `tokens.md` | Colors, spacing, typography, shadows and borders | Whenever implementing visual styles |
 | `composition.md` | Visual effects (glass, neon, spotlight), hierarchy, layout, density | Screens with effects, dashboards, complex layout |
-| `components.md` | Component catalog: slots x states, do/dont | Implementing or specifying visual components |
+| `components.md` | Catalog membership (DS primitive vs feature-local) + component catalog: slots x states, do/dont | Implementing or specifying visual components |
 | `implementation.md` | Accessibility, animations, QA checklist, team guidelines | Visual QA, PR review, accessibility adjustments |
 
 ---

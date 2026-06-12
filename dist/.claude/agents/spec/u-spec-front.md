@@ -31,6 +31,7 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 > You are activated **once per requirement**, not once per domain. This allows features composed of multiple domains to be specified correctly.
 
 ## Expected Inputs
+- **Requirement (UI intent)** — injected by the Orchestrator into this agent's spawn prompt (the `Requirement:` line; origin: `triage.requirement`, which carries the user's request / `u-ui-brief` output). **Authoritative source for screen scope and for which controls/fields each screen exposes.** The brief is never handed to this agent as a file (see `u-ui-brief` — *Handoff envelope*); its intent reaches you only through this Requirement text. When the Requirement is silent on a control, treat it as *not requested* — never as *infer a default*.
 - `domains/{domain}/openapi.yaml` — **APPROVED** (one for each domain involved in the features)
 - `domains/{domain}/{domain}.spec.md` — **APPROVED** (one for each domain)
 - `.claude/skills/u-spec-globals/error-codes.md` — to map errors to UI messages
@@ -42,6 +43,15 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 - `.claude/skills/u-spec-templates/TEMPLATE.design-system-rules.md` — compact rules summary template
 - `CLAUDE.md` — project stack configuration
 - `{SPECS_DIR}/front/design-system/` — if it already exists, read `_index.md` before Step 1.5 to update rather than recreate
+
+## Source-of-truth split (controls vs. data)
+
+This split is binding for every screen you specify:
+
+- **Endpoints / UCs define DATA AVAILABILITY** — what data a screen *can* show and which operations exist server-side.
+- **The Requirement (UI intent) defines SCREEN SCOPE** — which screens exist and **which controls and fields each screen exposes**: filters, search inputs, sort controls, pagination, bulk actions, columns, secondary CTAs.
+
+A GET-collection endpoint authorizes a list feature; it does **not** by itself authorize a filter, search, sort, or pagination control. Materialize such a control **only when the Requirement declares it**. If the Requirement is silent on a control, omit it — do not infer it from the endpoint's query parameters, from `.spec.md` invariants, or from conventional "data table" patterns. When the data would support a control the Requirement does not mention and you judge it likely intended, do **not** add it: record an open question in place (`<!-- TO CONFIRM: filter-by-status supported by endpoint but not in UI intent -->`) for the Spec Validator to resolve.
 
 ## Execution Process
 
@@ -59,6 +69,7 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
    - Group related endpoints in the same feature when they share the same URL
    - **Rule: 1 feature = 1 URL/route.** Modals without URL change = states of the same feature. Multi-step wizards that change URL = multiple features linked by a flow.
    - A feature can — and often should — consume endpoints from different domains
+   - **Scope gate (Source-of-truth split):** endpoints determine which features *can* exist; the Requirement (UI intent) determines which features are *in scope* for this requirement and which controls/fields each one exposes. Do not materialize a feature, screen control, or field the Requirement does not call for, even if an endpoint would support it.
 
 3. Identify navigation flows between features
 4. Build a domain composition table per feature:
@@ -128,7 +139,7 @@ Using TEMPLATE.front.md, produce the **global frontend spec** for the project:
 
 For each identified feature (route), using `TEMPLATE.feature.spec.md`:
 1. **§1 Consumed Endpoints** — table with Domain | operationId | Purpose; list ALL domains and operationIds this feature consumes. Do NOT copy Method+Path or Auth — those are in `openapi.yaml` and are looked up by operationId. §1 is a cross-domain selection map only.
-2. **§2 Feature States (UI)** — UI-NN with name, description, and explicit `Entry condition`; minimum: idle, loading, success, error, empty
+2. **§2 Feature States (UI)** — UI-NN with name, description, and explicit `Entry condition`; minimum: idle, loading, success, error, empty. The `idle`/`success` states describe **only the controls and fields declared in the Requirement (UI intent)** — per the Source-of-truth split, never add filter, search, sort, pagination, or bulk-action controls the Requirement does not call for, even when a consumed endpoint would support them
 3. **§3 State Transition Table** — From | Trigger | To | Side Effect (include cache invalidation, redirects, analytics, local state reset)
 4. **§4 Requests, Order and Cache** — execution (parallel/sequential), priority, TTL, revalidation. Use `inherit` for TTL/revalidation when the global default from `front.md §3` applies. Add "Response transforms" sub-section only if the API response requires transformation before UI consumption (rename, cast, derive, flatten, filter). Add "Composed models" sub-section only if the UI model merges data from 2+ endpoints.
 5. **§5 Input Validations** — user message and timing only (blur/submit/change). Technical constraints (required, minLength, maxLength, pattern, enum) are already in `openapi.yaml` requestBody schema — do NOT duplicate them here.

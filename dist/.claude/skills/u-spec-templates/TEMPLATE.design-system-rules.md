@@ -87,6 +87,7 @@
 8. **Animations** wrapped in `@media (prefers-reduced-motion: no-preference)`
 9. **Tokens only from `design-system/`** — never invent, never hardcode hex/px
 10. **No `tailwind.config.ts`** — all tokens live in `@theme {}` in `global.css`
+11. **Reuse before build** — compose existing primitives from `components/ui/` (Card, Badge, Table, Form…); never hand-roll markup that duplicates one (`reimplemented-primitive`)
 
 ---
 
