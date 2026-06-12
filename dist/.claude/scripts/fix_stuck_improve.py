@@ -123,7 +123,7 @@ def _action_retry(workflow_id: str, dry_run: bool) -> int:
     print("Diagnosis: spec pipeline was interrupted before completing.")
     print()
     print("IMPORTANT: Before retrying, ensure latest artifacts are deployed:")
-    print("  ./install.sh <target-project>")
+    print("  copy the contents of siegard-code dist/.claude/ into this project's .claude/")
     print()
     if dry_run:
         print("DRY RUN — no changes written.")

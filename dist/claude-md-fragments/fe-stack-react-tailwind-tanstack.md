@@ -7,7 +7,7 @@
   TanStack Query/Router/Table + React Hook Form + Zod.
 
   For any other stack, omit this fragment — the generic u-fe-* skills stay library-agnostic.
-  This file is an authoring-time include; it is NOT deployed by install.sh.
+  This file is an authoring-time include; it lives outside dist/.claude/ and is NOT part of the copied distribution.
 -->
 
 ### Fixed stack contract
