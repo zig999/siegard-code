@@ -19,7 +19,7 @@ sys.path.insert(0, str(_LIB))
 from orch_core import (
     reduce_all, TaskStatus, PhaseStatus, ORCH_DIR, METRICS_DIR,
     ensure_dirs, now_iso, parse_iso, read_events_filtered,
-    cleanup_stale_workers, reap_stale_tasks,
+    cleanup_stale_workers, reap_stale_tasks, detect_stale_orchestrator,
 )
 
 
@@ -164,56 +164,16 @@ def _compute_metrics(state=None) -> dict:
 
 def _detect_stale_orchestrator(state, events: list) -> dict | None:
     """
-    Returns a diagnostic when a phase is active and has pending tasks but no
+    Returns a diagnostic when a phase is active and has non-terminal tasks but no
     ORCHESTRATOR_HEARTBEAT was emitted within the stale threshold.
 
     Indicates the orchestrator LLM was alive (no crash) but stopped making
     progress — typically caused by emitting narrative text instead of events.
+
+    Delegates to orch_core.detect_stale_orchestrator (the single, unit-tested
+    source of truth, also called by the live orchestrator's Step 5.0 check).
     """
-    if state.current_phase is None:
-        return None
-    phase = state.phases.get(state.current_phase)
-    if not phase or phase.status.value != "active":
-        return None
-
-    pending = [
-        t for t in state.tasks.values()
-        if t.phase == state.current_phase
-        and t.status.value not in ("completed", "dlq", "skipped")
-    ]
-    if not pending:
-        return None
-
-    STALE_THRESHOLD_SECONDS = 900  # 15 minutes
-    heartbeats = [
-        e for e in events
-        if e.event_type == "orchestrator_heartbeat"
-        and e.data.get("phase") == state.current_phase
-    ]
-    if heartbeats:
-        last_hb = max(heartbeats, key=lambda e: e.seq)
-        # Narrow scope: only malformed-timestamp parsing may be swallowed here.
-        # A broad `except Exception` masked an AttributeError (.timestamp vs .ts)
-        # that silently disabled this freshness check — see LE-01.
-        try:
-            age = (parse_iso(now_iso()) - parse_iso(last_hb.ts)).total_seconds()
-            if age < STALE_THRESHOLD_SECONDS:
-                return None
-        except (ValueError, TypeError):
-            pass
-
-    return {
-        "stale_orchestrator": state.current_phase,
-        "pending_tasks": len(pending),
-        "pending_task_ids": [t.task_id for t in pending],
-        "last_heartbeat": heartbeats[-1].ts if heartbeats else None,
-        "action_required": (
-            "Orchestrator stopped making progress with active tasks remaining. "
-            "Re-invoke /u-orchestrator — the log is intact and execution will resume "
-            "from the current state."
-        ),
-        "command": "/u-orchestrator",
-    }
+    return detect_stale_orchestrator(state, events, now_iso())
 
 
 def _write_stale_orchestrator_alert(stale: dict, metrics: dict) -> None:

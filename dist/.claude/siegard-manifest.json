@@ -4,7 +4,7 @@
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-12T14:36:05Z",
+  "generated_at": "2026-06-17T00:19:10Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -149,7 +149,7 @@
     },
     {
       "path": "hooks/on_stop.py",
-      "sha256": "c92a4c9094bb7c7173b096c36828f42c1b3843c8213ad4200a0211e5ab8e158e"
+      "sha256": "8c5aaacfbc8d8f65a0a56a1b7cad6a688e33ec456de7a6e83c361c7b410d6eaa"
     },
     {
       "path": "hooks/on_subagent_stop.py",
@@ -165,7 +165,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "7b9d2fc3b0d8d42ddc612c623d2b88fe599dd41c3baa9c485e6edcf98d752f8d"
+      "sha256": "d2cced61355f05d12db82df53126b50896693e6084e41b3db56440d57041112a"
     },
     {
       "path": "lib/sm_runner.py",
@@ -173,7 +173,7 @@
     },
     {
       "path": "scripts/check_stale.py",
-      "sha256": "f28a749983030cf8a261a66fd5e38c4d2781eb11e0075b046a194ce3ca866962"
+      "sha256": "27d01fa8b294de92dcc51c55e2337c335fe3ea7c141c29300c63ee03dd1ba1fb"
     },
     {
       "path": "scripts/circuit_breaker.py",
@@ -197,7 +197,7 @@
     },
     {
       "path": "scripts/monitor.py",
-      "sha256": "b6e412b3b89a7bb5e55224384148ce7333f24eceab2a7ffd1275b84d79a50471"
+      "sha256": "6c34cb3e8f876c96617d5107ec9ee5cba02a8e61fe9a7828ee6b51a69ec23e01"
     },
     {
       "path": "scripts/preflight.py",
@@ -281,7 +281,7 @@
     },
     {
       "path": "skills/orch-state/scripts/reduce.py",
-      "sha256": "167785ec52fbdd3d394654be0ac46d2b892aa4622cbe03dbfb78cd662a1874f7"
+      "sha256": "8125883bfdd96412f8c3e4f1f9389e68b7eb79e0d02ca6f8fa4c31420496492f"
     },
     {
       "path": "skills/orch-state/scripts/summary.py",

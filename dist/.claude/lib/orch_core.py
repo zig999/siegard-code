@@ -368,6 +368,13 @@ class Tier(str, Enum):
         return {"critical": 15.0, "standard": 30.0, "bulk": 0.0}[self.value]
 
 
+# Heartbeat-staleness threshold for an active orchestrator (seconds). An active
+# phase with non-terminal tasks but no orchestrator_heartbeat within this window
+# is treated as a stalled orchestrator. Single source of truth: detect_stale_orchestrator
+# defaults to it; monitor.py imports it; on_stop.py reaches it via detect_stale_orchestrator.
+ORCHESTRATOR_STALE_SECONDS = 900  # 15 minutes
+
+
 # ---------------------------------------------------------------------------
 # Event dataclass
 # ---------------------------------------------------------------------------
@@ -1543,6 +1550,13 @@ def _handle_task_completed(state: OrchState, event: Event) -> None:
     # on_subagent_stop hook and orchestrator Step 6.4 racing on the same task.
     if task.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.DLQ):
         return
+    # Superseded-attempt straggler: a task_retried already advanced this task to a
+    # newer attempt (task.attempts). A task_completed carrying an OLDER event.attempt
+    # is residue from the previous attempt's worker → idempotent no-op, not fatal.
+    # `task.attempts` defaults to 0 and is only set on failure/retry, so the happy
+    # path (attempts=0, event.attempt=1) evaluates `1 < 1` → False and proceeds.
+    if event.attempt < (task.attempts or 1):
+        return
     if task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
             f"task_completed: task {task_id!r} is {task.status!r}, expected running"
@@ -1586,6 +1600,12 @@ def _handle_task_failed(state: OrchState, event: Event) -> None:
     # C2: Idempotency — already terminal or failed → no-op. Prevents TOCTOU duplicate
     # from on_subagent_stop hook and orchestrator Step 6.4 racing on the same task.
     if task.status in (TaskStatus.FAILED, TaskStatus.COMPLETED, TaskStatus.DLQ):
+        return
+    # Superseded-attempt straggler: task_retried already advanced this task to a newer
+    # attempt. A task_failed carrying an OLDER event.attempt is residue from the prior
+    # attempt's worker → idempotent no-op. Placed before the RUNNING check so a late
+    # failed for attempt N cannot corrupt a task currently RUNNING on attempt N+1.
+    if event.attempt < (task.attempts or 1):
         return
     if task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
@@ -1815,6 +1835,117 @@ def reduce_all_tolerant() -> tuple[OrchState, list[Violation]]:
             ))
             state.last_seq = event.seq
     return state, violations
+
+
+def reduce_workflow(workflow_id: str) -> OrchState:
+    """Reduce ONLY the events belonging to `workflow_id` into a fresh OrchState.
+
+    Workflow isolation (strategy B — derive on reduction; compatible with existing
+    logs, no back-fill). Task events do NOT carry `workflow_id`; association is
+    derived exactly as monitor.py's `_collect_workflow_index` does: every event
+    between one `phase_declared` and the next is attributed to the workflow named
+    by that `phase_declared`. An explicit `data.workflow_id` on an event always
+    wins over the tracked boundary. Events before any `phase_declared` (no tracked
+    workflow and no embedded id) belong to no workflow and are skipped.
+
+    Why this exists: `reduce_all` is global — a single illegal transition in ONE
+    workflow aborts reduction for the WHOLE log, stalling every other workflow.
+    Reducing per-workflow scopes that failure to its own workflow. The decision
+    engine still defaults to the strict `reduce_all`; this is the scoped variant a
+    caller uses to keep healthy workflows derivable when a sibling is corrupted.
+
+    The reduction itself stays STRICT: an illegal transition inside `workflow_id`
+    still raises `IllegalTransition` (scoped to this workflow). Use
+    `reduce_all_tolerant` for diagnostic, non-raising reduction.
+
+    Raises:
+        IllegalTransition: the target workflow's events contain an illegal transition.
+        CorruptedLogError: log is corrupted (broken hash chain / invalid JSON).
+    """
+    state = OrchState()
+    current_wf: str | None = None
+    for event in read_events():
+        data = event.data
+        if is_blob_ref(data):
+            try:
+                data = load_blob_data(event)
+            except Exception:  # noqa: BLE001
+                data = {}
+        if event.event_type == EventType.PHASE_DECLARED.value:
+            declared = data.get("workflow_id")
+            if declared:
+                current_wf = declared
+        event_wf = data.get("workflow_id") or current_wf
+        if event_wf == workflow_id:
+            apply_event(state, event)
+    return state
+
+
+def detect_stale_orchestrator(
+    state: OrchState,
+    events: list[Event],
+    now: str,
+    threshold: int = ORCHESTRATOR_STALE_SECONDS,
+) -> dict[str, Any] | None:
+    """Detect an orchestrator that stopped with non-terminal tasks remaining.
+
+    Complements `stale_tasks` / `reap_stale_tasks`, which cover only RUNNING tasks
+    hung past their tier threshold. This covers the orthogonal hazard: the active
+    phase has tasks in READY/PENDING/SCHEDULED/RUNNING/FAILED (anything not terminal)
+    but the orchestrator emitted no `orchestrator_heartbeat` within `threshold`
+    seconds — i.e. the orchestrator died/stalled and nobody is dispatching the
+    remaining tasks. `verify_and_recover` is NOT triggered here (it is destructive
+    and manual by design); this is detection + an actionable signal only.
+
+    Pure function (no I/O) so it is unit-testable and reusable by both the on_stop
+    backstop and the live orchestrator's Step 5.0 check (check_stale.py).
+
+    Returns a diagnostic dict (workflow_id, phase, pending_task_ids, command) when
+    stale, else None.
+    """
+    if state.current_phase is None:
+        return None
+    phase = state.phases.get(state.current_phase)
+    phase_status = phase.status.value if phase and hasattr(phase.status, "value") else (phase.status if phase else None)
+    if not phase or phase_status != "active":
+        return None
+
+    _TERMINAL = (TaskStatus.COMPLETED.value, TaskStatus.DLQ.value, TaskStatus.SKIPPED.value)
+    pending = [
+        t for t in state.tasks.values()
+        if t.phase == state.current_phase
+        and (t.status.value if hasattr(t.status, "value") else t.status) not in _TERMINAL
+    ]
+    if not pending:
+        return None
+
+    heartbeats = [
+        e for e in events
+        if e.event_type == "orchestrator_heartbeat"
+        and e.data.get("phase") == state.current_phase
+    ]
+    if heartbeats:
+        last_hb = max(heartbeats, key=lambda e: e.seq)
+        try:
+            age = (parse_iso(now) - parse_iso(last_hb.ts)).total_seconds()
+            if age < threshold:
+                return None
+        except (ValueError, TypeError):
+            pass
+
+    return {
+        "stale_orchestrator": state.current_phase,
+        "workflow_id": state.workflow_id,
+        "pending_tasks": len(pending),
+        "pending_task_ids": [t.task_id for t in pending],
+        "last_heartbeat": heartbeats[-1].ts if heartbeats else None,
+        "action_required": (
+            "Orchestrator stopped making progress with non-terminal tasks remaining. "
+            "Re-invoke /u-orchestrator — the log is intact and execution will resume "
+            "from the current state."
+        ),
+        "command": "/u-orchestrator",
+    }
 
 
 def stale_tasks(state: OrchState, now: str) -> list[TaskState]:

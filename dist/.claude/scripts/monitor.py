@@ -65,6 +65,7 @@ _LIB = Path(__file__).resolve().parents[1] / "lib"
 sys.path.insert(0, str(_LIB))
 
 from orch_core import (  # noqa: E402
+    ORCHESTRATOR_STALE_SECONDS,
     CorruptedLogError,
     IllegalTransition,
     OrchState,
@@ -806,9 +807,10 @@ def _fmt_dur(seconds: float | None) -> str:
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
-# Mirrors STALE_THRESHOLD_SECONDS in hooks/on_stop.py (_detect_stale_orchestrator)
-# so the live TUI and the session-end hook agree on what "stalled" means.
-ORCH_HEARTBEAT_STALE_S = 900
+# Single source of truth: orch_core.ORCHESTRATOR_STALE_SECONDS. The live TUI, the
+# session-end hook (on_stop.py), and the Step 5.0 check (check_stale.py) all agree
+# on what "stalled" means by deriving from the same constant.
+ORCH_HEARTBEAT_STALE_S = ORCHESTRATOR_STALE_SECONDS
 
 
 def _orchestrator_stall(wf: dict | None, threshold: int = ORCH_HEARTBEAT_STALE_S) -> dict | None:
