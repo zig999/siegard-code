@@ -92,6 +92,74 @@ def _detect_stuck_improve_spec(state, orch_dir: Path) -> dict | None:
     return None
 
 
+def _detect_unfinalized_sdd_phase(state, events: list) -> dict | None:
+    """
+    Returns a diagnostic when the SDD phase ran its pipeline to a clean terminal
+    but was never formally finalized (F-05).
+
+    Symptom from the field: the log ends with the validator's task_completed
+    (handoff_allowed: true), but there is no phase_transitioned out of sdd — the
+    orchestrator was cut off after the last worker's terminal, before it could
+    regenerate handoff-manifest.yaml + emit phase_exit_approved/phase_transitioned.
+    An observer reading only task_completed concludes "done"; in reality the handoff
+    was never published and a downstream /u-dev would consume a stale manifest.
+
+    Conditions (all must hold to avoid false positives):
+      - sdd phase is still active (current_phase == "sdd" — never transitioned)
+      - no escalation pending and no DLQ task (those are surfaced by other paths)
+      - sdd has tasks and ALL of them are completed (no running/scheduled/failed)
+      - no phase_transitioned event left the sdd phase
+
+    Note: spec_pipeline_return is NOT required here — it is emitted only for the
+    /u-improve trigger. The definitive sdd terminal is phase_transitioned.
+    """
+    if state.current_phase != "sdd":
+        return None
+    if state.escalation is not None:
+        return None
+
+    sdd_tasks = [t for t in state.tasks.values() if t.phase == "sdd"]
+    if not sdd_tasks:
+        return None  # empty or orphaned — handled by _detect_orphaned_phase
+    if any(t.status.value == "dlq" for t in sdd_tasks):
+        return None  # DLQ blocks exit — surfaced as an error elsewhere
+    if not all(t.status.value == "completed" for t in sdd_tasks):
+        return None  # pipeline still has live/failed work — not finalization-pending
+
+    transitions = [
+        e for e in events
+        if e.event_type == "phase_transitioned" and e.data.get("from_phase") == "sdd"
+    ]
+    if transitions:
+        return None  # already finalized
+
+    return {
+        "unfinalized_phase": "sdd",
+        "sdd_tasks_completed": len(sdd_tasks),
+        "action_required": (
+            "SDD workers all completed but the phase was never finalized "
+            "(no phase_transitioned from sdd; handoff-manifest.yaml not regenerated). "
+            "Re-invoke the orchestrator — orchestrator-sdd re-runs the exit-criteria gate, "
+            "regenerates the handoff manifest, and emits phase_exit_approved/phase_transitioned. "
+            "Until then the SDD handoff is NOT published; do not start /u-dev."
+        ),
+        "command": "/u-orchestrator",
+    }
+
+
+def _write_unfinalized_sdd_alert(unfinalized: dict, metrics: dict) -> None:
+    """Writes .orch/last_error.json with an unfinalized-SDD-phase diagnostic."""
+    payload = {
+        "generated_at": now_iso(),
+        "workflow_id": metrics.get("workflow_id"),
+        "run_status": "sdd_finalization_pending",
+        "last_seq": metrics.get("last_seq"),
+        "diagnostic": unfinalized,
+    }
+    out_path = ORCH_DIR / "last_error.json"
+    out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def _write_stuck_improve_alert(stuck: dict, metrics: dict) -> None:
     """Writes .orch/last_error.json with a stuck-improve-spec diagnostic."""
     payload = {
@@ -188,11 +256,22 @@ def _write_stale_orchestrator_alert(stale: dict, metrics: dict) -> None:
     out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+# Failure reasons that mean "the worker stopped without emitting a terminal" — the
+# synthesized/reaped death paths the recovery diagnostic surfaces. on_subagent_stop
+# emits worker_exited_without_terminal; the deterministic reaper emits stale_timeout
+# (the primary death path after F-03 made the hook defer ambiguous multi-worker stops).
+_WORKER_STOPPED_REASONS = frozenset({
+    "worker_exited_without_terminal",
+    "stale_timeout",
+})
+
+
 def _detect_worker_stopped_failures(state) -> dict | None:
     """
-    Returns a structured recovery diagnostic when the session ended with
-    worker_stopped_without_terminal_event failures that were synthesized by the
-    on_subagent_stop hook.
+    Returns a structured recovery diagnostic when the session ended with tasks
+    failed because their worker stopped without emitting a terminal event —
+    synthesized by on_subagent_stop (worker_exited_without_terminal) or by the
+    stale reaper (stale_timeout).
 
     These failures are retryable but require the orchestrator to be re-invoked.
     This function surfaces the actionable recovery steps so operators don't
@@ -201,7 +280,7 @@ def _detect_worker_stopped_failures(state) -> dict | None:
     stopped_tasks = [
         t for t in state.tasks.values()
         if t.status in (TaskStatus.FAILED, TaskStatus.SCHEDULED)
-        and getattr(t, "last_failure_reason", None) == "worker_stopped_without_terminal_event"
+        and getattr(t, "last_failure_reason", None) in _WORKER_STOPPED_REASONS
     ]
     if not stopped_tasks:
         return None
@@ -318,11 +397,19 @@ def main() -> None:
                 metrics["run_status"] = "stuck_improve_spec"
             _write_stuck_improve_alert(stuck, metrics)
 
+        metrics["sdd_finalization_pending"] = None
+        unfinalized = _detect_unfinalized_sdd_phase(state, events)
+        if unfinalized:
+            metrics["sdd_finalization_pending"] = unfinalized["unfinalized_phase"]
+            if metrics.get("run_status") not in ("orphaned_phase", "stuck_improve_spec"):
+                metrics["run_status"] = "sdd_finalization_pending"
+            _write_unfinalized_sdd_alert(unfinalized, metrics)
+
         metrics["stale_orchestrator"] = None
         stale = _detect_stale_orchestrator(state, events)
         if stale:
             metrics["stale_orchestrator"] = stale["stale_orchestrator"]
-            if metrics.get("run_status") not in ("orphaned_phase", "stuck_improve_spec"):
+            if metrics.get("run_status") not in ("orphaned_phase", "stuck_improve_spec", "sdd_finalization_pending"):
                 metrics["run_status"] = "stale_orchestrator"
             _write_stale_orchestrator_alert(stale, metrics)
 
@@ -333,7 +420,7 @@ def main() -> None:
         stopped = _detect_worker_stopped_failures(state)
         if stopped:
             metrics["worker_stopped_recovery"] = stopped["worker_stopped_count"]
-            if metrics.get("run_status") not in ("orphaned_phase", "stuck_improve_spec"):
+            if metrics.get("run_status") not in ("orphaned_phase", "stuck_improve_spec", "sdd_finalization_pending"):
                 metrics["run_status"] = "worker_stopped_recovery_required"
             _write_worker_stopped_alert(stopped, metrics)
 

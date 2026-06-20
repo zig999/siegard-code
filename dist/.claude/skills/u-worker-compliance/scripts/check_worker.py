@@ -108,7 +108,7 @@ def _check_w03_no_terminal_event(content: str, path: Path) -> Violation | None:
         return Violation(
             rule="W03",
             severity="critical",
-            detail="No --kind completed or --kind failed emit.py call found — on_subagent_stop.py will synthesize task_failed for every run",
+            detail="No --kind completed or --kind failed emit.py call found — on_subagent_stop.py will synthesize task_failed once the worker is silent past its stale threshold",
         )
     return None
 

@@ -55,6 +55,26 @@ def _register_worker(cwd: Path, worker_id: str, task_id: str, attempt: int) -> N
     (workers_dir / f"{worker_id}.json").write_text(json.dumps(entry), encoding="utf-8")
 
 
+def _force_expired(cwd: Path) -> None:
+    """Writes .orch/config.json so EVERY worker is past its liveness window (F-03).
+
+    Sets all tier thresholds to -1 AND clears the task-type overrides, so any
+    elapsed time (>= 0 > -1) counts as expired regardless of the task's type —
+    this deterministically exercises the synthesis path without depending on
+    wall-clock timing. The default (no config) keeps the real window, under which
+    a freshly-claimed worker is deferred to the stale reaper.
+    """
+    (cwd / ".orch").mkdir(exist_ok=True)
+    # Set both tier defaults AND the "impl" task-type override (the type these tests
+    # seed) to -1. Since load_config deep-merges, leaving overrides_by_task_type out
+    # would let the shipped impl=1200 default survive and defeat the forced expiry.
+    cfg = {"stale_policy": {
+        "defaults_by_tier": {"critical": -1, "standard": -1, "bulk": -1},
+        "overrides_by_task_type": {"impl": -1},
+    }}
+    (cwd / ".orch" / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+
 def _setup(tmp_path: Path) -> None:
     (tmp_path / ".orch").mkdir(exist_ok=True)
     _append(tmp_path, "phase_declared",
@@ -73,8 +93,9 @@ def _setup(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_hook_synthesizes_failed_when_no_terminal(tmp_path):
-    """Hook with registry entry + no terminal → synthesizes task_failed."""
+    """Hook with registry entry + no terminal + past liveness window → synthesizes task_failed."""
     _setup(tmp_path)
+    _force_expired(tmp_path)
     _register_worker(tmp_path, "w_1", "t_001", 1)
     before = len(_read_all(tmp_path))
 
@@ -92,6 +113,7 @@ def test_hook_synthesizes_failed_when_no_terminal(tmp_path):
 
 def test_synthesized_failed_is_retryable(tmp_path):
     _setup(tmp_path)
+    _force_expired(tmp_path)
     _register_worker(tmp_path, "w_1", "t_001", 1)
     _run_hook(tmp_path)
     events = _read_all(tmp_path)
@@ -103,6 +125,7 @@ def test_synthesized_failed_is_retryable(tmp_path):
 
 def test_synthesized_failed_has_correct_phase(tmp_path):
     _setup(tmp_path)
+    _force_expired(tmp_path)
     _register_worker(tmp_path, "w_1", "t_001", 1)
     _run_hook(tmp_path)
     events = _read_all(tmp_path)
@@ -196,8 +219,7 @@ def test_noop_when_task_progressed_to_later_attempt(tmp_path):
 # Parallel dispatch: hook handles multiple registry entries
 # ---------------------------------------------------------------------------
 
-def test_hook_handles_multiple_registry_entries(tmp_path):
-    """Two workers registered, both without terminals → two task_failed synthesized."""
+def _setup_two_workers(tmp_path):
     (tmp_path / ".orch").mkdir(exist_ok=True)
     _append(tmp_path, "phase_declared",
             data={"workflow_id": "wf_parallel",
@@ -212,6 +234,12 @@ def test_hook_handles_multiple_registry_entries(tmp_path):
                       "worker_id": f"w_{tid[-3:]}"})
         _register_worker(tmp_path, f"w_{tid[-3:]}", tid, 1)
 
+
+def test_hook_handles_multiple_registry_entries(tmp_path):
+    """Two workers registered, both past their window → two task_failed synthesized."""
+    _setup_two_workers(tmp_path)
+    _force_expired(tmp_path)
+
     before = len(_read_all(tmp_path))
     r = _run_hook(tmp_path)
     assert r.returncode == 0
@@ -224,14 +252,78 @@ def test_hook_handles_multiple_registry_entries(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# F-03 regression — correlation gate: a stop must not kill a still-live SIBLING,
+# but the sole stopping worker (no sibling to race) IS failed immediately.
+# ---------------------------------------------------------------------------
+
+def test_sole_stopping_worker_synthesized_immediately(tmp_path):
+    """Exactly one non-terminal worker, no config (real window) → synthesized now.
+
+    With a single candidate the stop unambiguously refers to it and no sibling
+    exists to race, so the hook fails it immediately rather than stranding the task
+    for a full stale window. (The F-03 incident was a MULTI-worker over-synthesis.)
+    """
+    _setup(tmp_path)
+    _register_worker(tmp_path, "w_1", "t_001", 1)
+    before = len(_read_all(tmp_path))
+
+    r = _run_hook(tmp_path)
+    assert r.returncode == 0
+    events = _read_all(tmp_path)
+    assert len(events) == before + 1
+    assert events[-1]["event_type"] == "task_failed"
+    assert events[-1]["task_id"] == "t_001"
+
+
+def test_sibling_stop_does_not_kill_live_workers(tmp_path):
+    """Two live workers; a SubagentStop fires → neither is failed (F-03 core regression)."""
+    _setup_two_workers(tmp_path)  # no config → default window; both just claimed
+    before = len(_read_all(tmp_path))
+
+    r = _run_hook(tmp_path)
+    assert r.returncode == 0
+
+    events = _read_all(tmp_path)
+    new_failed = [e for e in events[before:] if e["event_type"] == "task_failed"]
+    assert new_failed == []
+
+
+# ---------------------------------------------------------------------------
 # Edge: hook accepts and ignores stdin JSON (as Claude Code would send)
 # ---------------------------------------------------------------------------
 
 def test_hook_ignores_stdin(tmp_path):
     _setup(tmp_path)
+    _force_expired(tmp_path)
     _register_worker(tmp_path, "w_1", "t_001", 1)
     stdin_payload = json.dumps({"stop_hook_active": True, "session_id": "abc"})
     r = _run_hook(tmp_path, stdin=stdin_payload)
     assert r.returncode == 0
     events = _read_all(tmp_path)
     assert events[-1]["event_type"] == "task_failed"
+
+
+# ---------------------------------------------------------------------------
+# R1 regression — a malformed .orch/config.json must not crash the hook; the
+# terminal-synthesis invariant must hold even when config is broken.
+# ---------------------------------------------------------------------------
+
+def test_malformed_config_does_not_crash_hook(tmp_path):
+    """Corrupt config.json → hook falls back to enum defaults, still synthesizes.
+
+    Earlier the ConfigError fallback set config=None, which made the liveness check
+    re-invoke load_config() and re-raise — crashing the hook and silently disabling
+    ALL terminal synthesis exactly when config was broken.
+    """
+    _setup(tmp_path)  # single worker w_1 on t_001
+    (tmp_path / ".orch" / "config.json").write_text("{ this is not json", encoding="utf-8")
+    _register_worker(tmp_path, "w_1", "t_001", 1)
+    before = len(_read_all(tmp_path))
+
+    r = _run_hook(tmp_path)
+    assert r.returncode == 0, r.stderr
+    events = _read_all(tmp_path)
+    # Sole stopping worker is failed despite the broken config.
+    assert len(events) == before + 1
+    assert events[-1]["event_type"] == "task_failed"
+    assert events[-1]["task_id"] == "t_001"

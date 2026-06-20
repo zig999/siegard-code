@@ -33,7 +33,7 @@ class TestReapStaleTasks:
     def test_reap_emits_stale_timeout_for_overdue_running(self, orch_dir, make_event):
         import orch_core
         _seed_running_task(make_event)
-        reaped = orch_core.reap_stale_tasks(_future(orch_core, 1000))  # > standard 300s
+        reaped = orch_core.reap_stale_tasks(_future(orch_core, 2000))  # > impl override 1200s (F-02)
         assert reaped == ["T1"]
         st = orch_core.reduce_all()
         assert st.tasks["T1"].status == orch_core.TaskStatus.FAILED
@@ -47,7 +47,7 @@ class TestReapStaleTasks:
     def test_reap_is_idempotent(self, orch_dir, make_event):
         import orch_core
         _seed_running_task(make_event)
-        future = _future(orch_core, 1000)
+        future = _future(orch_core, 2000)
         assert orch_core.reap_stale_tasks(future) == ["T1"]
         # second pass: T1 already FAILED (not RUNNING) -> nothing to reap
         assert orch_core.reap_stale_tasks(future) == []
@@ -57,7 +57,7 @@ class TestCheckStaleCli:
     def test_cli_emits_and_reports(self, orch_dir, make_event):
         import orch_core
         _seed_running_task(make_event)
-        future = _future(orch_core, 1000)
+        future = _future(orch_core, 2000)
         p = subprocess.run([sys.executable, str(CHECK), "--now", future],
                            capture_output=True, text=True,
                            env={**os.environ, "ORCH_PROJECT_DIR": str(orch_dir)})

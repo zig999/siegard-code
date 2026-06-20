@@ -969,18 +969,19 @@ After all workers return, re-read state once:
 python3 .claude/skills/orch-state/scripts/reduce.py
 ```
 
+**Liveness rule (F-03 — never declare a live worker dead):** a worker still `running` after the batch may be mid-finalization (the window between `draft_written` and `task_completed` legitimately spans 1–2 min for spec writers). Synthesizing a terminal for it spawns a retry that races the original. Confirm death before synthesizing.
+
+First run the deterministic reaper — it emits `task_failed(reason=stale_timeout)` ONLY for tasks silent past their task-type threshold (`stale_threshold_seconds`), and emits nothing for workers still within their window:
+
+```bash
+python3 .claude/scripts/check_stale.py
+```
+
 For each task in the batch:
 - `completed` or `dlq` → clean up registry, proceed to 5.5
-- `running` (no terminal emitted) → synthesize `task_failed`:
-  ```bash
-  python3 .claude/skills/orch-log/scripts/append.py \
-    --agent orchestrator-sdd \
-    --event-type task_failed \
-    --task-id <task_id> \
-    --attempt <attempt> \
-    --data '{"phase":"sdd","reason":"worker_exited_without_terminal","retryable":true,"synthesized_by":"orchestrator-sdd"}'
-  ```
-- Then unregister worker:
+- `failed` (reaped just now, or terminal from the SubagentStop hook) → proceed to 5.5
+- `running` (still no terminal AND not reaped — i.e. within its liveness window) → do NOT synthesize. The worker is presumed alive; leave it and re-read state on the next cycle. The reaper (here and at session end) and the SubagentStop hook are the only paths that may declare it dead, both gated on `stale_threshold_seconds`.
+- Then unregister worker (only for tasks that reached a terminal state):
   ```bash
   python3 -c "
   import sys; sys.path.insert(0,'.claude/lib')
@@ -1023,6 +1024,8 @@ Return to 5.0 for the next iteration.
 ---
 
 ### Step 6 — Exit criteria evaluation
+
+**Re-entry / finalization is idempotent and resumable (F-05).** This step is reached whenever all sdd tasks are terminal (Step 5.0 stop condition) — including a fresh invocation after the orchestrator was cut off right after the last worker's `task_completed`. In that state the phase is NOT done: there is no `phase_transitioned` and `handoff-manifest.yaml` was never regenerated. Re-running Step 6 re-evaluates the exit criteria, regenerates the manifest, and emits `phase_exit_approved`/`phase_transitioned`. NEVER treat "all workers completed" as "nothing to do" — the phase counts as finished ONLY once `phase_transitioned` is in the log. The `phase_exit_criterion_met` / `phase_exit_approved` / `phase_transitioned` events are all idempotent in the reducer, so re-emitting on resume is safe. (Session-end backstop: `on_stop.py` writes `run_status: sdd_finalization_pending` to `last_error.json` to prompt this re-invocation.)
 
 **DLQ guard (DLQ_ESCALATION — orchestrator MUST NOT approve phase exit while any task remains in DLQ):**
 
@@ -1338,7 +1341,7 @@ After all repair tasks created, return to **Step 5** (dispatch loop). The loop w
 | Infra check blocked | Return `{status: "blocked"}` immediately |
 | `append.py` exit 1 on `task_claimed` | Skip task, record issue, continue |
 | `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
-| Worker exits without terminal | Synthesize `task_failed` in Step 5.4 |
+| Worker exits without terminal | Do NOT synthesize in Step 5.4 (F-03). The SubagentStop hook fails it if it is the sole stopping worker; otherwise the deterministic reaper (`check_stale.py`) fails it once silent past its task-type threshold. Leave it `running` and re-read state. |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` (E10 emitted by meta-orchestrator) |
 | E11 detected in DLQ | Emit E11 and return `{status: "escalated"}` immediately — do not cascade |
 | E08 after exit criteria eval | Emit E08 and return `{status: "escalated"}` — not `"blocked"` |

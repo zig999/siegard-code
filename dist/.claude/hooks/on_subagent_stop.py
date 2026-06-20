@@ -6,9 +6,22 @@ Invariant enforced: every orchestrated worker invocation ends with exactly one
 terminal event (task_completed or task_failed). If the worker stops silently
 (crash, timeout, context overflow), this hook emits the missing terminal.
 
-C1/C7 fix: reads worker context from .orch/workers/<worker_id>.json registry
-instead of env vars. This works correctly under parallel dispatch (multiple
-workers running simultaneously) and regardless of the hook's CWD.
+C1/C7: reads worker context from .orch/workers/<worker_id>.json registry instead
+of env vars, so it works regardless of the hook's CWD.
+
+F-03 — correlation gate: SubagentStop fires on the stop of ANY subagent and its
+stdin payload carries no key (it has session_id/transcript_path, not the
+orchestrator's worker_id) that correlates it to a specific registry entry. The old
+code failed EVERY non-terminal registered worker on each stop — that killed sibling
+workers still mid-flight and spawned retries racing the originals (the real F-03
+incident was exactly this multi-worker over-synthesis). The gate now splits on how
+many non-terminal workers are registered:
+  • Exactly one → this stop unambiguously refers to it; a stopped subagent emits no
+    more events, so it is dead → synthesize immediately (no sibling to race).
+  • More than one → cannot tell which stopped → defer to the stale reaper, which
+    only fails workers silent past their task-type threshold (worker_liveness_expired).
+A genuinely dead worker in the multi-worker case still gets a terminal once its
+window expires, via reap_stale_tasks at Step 5.0 / session end.
 
 The orchestrator writes a registry entry (via register_worker()) before
 spawning each Agent, and removes it (via unregister_worker()) after Step 6.4
@@ -29,8 +42,11 @@ from orch_core import (
     TaskStatus,
     append_event,
     get_active_workers,
+    load_config,
+    now_iso,
     reduce_all,
     unregister_worker,
+    worker_liveness_expired,
     ORCH_DIR,
 )
 
@@ -80,6 +96,27 @@ def main() -> int:
         # If state derivation fails, we cannot make safe decisions — exit cleanly.
         return 0
 
+    try:
+        # Empty dict (not None): worker_liveness_expired/stale_threshold_seconds
+        # treat {} as "no policy" and fall back to Tier enum defaults. Passing None
+        # would make them re-call load_config() and re-raise the same ConfigError,
+        # crashing the hook on a malformed config and silently disabling ALL terminal
+        # synthesis exactly when config is broken.
+        config = load_config()
+    except Exception:  # noqa: BLE001
+        config = {}
+    now = now_iso()
+
+    # F-03 correlation: SubagentStop carries no key identifying WHICH subagent
+    # stopped. Count the registered workers that have not yet emitted a terminal —
+    # the synthesis decision depends on whether this stop is unambiguous.
+    non_terminal = [
+        e for e in workers
+        if e.get("task_id") and e.get("attempt") is not None and e.get("worker_id")
+        and not _has_terminal(e["task_id"], e["attempt"], state)
+    ]
+    single_candidate = len(non_terminal) == 1
+
     for entry in workers:
         task_id = entry.get("task_id")
         attempt = entry.get("attempt")
@@ -91,6 +128,19 @@ def main() -> int:
         if _has_terminal(task_id, attempt, state):
             # Terminal already emitted — clean up registry entry if still present.
             unregister_worker(worker_id)
+            continue
+
+        # F-03 gate. Two cases:
+        #  • Exactly ONE non-terminal worker: this stop unambiguously refers to it,
+        #    and a stopped subagent emits no further events — it is dead. Synthesize
+        #    immediately. No sibling exists to race, so the F-03 corruption (which was
+        #    a MULTI-worker over-synthesis: a sibling's stop killing a live worker)
+        #    cannot occur. This avoids stranding the task for a full stale window.
+        #  • MULTIPLE non-terminal workers: we cannot tell which one stopped, so we
+        #    must not kill a possibly-live sibling. Defer to the stale reaper, which
+        #    only fails workers silent past their task-type threshold.
+        task = state.tasks.get(task_id)
+        if not single_candidate and task is not None and not worker_liveness_expired(task, now, config):
             continue
 
         # Prefer phase from registry (written at claim time) to avoid a full log

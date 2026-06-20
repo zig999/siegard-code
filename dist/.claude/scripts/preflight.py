@@ -94,6 +94,41 @@ def check_python_version() -> CheckResult:
     return _timed(_run)
 
 
+def check_bash_available() -> CheckResult:
+    """Probes that a Bash shell can execute a command.
+
+    The orchestrator dispatches every infrastructure step, log append, and worker
+    through the Bash tool. A meta-orchestrator spawned in background runs in a
+    reduced-permission sandbox WITHOUT Bash and with no interactive approval path
+    (see F-01): it stalls for minutes and then asks for Bash permission instead of
+    failing fast. This check surfaces a missing/unusable Bash as a structured
+    E_NO_BASH failure so the infra gate blocks the cycle immediately. Orchestrators
+    MUST run in foreground; background is only for read-only leaf workers.
+    """
+    def _run() -> CheckResult:
+        bash = shutil.which("bash")
+        if bash is None:
+            return CheckResult(
+                ok=False,
+                reason="E_NO_BASH: bash not found in PATH",
+                detail={"hint": "orchestrators require foreground (Bash tool); never spawn in background"},
+            )
+        try:
+            r = subprocess.run([bash, "-c", "echo ok"], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0 and r.stdout.strip() == "ok":
+                return CheckResult(ok=True, reason="bash executes", detail={"path": bash})
+            return CheckResult(
+                ok=False,
+                reason="E_NO_BASH: bash probe returned unexpected output",
+                detail={"stdout": r.stdout[:100], "stderr": r.stderr[:100]},
+            )
+        except subprocess.TimeoutExpired:
+            return CheckResult(ok=False, reason="E_NO_BASH: bash probe timed out after 5s")
+        except OSError as exc:
+            return CheckResult(ok=False, reason=f"E_NO_BASH: bash probe failed: {exc}")
+    return _timed(_run)
+
+
 def check_flock_works() -> CheckResult:
     def _run() -> CheckResult:
         if fcntl is None and msvcrt is None:
@@ -230,6 +265,7 @@ def check_agent_references() -> CheckResult:
 
 
 LOCAL_CHECKS: list[tuple[str, Callable[[], CheckResult]]] = [
+    ("bash_available", check_bash_available),
     ("python_version", check_python_version),
     ("flock_works", check_flock_works),
     ("filesystem_writable", check_filesystem_writable),

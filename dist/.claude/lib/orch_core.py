@@ -211,12 +211,92 @@ def parse_iso(ts: str) -> datetime:
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
+def _elapsed_seconds(now: str, then: str) -> float:
+    """Seconds between two ISO timestamps, tolerant of a tz-naive operand.
+
+    All engine timestamps are UTC, but a legacy / hand-edited / externally-injected
+    event may carry a last_event_at with no 'Z'/offset. Subtracting a naive from an
+    aware datetime raises TypeError, which on the SubagentStop hot path would crash
+    the hook (and the reaper). Coerce any naive operand to UTC before subtracting.
+    """
+    a = parse_iso(now)
+    b = parse_iso(then)
+    if a.tzinfo is None:
+        a = a.replace(tzinfo=timezone.utc)
+    if b.tzinfo is None:
+        b = b.replace(tzinfo=timezone.utc)
+    return (a - b).total_seconds()
+
+
 def _safe_parse_iso(ts: str) -> datetime | None:
     """Parses ISO 8601 timestamp; returns None on any parse failure (never raises)."""
     try:
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except (ValueError, AttributeError, TypeError):
         return None
+
+
+_WORKFLOW_ID_RE = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def slugify_workflow_id(raw: str | None) -> str | None:
+    """Returns a sanitized human-readable workflow_id, or None if unusable (F-04).
+
+    A usable id is a non-empty string of [A-Za-z0-9._-] with no path separators
+    (a workflow_id keys a session directory `.orch/sessions/<id>/`, so it must be a
+    single safe path segment). The id is lowercased: targets run on a Windows
+    case-insensitive filesystem, so 'Chat-UI' and 'chat-ui' would otherwise be two
+    distinct log ids resolving to the SAME session dir — silently clobbering one
+    run's artifacts (a P1 'log is the truth' violation). Lowercasing is also the
+    project's domain-slug convention. UUIDs pass this filter — they are valid ids —
+    but the engine should only MINT a UUID-like opaque id when nothing readable was
+    requested; see resolve_workflow_id.
+    """
+    if not isinstance(raw, str):
+        return None
+    raw = raw.strip().lower()
+    if not raw or "/" in raw or "\\" in raw or raw in (".", ".."):
+        return None
+    if not _WORKFLOW_ID_RE.fullmatch(raw):
+        return None
+    return raw
+
+
+def resolve_workflow_id(
+    requested: str | None,
+    today: str,
+    existing: "Iterator[str] | tuple" = (),
+) -> tuple[str, bool]:
+    """Resolves the effective workflow_id for a first-run workflow (F-04).
+
+    The engine used to mint an opaque uuid4 unconditionally, discarding the
+    readable id the operator passed to /u-spec — sessions became unreachable by
+    name. This honors a usable requested id verbatim, and otherwise falls back to
+    a READABLE slug `spec-<YYYYMMDD>` (disambiguated with `-2`, `-3`, … against
+    existing session ids), never an opaque UUID.
+
+    Args:
+        requested: the workflow_id from the invocation prompt (may be None/empty/invalid).
+        today:     compact date stamp `YYYYMMDD` for the fallback slug.
+        existing:  already-used workflow ids (e.g. `.orch/sessions/*` names) to avoid collisions.
+
+    Returns:
+        (workflow_id, diverged) where `diverged` is True only when a non-empty id
+        was requested but could not be used (so the caller logs the divergence
+        instead of silently substituting).
+    """
+    existing = set(existing or ())
+    slug = slugify_workflow_id(requested)
+    if slug is not None:
+        return slug, False
+    base = f"spec-{today}"
+    candidate = base
+    n = 2
+    while candidate in existing:
+        candidate = f"{base}-{n}"
+        n += 1
+    diverged = bool(requested and str(requested).strip())
+    return candidate, diverged
 
 
 def sha256_hex(data: bytes) -> str:
@@ -1948,37 +2028,88 @@ def detect_stale_orchestrator(
     }
 
 
-def stale_tasks(state: OrchState, now: str) -> list[TaskState]:
-    """
-    Returns tasks in `running` status whose last activity exceeds the tier's
-    stale threshold.
+def stale_threshold_seconds(task: TaskState, config: dict[str, Any] | None = None) -> int:
+    """Resolves the stale threshold (seconds) for a task (F-02).
 
-    A task is stale when (now - last_event_at) > tier.default_stale_seconds.
+    Resolution order (single source of truth for both the stale reaper and the
+    SubagentStop liveness window):
+      1. stale_policy.overrides_by_task_type[task.task_type]  — writers drafting
+         large artifacts go silent for minutes; they get a longer window.
+      2. stale_policy.defaults_by_tier[task.tier]             — per-tier default.
+      3. Tier(task.tier).default_stale_seconds                — hard-coded fallback.
+    """
+    cfg = config if config is not None else load_config()
+    sp = cfg.get("stale_policy", {}) if isinstance(cfg, dict) else {}
+    overrides = sp.get("overrides_by_task_type", {}) or {}
+    tt = task.task_type or ""
+    if tt in overrides:
+        try:
+            return int(overrides[tt])
+        except (TypeError, ValueError):
+            pass
+    try:
+        tier = Tier(task.tier)
+    except ValueError:
+        tier = Tier.STANDARD
+    tier_defaults = sp.get("defaults_by_tier", {}) or {}
+    if tier.value in tier_defaults:
+        try:
+            return int(tier_defaults[tier.value])
+        except (TypeError, ValueError):
+            pass
+    return tier.default_stale_seconds
+
+
+def worker_liveness_expired(
+    task: TaskState, now: str, config: dict[str, Any] | None = None
+) -> bool:
+    """True when a worker's task has been silent long enough that the SubagentStop
+    hook may safely synthesize its terminal (F-03).
+
+    SubagentStop fires on ANY subagent's stop and carries no key correlating it to
+    a specific registered worker. Synthesizing a terminal for a worker whose last
+    event is recent would kill a sibling worker still mid-flight and spawn a retry
+    that races the original (latent file/branch corruption). The hook therefore
+    only acts once the worker is silent past its stale threshold — the SAME bound
+    the stale reaper uses (stale_threshold_seconds), so the two never disagree.
+    Genuine deaths still get a terminal: here once expired, or via reap_stale_tasks
+    at orchestrator Step 5.0 / session end.
+
+    A task with no recorded activity at all (last_event_at is None) returns True —
+    there is no evidence of life to protect.
+    """
+    if task.last_event_at is None:
+        return True
+    threshold = stale_threshold_seconds(task, config)
+    return _elapsed_seconds(now, task.last_event_at) > threshold
+
+
+def stale_tasks(state: OrchState, now: str, config: dict[str, Any] | None = None) -> list[TaskState]:
+    """
+    Returns tasks in `running` status whose last activity exceeds their
+    stale threshold (F-02: task-type aware, config-driven).
+
+    A task is stale when (now - last_event_at) > stale_threshold_seconds(task).
     `last_event_at` is updated on every event for the task, including
     task_progress, so recent heartbeats reset the staleness timer.
 
     Args:
-        state: Current OrchState (from reduce_all or reduce_incremental).
-        now:   Current UTC time as ISO 8601 string (e.g. from now_iso()).
+        state:  Current OrchState (from reduce_all or reduce_incremental).
+        now:    Current UTC time as ISO 8601 string (e.g. from now_iso()).
+        config: Optional pre-loaded config; defaults to load_config().
 
     Returns:
         List of TaskState objects that are stale. Empty list if none.
     """
-    now_dt = parse_iso(now)
+    cfg = config if config is not None else load_config()
     result: list[TaskState] = []
     for task in state.tasks.values():
         if task.status != TaskStatus.RUNNING:
             continue
         if task.last_event_at is None:
             continue
-        try:
-            tier = Tier(task.tier)
-        except ValueError:
-            tier = Tier.STANDARD
-        threshold = tier.default_stale_seconds
-        last_dt = parse_iso(task.last_event_at)
-        elapsed = (now_dt - last_dt).total_seconds()
-        if elapsed > threshold:
+        threshold = stale_threshold_seconds(task, cfg)
+        if _elapsed_seconds(now, task.last_event_at) > threshold:
             result.append(task)
     return result
 
@@ -1990,7 +2121,8 @@ def reap_stale_tasks(now: str | None = None) -> list[str]:
     Deterministic runtime enforcement of the timeout invariant (A2-F1): a worker
     that hangs (process alive, emitting no events) is detected and failed by Python,
     not only by a prompt-level check the orchestrator LLM might skip. Thresholds
-    come from Tier.default_stale_seconds — the single source of truth (A2-F6).
+    come from stale_threshold_seconds() — task-type aware, config-driven (F-02),
+    the single source of truth (A2-F6).
     Idempotent: a task already terminal/FAILED is a no-op in the reducer. Callable
     from check_stale.py (orchestrator Step 5.0) and on_stop.py (session-end backstop).
     """
@@ -2064,6 +2196,33 @@ def default_config() -> dict[str, Any]:
             "runtime_threshold_tasks": 10,
             "timeout_seconds": 60,
         },
+        # F-02: stale-detection thresholds, configurable and task-type aware. A
+        # worker may stay legitimately silent for minutes between semantic
+        # checkpoints (e.g. a spec writer drafting a large artifact between
+        # analysis_complete and draft_written). The flat per-tier thresholds were
+        # too short for writers, producing stale_timeout false positives. Resolution
+        # order in stale_threshold_seconds(): task_type override > tier default > Tier enum.
+        "stale_policy": {
+            # Tier defaults derive from Tier.default_stale_seconds — single source of
+            # truth (A2-F6); editing the enum propagates here automatically.
+            "defaults_by_tier": {t.value: t.default_stale_seconds for t in Tier},
+            # Keys are the task_type values emitted in task_created (see orchestrators).
+            "overrides_by_task_type": {
+                "spec-writer": 1200,
+                "spec-back": 1200,
+                "spec-front": 1200,
+                "spec-reviewer": 900,
+                "spec-validator": 900,
+                "spec-compliance": 900,
+                "spec-triage": 600,
+                "impl": 1200,
+                "planning": 900,
+                "qa": 900,
+                "test-run": 1200,
+                "security-review": 900,
+                "architecture-review": 900,
+            },
+        },
         "phases": {
             "default_workflow": "dev-cycle",
             "workflows": {
@@ -2093,13 +2252,27 @@ def load_config(config_path: Path | None = None) -> dict[str, Any]:
         loaded = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ConfigError(f"Invalid config JSON at {path}: {exc}") from exc
-    # Deep-merge loaded over defaults (top-level keys only for simplicity)
-    for key, val in loaded.items():
-        if isinstance(val, dict) and isinstance(cfg.get(key), dict):
-            cfg[key].update(val)
-        else:
-            cfg[key] = val
+    # Recursive deep-merge: a partial nested override (e.g. stale_policy with only
+    # defaults_by_tier.critical) must not wipe sibling sub-keys (standard/bulk,
+    # overrides_by_task_type). A shallow .update() replaced whole sub-dicts and
+    # silently dropped the writer-protective stale defaults (F-02 regression).
+    _deep_merge(cfg, loaded)
     return cfg
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merges `override` into `base` in place; returns `base`.
+
+    Dict values are merged key-by-key at every level; non-dict values (scalars,
+    lists) replace wholesale. This preserves default sub-keys the operator did not
+    restate, for any nesting depth (stale_policy, retry_policy, phases).
+    """
+    for key, val in override.items():
+        if isinstance(val, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], val)
+        else:
+            base[key] = val
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -2762,7 +2935,11 @@ __all__ = [
     "apply_event",
     "reduce_all",
     "stale_tasks",
+    "stale_threshold_seconds",
+    "worker_liveness_expired",
     "reap_stale_tasks",
+    "slugify_workflow_id",
+    "resolve_workflow_id",
     "consumed_manifest_ids",
     # Config and retry
     "default_config",

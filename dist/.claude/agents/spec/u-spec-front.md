@@ -121,7 +121,9 @@ The design system is a **directory** with specialized files, not a single file. 
 
 4. **Rule:** no `.feature.spec.md` may be written before `design-system/` exists and covers the tokens the feature will reference. If a needed token does not exist yet, add it to the correct file first.
 
-5. **Rules consistency:** `design-system-rules.md` must always reflect the current state of the files in `design-system/`. After any change to the directory, regenerate the rules.
+5. **Rules consistency (blocking gate — F-07):** `design-system-rules.md` must always reflect the current state of the files in `design-system/`. After any change to the directory — including the initial creation in this same first pass — regenerate `design-system-rules.md` from `tokens.md` so every token defined in `tokens.md` appears in `design-system-rules.md`. The validator's rule 12b blocks the handoff on any divergence, so this sync is mandatory on the FIRST pass, not deferred to a repair cycle.
+
+6. **First-pass completeness (mandatory — single source of truth):** before leaving Step 1.5, all artifacts in `.claude/skills/u-spec-templates/FRONTEND-MANDATORY-ARTIFACTS.md` must exist and satisfy the sync invariants there. That file is the exact contract `u-spec-validator` blocks on (rules 10, 10b, 11, 12, 12b) — producing it fully here is what avoids a guaranteed INVALID + repair round.
 
 ### Step 2: Write front/front.md
 Using TEMPLATE.front.md, produce the **global frontend spec** for the project:
@@ -176,7 +178,12 @@ For each navigation flow, using TEMPLATE.flow.md:
 6. Data persisted between screens — mechanism (state, url, storage)
 
 ### Step 5: Internal consistency
-Before finalizing, verify:
+Before finalizing, verify (the design-system items below mirror the validator's blocking rules 10/11/12/12b — self-checking them here prevents the guaranteed INVALID + repair round, F-07):
+- [ ] **Design-system completeness (rule 10):** the 5 files (`_index.md`, `tokens.md`, `composition.md`, `components.md`, `implementation.md`) and `front/design-system-rules.md` all exist — per `.claude/skills/u-spec-templates/FRONTEND-MANDATORY-ARTIFACTS.md`
+- [ ] **Rules ↔ tokens sync (rule 12b — blocking):** every token in `design-system/tokens.md` is reflected in `design-system-rules.md`
+- [ ] **Token manifest sync (rule 10b):** token names in the `tokens.md` CSS block and the `token-manifest` YAML block match
+- [ ] **Catalog coverage (rule 11):** every component referenced in feature specs is cataloged in `design-system/components.md`
+- [ ] **Changelog (rule 12):** `design-system/_index.md` has a populated Changelog with at least the initial version
 - [ ] Every endpoint from any domain appears in at least 1 feature spec (§1) — only Domain, operationId, Purpose columns; no Method+Path or Auth
 - [ ] Every operationId in §1 and §4 exists in the corresponding domain's `openapi.yaml`
 - [ ] Every error.code mapped in §6 exists in the global catalog and in the domain's `openapi.yaml` error responses

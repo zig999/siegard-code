@@ -93,6 +93,31 @@ Execute these steps in order on every invocation. Each invocation handles exactl
 
 ---
 
+### Step 0 — Capability gate (fail-fast)
+
+The orchestrator depends on the Bash tool for **every** step (infra checks, log appends, worker dispatch). A meta-orchestrator spawned in **background** runs in a reduced-permission sandbox **without Bash** and with no interactive approval path (F-01) — it would otherwise stall for minutes before asking for permission.
+
+**This is the FIRST action, before anything else.** Run exactly one probe:
+
+```bash
+echo ok
+```
+
+If the Bash tool is unavailable or denied (the call errors instead of printing `ok`), STOP immediately (≤1 tool use) and output:
+
+```json
+{
+  "status": "error",
+  "reason": "E_NO_BASH",
+  "detail": "Bash tool unavailable — orchestrators require foreground. Background is only for read-only leaf workers.",
+  "action_required": "re-invoke the orchestrator in foreground (do not pass run_in_background)"
+}
+```
+
+Do not attempt any further steps. If the probe prints `ok`, proceed to Step 1.
+
+---
+
 ### Step 1 — Infrastructure check
 
 ```bash
@@ -271,13 +296,34 @@ If `workflow_id != null`: workflow already initialized. Skip to Step 5.
 
 If `workflow_id == null` (first run):
 
-Generate `workflow_id`:
+Resolve `workflow_id` — **honor the readable id from the invocation prompt; never silently fall back to an opaque UUID (F-04)**. Parse the `workflow_id:` line from the spawn prompt (passed by `/u-spec`/`/u-improve`) into `REQUESTED_WF_ID` (empty string if absent), then:
 
 ```bash
-python3 -c "import uuid; print(str(uuid.uuid4()))"
+RESOLVE=$(python3 -c "
+import sys, json, os, glob
+sys.path.insert(0, '.claude/lib')
+from orch_core import resolve_workflow_id, now_iso
+requested = sys.argv[1] if len(sys.argv) > 1 else ''
+today = now_iso()[:10].replace('-', '')
+orch_dir = os.environ.get('ORCH_DIR', '.orch')
+existing = [os.path.basename(p) for p in glob.glob(os.path.join(orch_dir, 'sessions', '*'))]
+wf, diverged = resolve_workflow_id(requested, today, existing)
+print(json.dumps({'workflow_id': wf, 'diverged': diverged, 'requested': requested}))
+" "$REQUESTED_WF_ID")
+WORKFLOW_ID=$(echo "$RESOLVE" | python3 -c "import json,sys; print(json.load(sys.stdin)['workflow_id'])")
+DIVERGED=$(echo "$RESOLVE" | python3 -c "import json,sys; print(json.load(sys.stdin)['diverged'])")
 ```
 
-Store the output as `workflow_id`. This value is the canonical ID for the entire workflow and must be included in every subsequent event that accepts a `workflow_id` field.
+Store `$WORKFLOW_ID` as the canonical ID for the entire workflow — include it in every subsequent event that accepts a `workflow_id` field. It is a readable slug: the requested id when usable, otherwise `spec-<YYYYMMDD>` (disambiguated with `-2`, `-3`, …). **Echo it to the operator now** ("workflow_id: `<WORKFLOW_ID>`") so the session is locatable by name (`/u-dev <WORKFLOW_ID>`).
+
+If `$DIVERGED == "True"` (a readable id was requested but could not be used — e.g. it contained a path separator), this is a divergence to record, not a silent default. Emit:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type operation_mode_declared \
+  --data '{"phase":"sdd","mode":"new","workflow_id_diverged":true,"requested_workflow_id":"<REQUESTED_WF_ID>","effective_workflow_id":"<WORKFLOW_ID>"}'
+```
 
 Check for a workflow config override:
 
@@ -412,7 +458,7 @@ If the script exits non-zero or the output is not valid JSON: use `workflow_type
 
 Store results as `workflow_type` and `requirement` (pass explicitly to phase orchestrator so sub-agents never need to re-derive them from the log).
 
-Spawn via Agent tool:
+Spawn via Agent tool **in foreground** — never pass `run_in_background` (F-01): a phase orchestrator also depends on Bash for every step, and a background sandbox denies it, causing a silent multi-minute stall.
 - `subagent_type`: phase orchestrator name from routing table
 - `prompt`:
   ```
@@ -653,6 +699,7 @@ On every **user invocation**, the meta-orchestrator starts fresh from Step 1. Ea
 
 | Code | Source | Condition |
 |------|--------|-----------|
+| `E_NO_BASH` | meta-orchestrator (Step 0) | Bash tool unavailable — orchestrator spawned in background or sandboxed without Bash. Fail-fast, ≤1 tool use. |
 | `E10_phase_orchestrator_error` | meta-orchestrator | Phase orchestrator returned error + circuit tripped |
 | `E13_subagent_invalid_response` | meta-orchestrator | Phase orchestrator returned non-JSON or empty (envelope guard fired) |
-| (infrastructure codes) | `orch-infra` scripts | Preflight / integrity / circuit failures |
+| (infrastructure codes) | `orch-infra` scripts | Preflight / integrity / circuit failures (includes `bash_available` → E_NO_BASH) |

@@ -357,17 +357,17 @@ After all workers return, re-read state:
 python3 .claude/skills/orch-state/scripts/reduce.py
 ```
 
+**Liveness rule (F-03):** never declare a `running` worker dead from the prompt — it may be mid-finalization, and a premature terminal spawns a retry that races the original. Run the deterministic reaper first; it fails only tasks silent past their task-type threshold (`stale_threshold_seconds`):
+
+```bash
+python3 .claude/scripts/check_stale.py
+```
+
 For each task in batch:
 - `completed` or `dlq` → unregister and proceed to 4.5
-- `running` → synthesize `task_failed`:
-  ```bash
-  python3 .claude/skills/orch-log/scripts/append.py \
-    --agent orchestrator-test \
-    --event-type task_failed \
-    --task-id <task_id> --attempt <attempt> \
-    --data '{"phase":"test","reason":"worker_exited_without_terminal","retryable":true,"synthesized_by":"orchestrator-test"}'
-  ```
-- Unregister:
+- `failed` (reaped just now, or terminal from the SubagentStop hook) → unregister and proceed to 4.5
+- `running` (not reaped — still within its liveness window) → do NOT synthesize. Leave it `running` and re-read state next cycle; the reaper (here and at session end) and the SubagentStop hook are the only paths allowed to declare it dead.
+- Unregister (only for tasks that reached a terminal state):
   ```bash
   python3 -c "
   import sys; sys.path.insert(0,'.claude/lib')
@@ -570,6 +570,6 @@ Stop.
 | No dev delivery artifacts | Return `{status: "blocked"}` |
 | `append.py` exit 1 on `task_claimed` | Skip task, continue |
 | `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
-| Worker exits without terminal | Synthesize `task_failed` in Step 4.4 |
+| Worker exits without terminal | Do NOT synthesize in Step 4.4 (F-03). The SubagentStop hook fails it if it is the sole stopping worker; otherwise the deterministic reaper (`check_stale.py`) fails it once silent past its task-type threshold. Leave it `running` and re-read state. |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |
 | `human_response` action unknown | Treat as no response; re-emit escalation on next invocation |

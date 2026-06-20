@@ -357,3 +357,85 @@ class TestStaleOrchestratorDetector:
         stale = mod._detect_stale_orchestrator(state, events)
         assert stale is not None
         assert stale["last_heartbeat"] is None
+
+
+# ---------------------------------------------------------------------------
+# F-05 — unfinalized SDD phase detector. The pipeline reached a clean terminal
+# (all sdd tasks completed) but the orchestrator was cut off before emitting
+# phase_transitioned + regenerating the handoff manifest. on_stop must surface
+# run_status: sdd_finalization_pending so the operator re-invokes.
+# ---------------------------------------------------------------------------
+
+class TestUnfinalizedSddDetector:
+    def _seed_sdd(self, orch_core):
+        orch_core.append_event(
+            agent="orchestrator", event_type="phase_declared",
+            data={"workflow_id": "wf-sdd",
+                  "phases": [{"name": "sdd", "order": 1, "required": True}]})
+        orch_core.append_event(
+            agent="orchestrator", event_type="phase_entered",
+            data={"phase": "sdd", "order": 1, "workflow_id": "wf-sdd"})
+
+    def _add_task(self, orch_core, task_id, complete=True):
+        orch_core.append_event(
+            agent="orchestrator-sdd", event_type="task_created", task_id=task_id,
+            data={"phase": "sdd", "deps": [], "tier": "standard",
+                  "type": "spec-validator", "spec": "x"})
+        orch_core.append_event(
+            agent="orchestrator-sdd", event_type="task_claimed", task_id=task_id,
+            data={"phase": "sdd", "worker_type": "spec-validator", "worker_id": f"w-{task_id}"})
+        if complete:
+            orch_core.append_event(
+                agent=f"w-{task_id}", event_type="task_completed", task_id=task_id,
+                data={"phase": "sdd", "artifacts": [], "handoff_allowed": True})
+
+    def test_all_completed_no_transition_alerts(self, tmp_orch):
+        import orch_core
+        self._seed_sdd(orch_core)
+        self._add_task(orch_core, "sdd_validate", complete=True)
+        mod = _load_on_stop_module()
+        state = orch_core.reduce_all()
+        events = list(orch_core.read_events_filtered(event_type=None))
+        diag = mod._detect_unfinalized_sdd_phase(state, events)
+        assert diag is not None
+        assert diag["unfinalized_phase"] == "sdd"
+        assert diag["sdd_tasks_completed"] == 1
+
+    def test_transitioned_phase_suppresses_alert(self, tmp_orch):
+        import orch_core
+        self._seed_sdd(orch_core)
+        self._add_task(orch_core, "sdd_validate", complete=True)
+        orch_core.append_event(
+            agent="orchestrator-sdd", event_type="phase_exit_approved",
+            data={"phase": "sdd", "criteria_met": ["handoff_manifest_approved"],
+                  "next_phase": "dev", "workflow_id": "wf-sdd"})
+        orch_core.append_event(
+            agent="orchestrator-sdd", event_type="phase_transitioned",
+            data={"from_phase": "sdd", "to_phase": "dev", "evidence_seq": 1,
+                  "workflow_id": "wf-sdd"})
+        mod = _load_on_stop_module()
+        state = orch_core.reduce_all()
+        events = list(orch_core.read_events_filtered(event_type=None))
+        assert mod._detect_unfinalized_sdd_phase(state, events) is None
+
+    def test_running_task_suppresses_alert(self, tmp_orch):
+        import orch_core
+        self._seed_sdd(orch_core)
+        self._add_task(orch_core, "sdd_validate", complete=False)  # still running
+        mod = _load_on_stop_module()
+        state = orch_core.reduce_all()
+        events = list(orch_core.read_events_filtered(event_type=None))
+        assert mod._detect_unfinalized_sdd_phase(state, events) is None
+
+    def test_run_status_written_to_metrics(self, tmp_orch):
+        import orch_core
+        self._seed_sdd(orch_core)
+        self._add_task(orch_core, "sdd_validate", complete=True)
+        mod = _load_on_stop_module()
+        mod.main()
+        metrics = json.loads((tmp_orch / ".orch" / "metrics" / "current.json").read_text())
+        assert metrics["run_status"] == "sdd_finalization_pending"
+        assert metrics["sdd_finalization_pending"] == "sdd"
+        err = json.loads((tmp_orch / ".orch" / "last_error.json").read_text())
+        assert err["run_status"] == "sdd_finalization_pending"
+        assert err["diagnostic"]["command"] == "/u-orchestrator"

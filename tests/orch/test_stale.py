@@ -22,7 +22,10 @@ def _make_task(
         status=status,
         deps=[],
         tier=tier,
-        task_type="impl",
+        # Neutral task_type with no stale-policy override (F-02): these tests
+        # isolate TIER threshold mechanics. A real type like "impl" now carries a
+        # task-type override (1200s), which would mask the tier logic under test.
+        task_type="",
         spec="",
         max_attempts=3,
         last_event_at=last_event_at,

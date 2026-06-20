@@ -872,16 +872,8 @@ For each task in batch:
     --data '{"phase":"dev","reason":"delivery_artifact_missing","retryable":false,"missing_artifact":"<missing>","synthesized_by":"orchestrator-dev"}'
   ```
   Then unregister and proceed to 5.5.
-- `running` (no terminal) → synthesize `task_failed`:
-  ```bash
-  python3 .claude/skills/orch-log/scripts/append.py \
-    --agent orchestrator-dev \
-    --event-type task_failed \
-    --task-id <task_id> \
-    --attempt <attempt> \
-    --data '{"phase":"dev","reason":"worker_exited_without_terminal","retryable":true,"synthesized_by":"orchestrator-dev"}'
-  ```
-- Unregister:
+- `running` (no terminal) → **do NOT synthesize a terminal here (F-03).** A worker still `running` may be mid-finalization; declaring it dead spawns a retry that races the original. Death is decided ONLY by `stale_threshold_seconds` — via `check_stale.py` (Step 5.0, already run, and at session end) and the SubagentStop hook. Leave the task `running` and re-read state on the next cycle; the reaper will reap it once it is silent past its task-type threshold.
+- Unregister (only for tasks that reached a terminal state):
   ```bash
   python3 -c "
   import sys; sys.path.insert(0,'.claude/lib')
@@ -1028,5 +1020,5 @@ Re-read state. Determine:
 | Backlog artifact not found after planning | Escalate E07 |
 | `append.py` exit 1 on `task_claimed` | Skip task, continue |
 | `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
-| Worker exits without terminal | Synthesize `task_failed` in Step 5.4 |
+| Worker exits without terminal | Do NOT synthesize in Step 5.4 (F-03). The SubagentStop hook fails it if it is the sole stopping worker; otherwise the deterministic reaper (`check_stale.py`, Step 5.0) fails it once silent past its task-type threshold. Leave it `running` and re-read state. |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |

@@ -260,6 +260,7 @@ These invariants are enforced across all artifacts in this project:
 - Zero external Python dependencies — stdlib 3.10+ only
 - Do not deviate from `extras/phases.md` without explicit instruction
 - Do not implement business logic from downstream projects
+- **Orchestrators require foreground.** The meta-orchestrator and every phase orchestrator depend on the Bash tool for all infra checks, log appends, and worker dispatch. A subagent spawned in background runs in a reduced-permission sandbox without Bash and stalls silently. Only read-only leaf workers may run in background. The meta-orchestrator fails fast with `E_NO_BASH` (Step 0) and `preflight.py`'s `bash_available` check enforces this deterministically.
 
 ---
 

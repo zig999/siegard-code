@@ -19,8 +19,9 @@ Resource bundle: canonical templates consumed by SDD spec agents. Templates are 
 | `TEMPLATE.flow.md` | `{SPECS_DIR}/front/flow.md` | u-spec-front |
 | `TEMPLATE.component.spec.md` | `design-system/components/*.spec.md` | u-fe-spec-writer |
 | `TEMPLATE.decisions.md` | `{SPECS_DIR}/decisions.md` | u-spec-writer |
-| `TEMPLATE.design-system-rules.md` | `design-system/rules.md` | u-spec-front |
+| `TEMPLATE.design-system-rules.md` | `front/design-system-rules.md` | u-spec-front |
 | `TEMPLATE.design-system/` | `design-system/` bundle (`_index.md`, `tokens.md`, `composition.md`, `components.md`, `implementation.md`) | u-spec-front |
+| `FRONTEND-MANDATORY-ARTIFACTS.md` | single source of truth for the frontend design-system artifacts the front pipeline must produce and the validator blocks on (F-07) | u-spec-front (produces), u-spec-validator (gates) |
 
 ## Constraints
 
