@@ -46,16 +46,29 @@ Each code appears in the event log as `escalation.data.code`.
 
 ### Manual response (advanced / headless)
 
-For programmatic or batch contexts where `AskUserQuestion` is not available:
+For programmatic or batch contexts where `AskUserQuestion` is not available — or to
+resume a background orchestrator that escalated and came to rest — use the
+`respond_escalation.py` helper (SIEGARD-07). It targets the active escalation by
+default and appends a correctly-formed `human_response`:
+
+```bash
+# Respond to the currently-active escalation
+python3 .claude/scripts/respond_escalation.py --action <action> --operator <identity> --json
+
+# Or target a specific escalation seq
+python3 .claude/scripts/respond_escalation.py --escalation-seq <seq> --action <action> --json
+```
+
+Then re-invoke the relevant orchestrator to resume.
+
+Raw fallback (equivalent, if the helper is unavailable):
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent operator \
   --event-type human_response \
-  --data '{"escalation_seq": <seq_of_escalation_event>, "action": "<action>", "notes": "<optional>"}'
+  --data '{"escalation_seq": <seq_of_escalation_event>, "action": "<action>", "operator": "<identity>", "notes": "<optional>"}'
 ```
-
-Then re-invoke the relevant orchestrator to resume.
 
 ---
 

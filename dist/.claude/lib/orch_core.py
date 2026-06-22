@@ -2048,6 +2048,40 @@ def detect_stale_orchestrator(
     }
 
 
+def compute_progress(state: "OrchState") -> dict[str, Any]:
+    """Rec #8 — estimable progress for ETA / observability. Pure function of the
+    derived state: overall + per-phase task completion. Terminal counts as
+    completed | dlq | skipped. Orchestrators may emit this in heartbeats; on_stop
+    surfaces it in metrics. No I/O, no time math — safe to call anywhere."""
+    terminal = {TaskStatus.COMPLETED, TaskStatus.DLQ, TaskStatus.SKIPPED}
+
+    def _pct(done: int, total: int) -> float:
+        return round(100.0 * done / total, 1) if total else 0.0
+
+    by_phase: dict[str, dict[str, Any]] = {}
+    total = 0
+    done = 0
+    for t in state.tasks.values():
+        total += 1
+        is_term = t.status in terminal
+        done += 1 if is_term else 0
+        ph = by_phase.setdefault(t.phase, {"total": 0, "terminal": 0})
+        ph["total"] += 1
+        ph["terminal"] += 1 if is_term else 0
+    for ph in by_phase.values():
+        ph["remaining"] = ph["total"] - ph["terminal"]
+        ph["pct_complete"] = _pct(ph["terminal"], ph["total"])
+
+    return {
+        "tasks_total": total,
+        "tasks_terminal": done,
+        "tasks_remaining": total - done,
+        "pct_complete": _pct(done, total),
+        "current_phase": state.current_phase,
+        "by_phase": by_phase,
+    }
+
+
 def stale_threshold_seconds(task: TaskState, config: dict[str, Any] | None = None) -> int:
     """Resolves the stale threshold (seconds) for a task (F-02).
 
@@ -2215,6 +2249,14 @@ def default_config() -> dict[str, Any]:
         "preflight": {
             "runtime_threshold_tasks": 10,
             "timeout_seconds": 60,
+        },
+        # SIEGARD-02: dev-phase batch ceiling (max parallel impl workers per
+        # dispatch cycle). Was a hardcoded 2 in the dev state machine; now
+        # config-driven so independent Task Contracts can parallelise beyond 2.
+        # The cap stays SM-owned (A6-F2): the orchestrator loads this policy and
+        # passes it into the SM inputs; DevStateMachine clamps to >= 1 (default 2).
+        "dispatch_policy": {
+            "dev": {"max_concurrent": 2},
         },
         # F-02: stale-detection thresholds, configurable and task-type aware. A
         # worker may stay legitimately silent for minutes between semantic
@@ -2960,6 +3002,7 @@ __all__ = [
     # Reducer
     "apply_event",
     "reduce_all",
+    "compute_progress",
     "stale_tasks",
     "stale_threshold_seconds",
     "worker_liveness_expired",
@@ -3329,6 +3372,17 @@ DEV_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
 }
 
 
+def _dev_max_concurrent(dispatch_policy: dict[str, Any]) -> int:
+    """SIEGARD-02 — config-driven dev batch ceiling. Pure: reads the policy dict
+    passed in the SM inputs (the orchestrator loads it via load_config). Falls back
+    to 2 on missing/invalid value; clamps to >= 1."""
+    try:
+        v = int((dispatch_policy or {}).get("dev", {}).get("max_concurrent", 2))
+    except (TypeError, ValueError, AttributeError):
+        return 2
+    return v if v >= 1 else 2
+
+
 class DevStateMachine(StateMachine):
     """Subclass for orchestrator-dev that populates dynamic params for D8/D9."""
 
@@ -3345,6 +3399,14 @@ class DevStateMachine(StateMachine):
             return Action(
                 "select_worker",
                 {"stack": stack, "task_type": inputs.get("task_type")},
+            )
+        # SIEGARD-02: config-driven batch ceiling (mirrors REVIEW R9). The table's
+        # set_max_concurrent default (2) is overridden by dispatch_policy.dev when
+        # the orchestrator passes it in inputs; absent/invalid → unchanged (2).
+        if state == "select_batch" and action.name == "set_max_concurrent":
+            return Action(
+                "set_max_concurrent",
+                {"max_concurrent": _dev_max_concurrent(inputs.get("dispatch_policy", {}))},
             )
         return action
 

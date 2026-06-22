@@ -714,14 +714,15 @@ After all syntheses, re-read state.
 
 #### 5.1 — Select batch
 
-From the ready queue (sorted by tier priority then creation seq), select up to the batch ceiling **returned by the state machine** (A6-F2 — the cap is Python-owned, not a prose literal):
+From the ready queue (sorted by tier priority then creation seq), select up to the batch ceiling **returned by the state machine** (A6-F2 — the cap is Python-owned, not a prose literal). The ceiling is **config-driven** (SIEGARD-02): load `dispatch_policy` from `.orch/config.json` and pass it into the SM inputs; the SM clamps to ≥ 1 and defaults to 2 when unset.
 
 ```bash
-MAX_CONCURRENT=$(python3 .claude/lib/sm_runner.py --machine dev --state select_batch --inputs '{}' \
+DISPATCH_POLICY=$(python3 -c "import sys,json; sys.path.insert(0,'.claude/lib'); from orch_core import load_config; print(json.dumps(load_config().get('dispatch_policy', {})))")
+MAX_CONCURRENT=$(python3 .claude/lib/sm_runner.py --machine dev --state select_batch --inputs "{\"dispatch_policy\": $DISPATCH_POLICY}" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['params']['max_concurrent'])")
 ```
 
-Select up to `$MAX_CONCURRENT` tasks.
+Select up to `$MAX_CONCURRENT` tasks. To raise dev parallelism for independent Task Contracts, set `dispatch_policy.dev.max_concurrent` in `.orch/config.json` (validate against the runtime's real subagent cap).
 
 Look up worker (D9 — state machine resolves task_stack vs project_stack fallback, then `select_worker.py` resolves the actual subagent name):
 
@@ -784,7 +785,7 @@ Use `estimated_prompt_chars ≈ 1500` (the dev spawn prompt template length). In
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type dispatch_decision \
-  --data '{"phase":"dev","batch":[{"task_id":"<task_id>","worker_type":"<worker>","tier":"<tier>","stack":"<task.stack>"}],"rationale":"ready queue order, tier priority, per-task stack routing","constraints":{"max_batch":2,"nesting_depth":<nesting_depth>,"context_estimate":[{"task_id":"<task_id>","total_chars":<total_chars>,"over_threshold":<bool>,"mitigation":"<none|split_spec|summarize_spec|inline_excerpt>"}]}}'
+  --data '{"phase":"dev","batch":[{"task_id":"<task_id>","worker_type":"<worker>","tier":"<tier>","stack":"<task.stack>"}],"rationale":"ready queue order, tier priority, per-task stack routing","constraints":{"max_batch":<max_concurrent>,"nesting_depth":<nesting_depth>,"context_estimate":[{"task_id":"<task_id>","total_chars":<total_chars>,"over_threshold":<bool>,"mitigation":"<none|split_spec|summarize_spec|inline_excerpt>"}]}}'
 ```
 
 Then for each task, emit `task_claimed` before any spawn:

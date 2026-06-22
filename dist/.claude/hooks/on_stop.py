@@ -20,6 +20,7 @@ from orch_core import (
     reduce_all, TaskStatus, PhaseStatus, ORCH_DIR, METRICS_DIR,
     ensure_dirs, now_iso, parse_iso, read_events_filtered,
     cleanup_stale_workers, reap_stale_tasks, detect_stale_orchestrator,
+    compute_progress,
 )
 
 
@@ -245,6 +246,7 @@ def _compute_metrics(state=None) -> dict:
         "circuit_breaker_tripped": state.circuit_breaker is not None,
         "failure_reason_breakdown": failure_reason_breakdown,
         "structural_failure_rate": structural_failure_rate,
+        "progress": compute_progress(state),
     }
 
 

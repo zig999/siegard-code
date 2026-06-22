@@ -1,15 +1,15 @@
 {
   "framework": "siegard-code",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-22T10:48:59Z",
+  "generated_at": "2026-06-22T11:07:12Z",
   "hash_normalization": "text-lf",
   "files": [
     {
       "path": "ESCALATION_CODES.md",
-      "sha256": "a647c698df562827b994e504cf6a6970d31446d2ef1c01be6ac152bc9f2581d8"
+      "sha256": "402c437971528ced17aaa7ebedce084f7abaf9bf8199eabfdeee7d120d76482c"
     },
     {
       "path": "agents/dev/u-architecture-reviewer.md",
@@ -57,7 +57,7 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "9b7b6c6227c5aafeb4c8ef465f3d8875d3c5fcd68301b08f4724890587b3244a"
+      "sha256": "8e1c0c171c8284acebd356cc700048dd98f101b688ce7a25da90071aaf65091c"
     },
     {
       "path": "agents/orchestrator-review.md",
@@ -149,7 +149,7 @@
     },
     {
       "path": "hooks/on_stop.py",
-      "sha256": "4086aa4915af1e38020e40eff351f98c83b935dbcae5ad23517fbcf475e7a410"
+      "sha256": "238975ace6227ddb01a4e30631d4408b7b51bf0626c03f493386b2dcb6904218"
     },
     {
       "path": "hooks/on_subagent_stop.py",
@@ -165,7 +165,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "219f8433d5328c8c577b3402a5d453ab603c8c9935ee2e2d3590fd04360e9dc6"
+      "sha256": "345391a3d1636b36fb2f15ab73113a6db5e73bb20f8c1b8781e9e046c2adf16f"
     },
     {
       "path": "lib/sm_runner.py",
@@ -214,6 +214,10 @@
     {
       "path": "scripts/recover_retry_sequence.py",
       "sha256": "18debd2778fe0abea37bee0b3bc40ef3f389942fc7b727496341186ee2c913cd"
+    },
+    {
+      "path": "scripts/respond_escalation.py",
+      "sha256": "8df9019f635ca5f968cc0454214c273203823913294cff0c1a8a64af33d5acc5"
     },
     {
       "path": "scripts/validate_dist.py",

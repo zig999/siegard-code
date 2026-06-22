@@ -56,3 +56,38 @@ class TestBatchCeilings:
         for name in ("orchestrator-dev", "orchestrator-sdd", "orchestrator-test", "orchestrator-review"):
             src = (agents / f"{name}.md").read_text(encoding="utf-8")
             assert "--state select_batch" in src, f"{name} must read the SM batch ceiling"
+
+
+class TestDevConfigurableCeiling:
+    """SIEGARD-02 — the dev batch ceiling is config-driven (dispatch_policy.dev)."""
+
+    def _eval(self, inputs):
+        from orch_core import DEV_TRANSITIONS, DevStateMachine
+        return DevStateMachine(DEV_TRANSITIONS).evaluate("select_batch", inputs)
+
+    def test_config_raises_ceiling(self):
+        r = self._eval({"dispatch_policy": {"dev": {"max_concurrent": 5}}})
+        assert r.params["max_concurrent"] == 5
+
+    def test_default_when_no_policy(self):
+        # Regression: absent dispatch_policy keeps the historical default of 2.
+        assert self._eval({}).params["max_concurrent"] == 2
+
+    def test_invalid_value_falls_back_to_2(self):
+        r = self._eval({"dispatch_policy": {"dev": {"max_concurrent": "lots"}}})
+        assert r.params["max_concurrent"] == 2
+
+    def test_clamps_below_one_to_2(self):
+        r = self._eval({"dispatch_policy": {"dev": {"max_concurrent": 0}}})
+        assert r.params["max_concurrent"] == 2
+
+    def test_default_config_declares_dispatch_policy(self):
+        from orch_core import default_config
+        assert default_config()["dispatch_policy"]["dev"]["max_concurrent"] == 2
+
+    def test_helper_unit(self):
+        from orch_core import _dev_max_concurrent
+        assert _dev_max_concurrent({"dev": {"max_concurrent": 4}}) == 4
+        assert _dev_max_concurrent({}) == 2
+        assert _dev_max_concurrent(None) == 2
+        assert _dev_max_concurrent({"dev": {"max_concurrent": -1}}) == 2
