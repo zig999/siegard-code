@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-21T22:05:29Z",
+  "generated_at": "2026-06-22T10:48:59Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,7 +57,7 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "9cbfc80af58bda22ed79f0b6459c416f8bbae2638ebb15d756b2e19fbd89f93e"
+      "sha256": "9b7b6c6227c5aafeb4c8ef465f3d8875d3c5fcd68301b08f4724890587b3244a"
     },
     {
       "path": "agents/orchestrator-review.md",
@@ -165,7 +165,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "9d3504e50301151329a59033192da0502c4d7cba0d314e0f81cce1209b921da8"
+      "sha256": "219f8433d5328c8c577b3402a5d453ab603c8c9935ee2e2d3590fd04360e9dc6"
     },
     {
       "path": "lib/sm_runner.py",
@@ -194,6 +194,10 @@
     {
       "path": "scripts/gc_orphan_blobs.py",
       "sha256": "18979402326cc2e39f536656f9e5661bcfc46dbef4cd534583e7c1de64850848"
+    },
+    {
+      "path": "scripts/gc_worktrees.py",
+      "sha256": "607e8ba7fed3cc3883deb6c7a09e6dfafb3372bb0be72211e0a0e76d61c3224f"
     },
     {
       "path": "scripts/monitor.py",
@@ -225,7 +229,7 @@
     },
     {
       "path": "skills/orch-cleanup/SKILL.md",
-      "sha256": "837c7e9e44ea465f775fc40b5c408658de26cd8e402b285fb78183f9d0e27cb1"
+      "sha256": "b962e493ea7b59017e8f2af044be4669f553ffaf6f881d557c062dfa731857f7"
     },
     {
       "path": "skills/orch-infra/SKILL.md",
@@ -453,7 +457,7 @@
     },
     {
       "path": "skills/u-be-development/SKILL.md",
-      "sha256": "cc302a11064cb38c41c36e9d72059fb0552e1151bb1c310940834ea9e8ec2fb7"
+      "sha256": "4e43c02e87acf5becb335be779716cf0b73752218f484f6230fc6f4b5e7333d3"
     },
     {
       "path": "skills/u-be-qa-docs/SKILL.md",
@@ -497,7 +501,7 @@
     },
     {
       "path": "skills/u-fe-development/SKILL.md",
-      "sha256": "c027e3202f73a3fb1e2c4b81cb05ba64f0a815f4c287b0f01cff11a5171d35d6"
+      "sha256": "c08c9e7ae0609a090ad88d3ec4fd608677a8dec4cbbd7954855ed9d873d7712b"
     },
     {
       "path": "skills/u-fe-qa-docs/SKILL.md",

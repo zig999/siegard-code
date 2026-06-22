@@ -112,6 +112,31 @@ def test_metrics_expose_failure_breakdown(tmp_path, monkeypatch):
     assert metrics["structural_failure_rate"] > 0.0
 
 
+def test_register_worker_persists_spawn_context_chars(tmp_path, monkeypatch):
+    """SIEGARD-01 follow-up: register_worker persists spawn_context_chars so
+    _infer_cause's context_limit branch activates from a real registry entry."""
+    import json as _json
+
+    _isolate_orch(tmp_path, monkeypatch)
+    orch_core.register_worker(
+        "w-T1", "T1", 1, phase="dev", stack="be", task_type="impl",
+        spawn_context_chars=200_000,
+    )
+    entry = _json.loads((orch_core.WORKERS_DIR / "w-T1.json").read_text(encoding="utf-8"))
+    assert entry["spawn_context_chars"] == 200_000
+    assert sas._infer_cause(entry)["suspected_cause"] == "context_limit"
+
+
+def test_register_worker_omits_spawn_context_chars_when_absent(tmp_path, monkeypatch):
+    """Backward compatible: the field is absent when not supplied (no schema break)."""
+    import json as _json
+
+    _isolate_orch(tmp_path, monkeypatch)
+    orch_core.register_worker("w-T2", "T2", 1, phase="dev")
+    entry = _json.loads((orch_core.WORKERS_DIR / "w-T2.json").read_text(encoding="utf-8"))
+    assert "spawn_context_chars" not in entry
+
+
 def test_on_stop_counts_emitted_reason():
     """on_stop counts the SAME string the hook emits — no stale string."""
     root = Path(__file__).resolve().parent.parent

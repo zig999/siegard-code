@@ -2692,6 +2692,7 @@ def register_worker(
     phase: str | None = None,
     stack: str | None = None,
     task_type: str | None = None,
+    spawn_context_chars: int | None = None,
 ) -> None:
     """
     Writes a worker registry entry before the orchestrator spawns the agent.
@@ -2728,6 +2729,11 @@ def register_worker(
         entry["stack"] = stack
     if task_type is not None:
         entry["task_type"] = task_type
+    # SIEGARD-01 follow-up: persist the spawn context size so on_subagent_stop's
+    # _infer_cause can attribute a worker death to context_limit (its >150k branch
+    # is otherwise dormant — the registry never carried this signal).
+    if spawn_context_chars is not None:
+        entry["spawn_context_chars"] = spawn_context_chars
     entry_path.write_text(
         json.dumps(entry, separators=(",", ":")),
         encoding="utf-8",

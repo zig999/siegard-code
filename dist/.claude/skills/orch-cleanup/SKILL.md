@@ -197,6 +197,56 @@ python3 .claude/scripts/purge.py --blobs --sessions --delete-log --operator <ide
 
 ---
 
+## scripts/gc_worktrees.py
+
+Garbage-collects integrated per-TC worktrees and branches (SIEGARD-08). The dev phase creates one worktree + branch per Task Contract under `.orch/worktrees/<task_id>` (`feat/TC-*`, `fix/TC-*`, `refactor/TC-*`) and integrates + removes them at Step 5.6 on the success path. This script reclaims any that survived an abnormal exit (crash, abort, non-retryable failure).
+
+**Safety:** only **merged** worktrees/branches are removed. An unmerged TC worktree holds un-integrated work and is KEPT (surfaced under `kept_unmerged`); non-TC worktrees are left untouched. Dry-run by default; `--confirm` executes.
+
+**When to use:** after a workflow completes or is aborted, to reclaim worktrees/branches that Step 5.6 did not clean up.
+
+### Usage
+
+```bash
+# Dry-run (always first)
+python3 .claude/scripts/gc_worktrees.py --json
+
+# Execute
+python3 .claude/scripts/gc_worktrees.py --confirm --json
+```
+
+### Parameters
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--confirm` | off | Perform removals. Without it: dry-run only. |
+| `--main-branch` | `main` (or `$ORCH_MAIN_BRANCH`) | Integration branch tested for "merged". |
+| `--json` | off | Machine-readable JSON output. Always use from an agent. |
+
+### Output schema
+
+```json
+{
+  "status": "dry_run | ok | error",
+  "dry_run": true,
+  "remove_worktrees": [{"path": ".orch/worktrees/dev_tc_001", "branch": "feat/TC-dev_tc_001"}],
+  "delete_branches": ["feat/TC-dev_tc_001"],
+  "kept_unmerged": [],
+  "candidates": 1
+}
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success (removed, or dry-run with nothing to do) |
+| 2 | Dry-run with candidates pending (`--confirm` not provided) |
+| 3 | Active workers — refused (same gate as purge.py) |
+| 4 | Error (not a git repo, git failure) |
+
+---
+
 ## Decision matrix
 
 | Situation | Script | Scenario |
@@ -204,6 +254,7 @@ python3 .claude/scripts/purge.py --blobs --sessions --delete-log --operator <ide
 | Workflow completed normally — free disk space | `gc_orphan_blobs.py` | — |
 | Workflow completed — routine reset between sessions | `purge.py` | A or B |
 | Workflow aborted — clean worker registry and lock | `purge.py` | A |
+| Workflow completed/aborted — reclaim integrated per-TC worktrees/branches | `gc_worktrees.py` | — |
 | Reset with audit trail preserved | `purge.py` | C |
 | Eliminate all log data — no recovery needed | `purge.py` | D |
 | Scheduled maintenance GC | `gc_orphan_blobs.py` | — |

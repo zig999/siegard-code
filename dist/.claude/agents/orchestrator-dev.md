@@ -803,9 +803,11 @@ Register worker:
 python3 -c "
 import sys; sys.path.insert(0,'.claude/lib')
 from orch_core import register_worker
-register_worker('<worker_id>', '<task_id>', <attempt>, phase='dev', stack='<stack>', task_type='<task.task_type>')
+register_worker('<worker_id>', '<task_id>', <attempt>, phase='dev', stack='<stack>', task_type='<task.task_type>', spawn_context_chars=<total_chars>)
 "
 ```
+
+`<total_chars>` is this task's `context_estimate[].total_chars` computed in Step 5.2 above (SIEGARD-01 follow-up — lets `on_subagent_stop._infer_cause` attribute a worker death to `context_limit`).
 
 #### 5.2b — Create the per-TC branch and worktree (SIEGARD-04)
 

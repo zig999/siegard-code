@@ -226,6 +226,7 @@ refactor/TC-XX  <- exec_type: refactoring
 - Work exclusively on the Task Contract branch (inside your worktree) — never commit directly to `main`
 - **Never merge to `main`** — integration is the sole responsibility of the Orchestrator-Dev, performed at the end of the dev phase (before review) so QA runs on the integrated head (SIEGARD-04)
 - Commit locally as often as you like
+- Remove any scratch/backup files you created (e.g. `*.tcNN`) before emitting your terminal event — never leave them in the working tree (SIEGARD-08)
 
 ### Commit format
 
