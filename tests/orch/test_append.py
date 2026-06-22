@@ -222,18 +222,20 @@ class TestLockReleasedOnError:
         """If append raises internally, lock must be released so next call works."""
         from unittest.mock import patch
 
+        # SIEGARD-03: the log line is now written with a single os.write on an
+        # O_APPEND fd (not open(..., "ab")). Inject the simulated disk error at
+        # that syscall to keep validating that the lock is released on error.
         call_count = 0
-        real_open = __builtins__["open"] if isinstance(__builtins__, dict) else open
+        real_write = orch_core.os.write
 
-        def patched_open(path, mode="r", *args, **kwargs):
+        def patched_write(fd, data, *args, **kwargs):
             nonlocal call_count
-            if "ab" in str(mode):
-                call_count += 1
-                if call_count == 1:
-                    raise OSError("simulated disk error")
-            return real_open(path, mode, *args, **kwargs)
+            call_count += 1
+            if call_count == 1:
+                raise OSError("simulated disk error")
+            return real_write(fd, data, *args, **kwargs)
 
-        with patch("builtins.open", side_effect=patched_open):
+        with patch.object(orch_core.os, "write", side_effect=patched_write):
             with pytest.raises(OSError, match="simulated disk error"):
                 append_event("orchestrator", "task_created",
                              task_id="t_0001", data=_task_data())

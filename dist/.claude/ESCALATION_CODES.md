@@ -24,6 +24,7 @@ Each code appears in the event log as `escalation.data.code`.
 | `E99_human_test_intervention_required` | warning | orchestrator-test | Test failures detected — human decision required | Emit `human_response` with `action: return_to_dev` or `action: accept_with_failures` |
 | `E12_state_reduction_failed` | critical | orchestrator-sdd, orchestrator-dev, orchestrator-review, orchestrator-test | `reduce.py` exited with error — log may be corrupt or `orch_core.py` version mismatch | Run `python3 .claude/skills/orch-log/scripts/verify.py`; inspect tail of `.orch/log.jsonl` for malformed events; ensure deployed `orch_core.py` matches dist version |
 | `E13_subagent_invalid_response` | critical | orchestrator (meta) | Phase orchestrator returned non-JSON or empty output — possible context overflow or agent startup failure | Re-invoke the orchestrator (transient tool errors often self-resolve); if persistent: inspect agent definition; reduce context by checkpointing |
+| `E21_qa_not_on_integrated_main` | critical | orchestrator-review | Review entered but the repo is not on the integrated head — dev integration (SIEGARD-04) incomplete; QA would test an isolated/partial branch | Re-invoke orchestrator-dev to finish Step 5.6 (integrate qa_ready branches into `main`); verify `git status` clean and `git branch --no-merged main` empty; re-invoke review |
 
 ---
 
@@ -71,4 +72,5 @@ Then re-invoke the relevant orchestrator to resume.
 | E14–E17 | Reserved |
 | E18–E19 | orchestrator-review (E18 auto-approval audit; E19 qa_mode classifier fallback) |
 | E20 | orchestrator-review/dev (manifest stack unresolved — fail-closed, A3-F7) |
+| E21 | orchestrator-review (QA not on integrated main — SIEGARD-06 entry guard) |
 | E99 | Human confirmation / approval gates |

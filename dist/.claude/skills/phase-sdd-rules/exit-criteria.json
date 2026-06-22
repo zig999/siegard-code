@@ -33,6 +33,14 @@
       "required": true,
       "blocking": true,
       "applies_to_modes": ["standard", "targeted"]
+    },
+    {
+      "id": "sdd_artifacts_committed",
+      "description": "SIEGARD-05 — every spec artifact listed in handoff-manifest.yaml (backend_package/frontend_package paths, compliance_report, feature/flow paths) is git-tracked with no uncommitted changes. The Orchestrator-SDD commits the generated specs before phase_exit_approved so they are never lost as untracked files.",
+      "script": "scripts/check_sdd_artifacts_committed.py",
+      "required": true,
+      "blocking": true,
+      "applies_to_modes": ["standard", "targeted"]
     }
   ]
 }

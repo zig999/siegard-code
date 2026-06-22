@@ -40,6 +40,7 @@ sys.path.insert(0, str(_LIB))
 from orch_core import (
     EventType,
     TaskStatus,
+    _elapsed_seconds,
     append_event,
     get_active_workers,
     load_config,
@@ -73,6 +74,35 @@ def _get_task_phase(task_id: str, state) -> str:
     """Returns phase for task_id from derived state, or empty string."""
     task = state.tasks.get(task_id)
     return task.phase if task else ""
+
+
+# SIEGARD-01: best-effort root-cause hint for a worker that stopped without a
+# terminal event. The synthesized failure otherwise carries only the generic
+# reason "worker_exited_without_terminal", leaving context overflow, a tool error
+# and a forgotten terminal indistinguishable in the log. Fields are additive and
+# best-effort: registered_at is always present (register_worker writes it);
+# spawn_context_chars is a future enrichment of the registry (dormant until then).
+def _infer_cause(entry: dict) -> dict:
+    out: dict = {}
+    reg = entry.get("registered_at")
+    if reg:
+        try:
+            elapsed = _elapsed_seconds(now_iso(), reg)
+            out["elapsed_s"] = round(elapsed, 1)
+            if elapsed < 10:
+                out["suspected_cause"] = "tool_error_or_missing_input"
+            elif elapsed > 120:
+                out["suspected_cause"] = "context_limit_or_timeout"
+            else:
+                out["suspected_cause"] = "unknown"
+        except Exception:  # noqa: BLE001
+            out["suspected_cause"] = "unknown"
+    cc = entry.get("spawn_context_chars")
+    if isinstance(cc, int):
+        out["spawn_context_chars"] = cc
+        if cc > 150_000:
+            out["suspected_cause"] = "context_limit"
+    return out
 
 
 def main() -> int:
@@ -158,6 +188,7 @@ def main() -> int:
                     "reason": "worker_exited_without_terminal",
                     "retryable": True,
                     "synthesized_by": worker_id,
+                    **_infer_cause(entry),  # SIEGARD-01: suspected_cause, elapsed_s, spawn_context_chars
                 },
             )
         except Exception as exc:  # noqa: BLE001

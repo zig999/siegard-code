@@ -212,6 +212,22 @@ def _compute_metrics(state=None) -> dict:
     else:
         run_status = "partial"
 
+    # SIEGARD-01: failure observability. Count terminal failures by reason so
+    # structural worker deaths (worker_exited_without_terminal / stale_timeout)
+    # are visible in metrics instead of hiding inside tasks_failed. Compared by
+    # status string to stay reload-safe (see _compute_metrics enum usage above).
+    failure_reason_breakdown: dict[str, int] = {}
+    for t in state.tasks.values():
+        status = t.status.value if hasattr(t.status, "value") else str(t.status)
+        if status in ("failed", "dlq"):
+            reason = getattr(t, "last_failure_reason", None)
+            if reason:
+                failure_reason_breakdown[reason] = failure_reason_breakdown.get(reason, 0) + 1
+    structural_failures = sum(
+        n for r, n in failure_reason_breakdown.items() if r in _WORKER_STOPPED_REASONS
+    )
+    structural_failure_rate = (structural_failures / total_tasks) if total_tasks else 0.0
+
     return {
         "generated_at": now_iso(),
         "workflow_id": state.workflow_id,
@@ -227,6 +243,8 @@ def _compute_metrics(state=None) -> dict:
         "phase_durations": phase_durations,
         "escalations": 1 if state.escalation else 0,
         "circuit_breaker_tripped": state.circuit_breaker is not None,
+        "failure_reason_breakdown": failure_reason_breakdown,
+        "structural_failure_rate": structural_failure_rate,
     }
 
 

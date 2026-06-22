@@ -807,6 +807,18 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='dev', stack='<stac
 "
 ```
 
+#### 5.2b — Create the per-TC branch and worktree (SIEGARD-04)
+
+The Orchestrator-Dev owns the branch/worktree lifecycle (workers only confirm they are on the right branch — `u-be-developer`/`u-fe-developer` Step 2B). Before spawning, create one isolated worktree + branch per claimed task so parallel workers never collide and integration (Step 5.6) has a clean target. Worktrees live under `.orch/worktrees/<task_id>`; `.orch/` is gitignored, so the main tree stays clean for the `all_branches_integrated_to_main` gate.
+
+```bash
+# Branch prefix by Task Contract type: feat/ (feature, enhancement), fix/ (QA fix), refactor/.
+git -C "$ORCH_PROJECT_DIR" worktree add -b feat/TC-<task_id> \
+  "$ORCH_PROJECT_DIR/.orch/worktrees/<task_id>" main
+```
+
+Idempotent on retry: if the branch/worktree already exists for this `<task_id>`, reuse it (skip creation). The worker edits code inside its worktree; `ORCH_PROJECT_DIR` stays the **main** repo root so the shared event log and session artifacts (`.orch/sessions/...`) remain in one place.
+
 #### 5.3 — Spawn batch in parallel
 
 Emit all Agent tool calls in a **single response turn**.
@@ -823,7 +835,9 @@ For each claimed task:
     SPECS_DIR=<specs_dir>
     ORCH_PROJECT_DIR=<actual absolute path — value of $ORCH_PROJECT_DIR>
     SESSION_DIR=<session_dir>
+    WORKTREE_DIR=<actual absolute path>/.orch/worktrees/<task_id>
   Set these as shell env vars before any emit.py call.
+  Make ALL code edits inside WORKTREE_DIR (your feat/TC-<task_id> branch is checked out there). Keep using ORCH_PROJECT_DIR (the main repo root) for emit.py, SPECS_DIR and SESSION_DIR paths — the event log and session artifacts live there, not in the worktree. Do NOT merge to main; the Orchestrator integrates your branch at the end of dev.
   nesting_depth: <nesting_depth + 1>
   Task spec: <task.spec>
   Delivery path:   <session_dir>/delivery/<task_id>-delivery.md
@@ -925,15 +939,48 @@ Return to 5.0.
 
 ---
 
+### Step 5.6 — Integrate qa_ready branches into main (SIEGARD-04)
+
+Reached once the dispatch loop has no ready tasks left and all impl tasks are terminal. The Orchestrator-Dev integrates the completed, `qa_ready` work into the integration branch (`main`) so review/QA runs on the **integrated head** (SIEGARD-06), not on an isolated per-TC branch. Each TC was built on its own `feat/TC-*` / `fix/TC-*` / `refactor/TC-*` branch+worktree created by the Orchestrator at dispatch (Step 5.2b); workers commit there but **never merge to `main`** — this step is the sole integration point.
+
+Re-read state. Build the integration list: every dev task with `status == "completed"` whose `delivery.md` has `qa_ready: true`, ordered by dependency (`deps` before dependents — a stacked TC may build on a sibling's branch).
+
+```bash
+git -C "$ORCH_PROJECT_DIR" checkout main
+```
+
+For each TC in dependency order, merge its branch (prefix by Task Contract type — `feat/`, `fix/`, `refactor/`):
+
+```bash
+git -C "$ORCH_PROJECT_DIR" merge --no-ff -m "integrate <task_id>" feat/TC-<task_id>
+```
+
+On a merge conflict: `git merge --abort`, emit `task_failed(reason=integration_conflict, retryable=false)` for that TC, escalate `E04_critical_task_dlq`, and stop — do not hand a partial integration to review.
+
+After all merges, remove the per-TC worktrees, delete the merged branches, and confirm the tree is clean and on `main`:
+
+```bash
+# remove any per-TC worktree created during dispatch (.orch/worktrees/<task_id>)
+git -C "$ORCH_PROJECT_DIR" worktree list --porcelain
+# git worktree remove <path>   # for each leftover worktree
+git -C "$ORCH_PROJECT_DIR" branch --merged main   # then delete merged feat/TC-* branches
+git -C "$ORCH_PROJECT_DIR" status --porcelain      # must be empty
+```
+
+The end state (HEAD on `main`, clean tree, no unmerged `feat/TC-*` branch, no leftover worktree) is enforced deterministically by the `all_branches_integrated_to_main` exit criterion in Step 6 — it blocks the transition if integration is incomplete.
+
+---
+
 ### Step 6 — Exit criteria evaluation
 
 ```bash
 python3 .claude/skills/phase-dev-rules/scripts/check_all_impl_tasks_terminal.py
 python3 .claude/skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py
 python3 .claude/skills/phase-dev-rules/scripts/check_no_open_prohibitions.py
+python3 .claude/skills/phase-dev-rules/scripts/check_all_branches_integrated.py
 ```
 
-If all three return `"met": true`:
+If all four return `"met": true`:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -953,8 +1000,13 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
+  --event-type phase_exit_criterion_met \
+  --data '{"phase":"dev","criterion":"all_branches_integrated_to_main"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
   --event-type phase_exit_approved \
-  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions"],"next_phase":"review","workflow_id":"<workflow_id>"}'
+  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions","all_branches_integrated_to_main"],"next_phase":"review","workflow_id":"<workflow_id>"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
@@ -978,6 +1030,7 @@ Stop.
 Re-read state. Determine:
 - Non-terminal tasks remain → return to Step 5
 - All tasks terminal but `all_impl_tasks_terminal.met == false` → impossible (reduce inconsistency); output `{"status": "error", "last_seq": <last_seq>, "summary": "reduce inconsistency: tasks terminal but criterion disagrees"}` and stop
+- All tasks terminal but `all_branches_integrated_to_main.met == false` → integration did not complete (off `main`, dirty tree, or an unmerged `feat/TC-*` branch). Return to **Step 5.6** and finish integration; do not escalate as a delivery problem
 - All tasks terminal but delivery criteria not met → escalate:
   ```bash
   python3 .claude/skills/orch-log/scripts/append.py \

@@ -165,6 +165,29 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 ---
 
+### Step 1.5 — Confirm QA runs on the integrated head (SIEGARD-06)
+
+QA must run on the integration branch (`main`), not on an isolated per-TC branch. The dev phase (SIEGARD-04, Step 5.6) merges all `qa_ready` work into `main` before transitioning here; this guard confirms it before any QA task is created. Reviewing an isolated branch produces false positives — e.g. a TC that references a symbol introduced by a later, stacked TC fails typecheck in isolation but is correct on the integrated head.
+
+```bash
+python3 .claude/skills/phase-review-rules/scripts/check_qa_on_integrated_main.py
+```
+
+**If it returns `blocked`** (HEAD not on `main`, dirty tree, or an unmerged `feat/TC-*` branch remains): dev integration did not complete. Do NOT create or dispatch QA tasks against partial state — escalate and stop:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
+  --event-type escalation \
+  --data '{"code":"E21_qa_not_on_integrated_main","severity":"critical","reason":"review entered but the repo is not on the integrated head (dev integration incomplete) — QA would test an isolated/partial branch","evidence":[<last_seq>],"suggested_actions":["re-invoke orchestrator-dev to complete Step 5.6 (integrate qa_ready branches into main)","verify: git -C $ORCH_PROJECT_DIR status --porcelain and git branch --no-merged main"]}'
+```
+
+Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "qa_not_on_integrated_main — dev integration incomplete (E21)"}` and stop.
+
+When it returns `ok`, proceed to Step 2.
+
+---
+
 ### Step 2 — Detect stack
 
 ```bash

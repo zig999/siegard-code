@@ -1,15 +1,15 @@
 {
   "framework": "siegard-code",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-20T19:39:42Z",
+  "generated_at": "2026-06-21T22:05:29Z",
   "hash_normalization": "text-lf",
   "files": [
     {
       "path": "ESCALATION_CODES.md",
-      "sha256": "4b1cabc7534e99771fd476089eb2038b9eecf4dea21d2faa7131aa09334f253d"
+      "sha256": "a647c698df562827b994e504cf6a6970d31446d2ef1c01be6ac152bc9f2581d8"
     },
     {
       "path": "agents/dev/u-architecture-reviewer.md",
@@ -25,7 +25,7 @@
     },
     {
       "path": "agents/dev/u-be-qa-docs.md",
-      "sha256": "79d2904483b1126a6f205f2054cb13c62a51db7faca47b2eeb7a0ec969446dfb"
+      "sha256": "f8952dfdc9167786ca74c182075355bbff29cd9b58e5b49d672d4faa971c66a8"
     },
     {
       "path": "agents/dev/u-fe-developer.md",
@@ -37,7 +37,7 @@
     },
     {
       "path": "agents/dev/u-fe-qa-docs.md",
-      "sha256": "704571fc6571bfe60883cbc4f0d7aaea21a7f4a91c9eb0655a4c6661bea75db0"
+      "sha256": "c63f864697e80d2bf7a7e1fc05d3120320cd4f2be6aa5035ff5030641442a296"
     },
     {
       "path": "agents/dev/u-fe-spec-writer.md",
@@ -57,15 +57,15 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "25356c10f535e9c72adb08dd1e27e25f55986863860686624173e67e9c363567"
+      "sha256": "9cbfc80af58bda22ed79f0b6459c416f8bbae2638ebb15d756b2e19fbd89f93e"
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "2b698d55bfe2115149f318942f866f09f777d9d9ab7cfc1ef89dbc15258b5a98"
+      "sha256": "000dc3573975298bdafee3c5e51db873c87e1bbc5f22b4093613a1f96af264ec"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "d511d4a71699f7a9057f6a723756c2212be63b9cbe327386c7193815a3b484c2"
+      "sha256": "d07531423e6aa7855cb035a8d32dfe68a25cbca019ad7bb5fb37f5c0d2a3510d"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -149,11 +149,11 @@
     },
     {
       "path": "hooks/on_stop.py",
-      "sha256": "2aee2405088085d93fff729af28dc4a47902d277328884e8bbdbc0afa42c8e8e"
+      "sha256": "4086aa4915af1e38020e40eff351f98c83b935dbcae5ad23517fbcf475e7a410"
     },
     {
       "path": "hooks/on_subagent_stop.py",
-      "sha256": "cf4e30ede1c718ca3730751cb1ea69e514801af525dd935bb3db19ee3070afe4"
+      "sha256": "c1d87e9a5cabf8515d05cbb98e7d58964712b818f0ac9b0784f0518d6cc9d98d"
     },
     {
       "path": "lib/__init__.py",
@@ -165,7 +165,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "54346343c7e17124f8be80d83cd55e359b6f0bda7cd7526929eec62a2635cdd8"
+      "sha256": "9d3504e50301151329a59033192da0502c4d7cba0d314e0f81cce1209b921da8"
     },
     {
       "path": "lib/sm_runner.py",
@@ -309,7 +309,11 @@
     },
     {
       "path": "skills/phase-dev-rules/exit-criteria.json",
-      "sha256": "ae3f464ab8847ede994b834e9293304609d5901767e035574b5d03ebc204e6a5"
+      "sha256": "519d650e316605e3c0d39a66f3480cd33bc551bbc668e91982102b8de2bec36f"
+    },
+    {
+      "path": "skills/phase-dev-rules/scripts/check_all_branches_integrated.py",
+      "sha256": "51d90a41b340d20054781bc6e9f724abba49df46b8f897d18c12f9a7ba486066"
     },
     {
       "path": "skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py",
@@ -356,6 +360,10 @@
       "sha256": "7d374c4aacb211732736cab3206c7ec43d855d00725e86d3c7f629971db4c8bd"
     },
     {
+      "path": "skills/phase-review-rules/scripts/check_qa_on_integrated_main.py",
+      "sha256": "9a2492ad7a49bb79eb5c9773cf49e705895487c36bf3252e1f46808ebd235097"
+    },
+    {
       "path": "skills/phase-review-rules/scripts/check_suite_freshness.py",
       "sha256": "2830cafddad0f3a0b0a53df96ddb40368f5ac9277be726bfad728b080984334d"
     },
@@ -385,7 +393,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/exit-criteria.json",
-      "sha256": "d20162931d99d10b02f9e5c9e0be32e635acb9d1b38ed25343095e034266abd2"
+      "sha256": "77e699d03381d290ed3aed48454ac3a71be6615d41d75b1012681e24e8f2e98e"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_all_domains_validated.py",
@@ -402,6 +410,10 @@
     {
       "path": "skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py",
       "sha256": "e4f83b147ff348f8d83d9f79738751925a3402dc2854a5efc3d6dd6e9e9ecc0f"
+    },
+    {
+      "path": "skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py",
+      "sha256": "57cc489f829c36f7dd24d77704dd2750e54d2b4137fb6cec52bd156483eff3e4"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_structural_diff.py",
@@ -441,7 +453,7 @@
     },
     {
       "path": "skills/u-be-development/SKILL.md",
-      "sha256": "1276570d29306d03cf9785510f4f0f3124cfe7e0d734e4fedf2d07b85268b402"
+      "sha256": "cc302a11064cb38c41c36e9d72059fb0552e1151bb1c310940834ea9e8ec2fb7"
     },
     {
       "path": "skills/u-be-qa-docs/SKILL.md",
@@ -485,7 +497,7 @@
     },
     {
       "path": "skills/u-fe-development/SKILL.md",
-      "sha256": "f8f25f1dd047ad1f7d3fb5798bf8f42bb2f615d46373e045ae2b2d7bc69f2945"
+      "sha256": "c027e3202f73a3fb1e2c4b81cb05ba64f0a815f4c287b0f01cff11a5171d35d6"
     },
     {
       "path": "skills/u-fe-qa-docs/SKILL.md",

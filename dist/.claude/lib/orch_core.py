@@ -1231,6 +1231,15 @@ def append_event(
                 if _reason:
                     raise PreconditionViolation(f"{event_type} rejected: {_reason}")
         last = last_event()
+        # SIEGARD-03: refuse to chain onto a corrupted tail. If the last event no
+        # longer matches its own hash, the log is already corrupt — fail HERE (at
+        # append) instead of propagating an invalid prev_hash into every following
+        # event (the cascade that forces recovery to truncate N valid events).
+        # Cost: one hash recompute per append (cheap).
+        if last is not None and last.compute_hash() != last.hash:
+            raise CorruptedLogError(
+                f"refusing to append onto corrupted tail: seq={last.seq} hash mismatch"
+            )
         seq = (last.seq + 1) if last else 1
         prev_hash = last.hash if last else "GENESIS"
 
@@ -1261,12 +1270,23 @@ def append_event(
         )
         event.hash = event.compute_hash()
 
-        line = json.dumps(event.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+        line_bytes = (
+            json.dumps(event.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            + "\n"
+        ).encode("utf-8")
 
-        with open(LOG_PATH, "ab") as f:
-            f.write(line.encode("utf-8"))
-            f.flush()
-            os.fsync(f.fileno())
+        # SIEGARD-03: append in a single os.write on an O_APPEND fd. Under LogLock
+        # there are no concurrent cooperating writers; the win is shrinking the
+        # "partial line" window if the process is killed mid-append (the dominant
+        # corruption vector, correlated with worker kills). fsync preserves
+        # durability. Blobs (MAX_INLINE_PAYLOAD) keep the line small, so it
+        # typically fits in a single atomic write (<= PIPE_BUF).
+        fd = os.open(LOG_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        try:
+            os.write(fd, line_bytes)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
     return event
 

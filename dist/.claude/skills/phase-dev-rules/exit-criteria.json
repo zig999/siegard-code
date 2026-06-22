@@ -22,6 +22,13 @@
       "script": "scripts/check_no_open_prohibitions.py",
       "required": true,
       "blocking": true
+    },
+    {
+      "id": "all_branches_integrated_to_main",
+      "description": "SIEGARD-04 — after dev, HEAD is on the integration branch (main), the working tree is clean, no feat/fix/refactor TC branch remains unmerged, and no per-TC worktree remains. The Orchestrator-Dev merges every qa_ready TC branch into main and removes worktrees before transition so QA (review) runs on the integrated head.",
+      "script": "scripts/check_all_branches_integrated.py",
+      "required": true,
+      "blocking": true
     }
   ]
 }

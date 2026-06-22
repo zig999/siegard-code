@@ -1135,6 +1135,33 @@ Set `criteria_met = ["handoff_manifest_approved", "all_improve_reviewers_complet
 
 ---
 
+**Commit SDD artifacts and verify they are tracked (SIEGARD-05, both modes):**
+
+The spec artifacts (`openapi.yaml`, `*.spec.md`, `*.back.md`, component specs, `_validation/*`, `error-codes.md`, and `handoff-manifest.yaml`) are generated on disk but were historically never committed, so they leaked as untracked files and could be lost. Commit them now — after the manifest is generated and validated, before approving the exit — then verify with the deterministic gate.
+
+```bash
+# Stage the spec tree (the manifest's artifacts live under SPECS_DIR) and the manifest.
+git -C "$ORCH_PROJECT_DIR" add "$SPECS_DIR"
+# Idempotent on resume (F-05): "nothing to commit" is not an error.
+git -C "$ORCH_PROJECT_DIR" commit -m "spec(sdd): handoff artifacts for <workflow_id>" || true
+
+# Deterministic gate: every artifact path in handoff-manifest.yaml is tracked and clean.
+python3 .claude/skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py
+```
+
+If `check_sdd_artifacts_committed.py` returns `blocked` (an artifact untracked or with uncommitted changes) → fall through to the "criterion not met" handling; do NOT approve the exit. When it returns `ok`, emit the criterion and append it to `criteria_met` (both modes):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type phase_exit_criterion_met \
+  --data '{"phase":"sdd","criterion":"sdd_artifacts_committed"}'
+```
+
+Append `"sdd_artifacts_committed"` to the `criteria_met` list determined above.
+
+---
+
 **Emit `phase_exit_approved` (both modes — use the `criteria_met` list determined above):**
 
 ```bash

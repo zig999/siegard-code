@@ -197,7 +197,7 @@ Generate **only what the Task Contract asks for**. Do not create stories, visual
 2.5 Check component specs — covered in Step 1C (Pre-flight gate). By the time you reach this step, component specs for §7 components must already be confirmed present and read. If Step 1C was not executed, stop and run it now before continuing.
 3. Map the interface contracts the Task Contract will touch or create
    → emit checkpoint: analysis_complete
-4. Create the feature branch (feat/TC-XX, fix/TC-XX, or refactor/TC-XX)
+4. Confirm you are on the Task Contract branch the Orchestrator created (feat/TC-XX, fix/TC-XX, or refactor/TC-XX) in your worktree
    → emit checkpoint: branch_created
 5. Write the implementation plan as a comment at the top of the first file created
 6. Only then begin implementation
@@ -214,7 +214,7 @@ If any step reveals a blocking ambiguity -> **stop, emit `task_failed` with `rea
 
 ### Branch per Task Contract
 
-Before any implementation, create a branch from `main`:
+The Orchestrator-Dev creates one branch + worktree per Task Contract from `main` before activating you (SIEGARD-04). Confirm you are on it before any implementation:
 
 ```
 feat/TC-XX      <- exec_type: feature | enhancement | visual-adjustment
@@ -223,8 +223,8 @@ refactor/TC-XX  <- exec_type: refactoring
 ```
 
 **Rules:**
-- Work exclusively on the Task Contract branch — never commit directly to `main`
-- **Never push** — pushing is the sole responsibility of the Orchestrator-Dev, after QA approval
+- Work exclusively on the Task Contract branch (inside your worktree) — never commit directly to `main`
+- **Never merge to `main`** — integration is the sole responsibility of the Orchestrator-Dev, performed at the end of the dev phase (before review) so QA runs on the integrated head (SIEGARD-04)
 - Commit locally as often as you like
 
 ### Commit format

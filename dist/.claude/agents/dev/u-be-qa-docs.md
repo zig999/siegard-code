@@ -75,6 +75,16 @@ The Orchestrator-Dev provides pre-extracted context in the activation prompt. Re
 
 ## Execution Process
 
+### Pre-flight — Confirm integrated head (SIEGARD-06)
+
+QA runs on the integrated head, never on an isolated per-TC branch (an isolated branch can fail to build because it references work that only exists once a sibling TC is merged — a false positive). The Orchestrator-Dev integrated all `qa_ready` work into `main` before review; confirm before testing:
+
+```bash
+git -C "$ORCH_PROJECT_DIR" branch --show-current   # must be main
+```
+
+If it returns a `feat/TC-*` / `fix/TC-*` / `refactor/TC-*` branch (or the tree is dirty), STOP and return a blocked-report to the Orchestrator-Review (do not run tests against partial state) — dev integration did not complete.
+
 ### Phase 0 — Delivery gate check
 
 Before running any test, read the `delivery-gate` YAML block at the top of `tc-XX-delivery.md` (template: `.claude/skills/u-shared-templates/delivery-gate.md`).

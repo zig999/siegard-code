@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""
+check_all_branches_integrated.py — Exit criterion: dev / all_branches_integrated_to_main.
+
+SIEGARD-04. The dev phase creates one branch (and worktree) per Task Contract
+(feat/TC-*, fix/TC-*, refactor/TC-*). Before handing off to review, the
+Orchestrator-Dev integrates the qa_ready work into the integration branch
+(default: main) and removes the per-TC worktrees, so QA runs on the integrated
+head (SIEGARD-06) instead of an isolated, possibly-incomplete branch.
+
+Criterion met when, in the project repo:
+  - HEAD is on the integration branch (default "main"), and
+  - the working tree is clean (`git status --porcelain` empty), and
+  - no TC branch (feat/TC-*, fix/TC-*, refactor/TC-*) remains UNMERGED into it, and
+  - no leftover per-TC worktree remains registered.
+
+A deleted (already-merged) TC branch is integrated by construction; the check
+only flags branches still un-merged and worktrees still registered.
+
+Environment:
+    ORCH_PROJECT_DIR   — project root / git repo (default: ".")
+    ORCH_MAIN_BRANCH   — integration branch name (default: "main")
+
+Output schema (per GATE_SCHEMA_UNIFORMITY): always {status, check, timestamp};
+legacy {criterion, met, evidence} preserved for orchestrator-dev compatibility.
+
+Output (exit 0 when met):
+    {"status": "ok", "check": "all_branches_integrated_to_main", ...}
+Output (exit 1 when blocked or error):
+    {"status": "blocked", ...} | {"status": "error", "reason": "<code>", ...}
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+CRITERION_ID = "all_branches_integrated_to_main"
+_PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
+_MAIN = os.environ.get("ORCH_MAIN_BRANCH", "main")
+
+# feat/TC-XX, fix/TC-XX, refactor/TC-XX (the per-Task-Contract branch prefixes).
+_TC_BRANCH_RE = re.compile(r"^(?:feat|fix|refactor)/TC[-/]", re.IGNORECASE)
+
+
+def _git(args: list[str]) -> tuple[int, str]:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=str(_PROJECT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode, proc.stdout.strip()
+
+
+def _is_git_repo() -> bool:
+    rc, out = _git(["rev-parse", "--is-inside-work-tree"])
+    return rc == 0 and out == "true"
+
+
+def evaluate() -> dict:
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if not _is_git_repo():
+        return {
+            "status": "error",
+            "reason": "not_a_git_repo",
+            "detail": f"{_PROJECT_DIR} is not inside a git work tree",
+        }
+
+    current_branch = _git(["rev-parse", "--abbrev-ref", "HEAD"])[1]
+    on_main = current_branch == _MAIN
+
+    porcelain = _git(["status", "--porcelain"])[1]
+    clean = porcelain == ""
+
+    # Local branches not yet merged into the integration branch.
+    rc_unmerged, unmerged_out = _git(["branch", "--no-merged", _MAIN, "--format=%(refname:short)"])
+    unmerged_tc = []
+    if rc_unmerged == 0:
+        unmerged_tc = [b.strip() for b in unmerged_out.splitlines()
+                       if _TC_BRANCH_RE.match(b.strip())]
+
+    # Leftover per-TC worktrees (any worktree other than the main one).
+    leftover_worktrees = []
+    rc_wt, wt_out = _git(["worktree", "list", "--porcelain"])
+    if rc_wt == 0:
+        main_root = _git(["rev-parse", "--show-toplevel"])[1]
+        for line in wt_out.splitlines():
+            if line.startswith("worktree "):
+                path = line[len("worktree "):].strip()
+                if path and path != main_root:
+                    leftover_worktrees.append(path)
+
+    met = on_main and clean and not unmerged_tc and not leftover_worktrees
+    return {
+        "status": "ok" if met else "blocked",
+        "check": CRITERION_ID,
+        "timestamp": timestamp,
+        "criterion": CRITERION_ID,
+        "met": met,
+        "evidence": {
+            "integration_branch": _MAIN,
+            "current_branch": current_branch,
+            "on_integration_branch": on_main,
+            "working_tree_clean": clean,
+            "unmerged_tc_branches": unmerged_tc,
+            "leftover_worktrees": leftover_worktrees,
+        },
+    }
+
+
+def main() -> None:
+    result = evaluate()
+    print(json.dumps(result))
+    if result.get("status") != "ok":
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({
+            "status": "error",
+            "reason": "internal_error",
+            "detail": str(exc),
+        }), file=sys.stderr)
+        sys.exit(1)
