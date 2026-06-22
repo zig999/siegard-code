@@ -29,6 +29,13 @@
       "script": "scripts/check_all_branches_integrated.py",
       "required": true,
       "blocking": true
+    },
+    {
+      "id": "acceptance_criteria_covered",
+      "description": "Rec #11 — every completed dev task's delivery-gate acceptance_criteria block is present with an empty uncovered list and covered == total. Independent gate that surfaces AC coverage gaps at end of dev instead of letting them slip silently into review.",
+      "script": "scripts/check_acceptance_criteria_covered.py",
+      "required": true,
+      "blocking": true
     }
   ]
 }

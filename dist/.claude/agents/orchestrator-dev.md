@@ -981,9 +981,10 @@ python3 .claude/skills/phase-dev-rules/scripts/check_all_impl_tasks_terminal.py
 python3 .claude/skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py
 python3 .claude/skills/phase-dev-rules/scripts/check_no_open_prohibitions.py
 python3 .claude/skills/phase-dev-rules/scripts/check_all_branches_integrated.py
+python3 .claude/skills/phase-dev-rules/scripts/check_acceptance_criteria_covered.py
 ```
 
-If all four return `"met": true`:
+If all five return `"met": true`:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -1008,8 +1009,13 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
+  --event-type phase_exit_criterion_met \
+  --data '{"phase":"dev","criterion":"acceptance_criteria_covered"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
   --event-type phase_exit_approved \
-  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions","all_branches_integrated_to_main"],"next_phase":"review","workflow_id":"<workflow_id>"}'
+  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions","all_branches_integrated_to_main","acceptance_criteria_covered"],"next_phase":"review","workflow_id":"<workflow_id>"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \

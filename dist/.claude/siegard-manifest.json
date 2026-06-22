@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-22T11:07:12Z",
+  "generated_at": "2026-06-22T11:47:26Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,7 +57,7 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "8e1c0c171c8284acebd356cc700048dd98f101b688ce7a25da90071aaf65091c"
+      "sha256": "bd3d09642b935b90231d0b735d33aae6e8c570a701e6f4a98361eacd4726e206"
     },
     {
       "path": "agents/orchestrator-review.md",
@@ -317,7 +317,11 @@
     },
     {
       "path": "skills/phase-dev-rules/exit-criteria.json",
-      "sha256": "519d650e316605e3c0d39a66f3480cd33bc551bbc668e91982102b8de2bec36f"
+      "sha256": "31f510587f6fc4fdf6350904001af2e43d06bb91898359888575a9d0a18a3051"
+    },
+    {
+      "path": "skills/phase-dev-rules/scripts/check_acceptance_criteria_covered.py",
+      "sha256": "850a315ab210b757d9efb9f1616fbede7f566fd98004b750e5b0ea28e702910c"
     },
     {
       "path": "skills/phase-dev-rules/scripts/check_all_branches_integrated.py",
