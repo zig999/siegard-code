@@ -790,6 +790,10 @@ python3 .claude/skills/phase-review-rules/scripts/read_qa_verdict.py \
   <artifact_paths...>
 ```
 
+The `verdict` column MUST be the value `read_qa_verdict.py` returns — never a value re-read by eye from the artifact prose. This is the SAME parser Step 6's `check_all_qa_verdicts_approved` uses, so the human sees exactly what the machine gate will compute (SIEGARD BUG-2: the human must not approve over a state the exit-criteria gate will then reject).
+
+**Unreadable-verdict guard (mandatory):** any artifact whose parsed verdict is `unknown` or `file_not_found` is UNREADABLE by the machine gate. Render that row with a `⚠ UNREADABLE` marker, and do NOT present `approve` as a clean option for it — Step 6's `check_all_qa_verdicts_approved` will block (E08) even after a human `approve`. The operator must first fix the artifact's `verdict:`/`documentation_verified:` frontmatter fields (or return the task to dev), then re-invoke; only then offer `approve`.
+
 Emit progress panel to the user (structured text):
 
 ```
@@ -799,13 +803,14 @@ Workflow: {workflow_id}
 Tasks reviewed: {total}
 
 Verdicts:
-{verdict_table: artifact | verdict | findings_count}
+{verdict_table: artifact | verdict | findings_count}   # mark unknown/file_not_found rows with ⚠ UNREADABLE
 
-Approved: {approved_count}
-Rejected: {rejected_count}
+Approved:   {approved_count}
+Rejected:   {rejected_count}
+Unreadable: {unknown_count}   # if > 0: approval is blocked until the artifact frontmatter is fixed
 
 Options:
-  approve         — proceed to test phase
+  approve         — proceed to test phase (only when Unreadable = 0)
   return_to_dev   — return all tasks to dev for revision
   return_partial  — return specific tasks (requires rejected_task_ids; use manual human_response for this option)
 ```

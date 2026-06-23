@@ -372,7 +372,7 @@ If at least one match, run the audit:
 Generate the `$ORCH_TASK_ID-qa.md` file at `$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md` using the full template from SKILL.md.
 
 Upon completion, notify the **Orchestrator-Dev** with:
-- Verdict: Approved | Approved with caveats | Rejected
+- Verdict: approved | rejected (must equal the bare `verdict:` field in the qa-report frontmatter)
 - Current round
 
 ---

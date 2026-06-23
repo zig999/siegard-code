@@ -3,13 +3,28 @@
 Save to `$SESSION_DIR/qa/$ORCH_TASK_ID-qa.md`:
 
 ```markdown
+---
+task_id: <task_id>
+verdict: <approved|rejected>
+documentation_verified: <true|false>
+---
+
 # QA Report: TC-XX — [Task Contract Title]
 
 **Date:** YYYY-MM-DD
 **Layer:** semi-permanent
 **Round:** 1 | 2 | 3
-**Verdict:** Approved | Approved with caveats | Rejected
+**Verdict:** Approved | Rejected
 **fe-validate report:** {OUTPUT_DIR}/fe-validate-{run_id}.yaml | skipped
+
+> **Machine-read fields (contract — do not decorate):** the YAML frontmatter above is the
+> single source of truth read by the review-phase gates (`read_qa_verdict.py`,
+> `check_all_qa_verdicts_approved.py`, `check_micro_unanimous_clean.py`,
+> `check_documentation_verified.py`). Emit `verdict` and `documentation_verified` as **bare,
+> lowercase** values — `verdict` ∈ {`approved`, `rejected`} (binary only — no "with caveats");
+> `documentation_verified` ∈ {`true`, `false`}. The `**Verdict:**` line below is a human label and
+> MUST match the frontmatter `verdict`. Set `documentation_verified: true` only after the
+> Documentation Verification section below is complete.
 
 > **Note:** This document is semi-permanent — it records the verdict and bugs, not raw test output.
 > Do not paste full console logs or CI pipeline output here; summarize in the Test Matrix below.

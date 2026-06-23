@@ -53,9 +53,14 @@ def test_infer_cause_short_elapsed_is_tool_error():
     assert cause["elapsed_s"] >= 0
 
 
-def test_infer_cause_long_elapsed_is_context_or_timeout():
+def test_infer_cause_long_elapsed_alone_is_unknown():
+    """SIEGARD BUG-1: elapsed time alone is NOT diagnostic. A long-running worker is
+    labeled 'unknown' (not 'context_limit_or_timeout') — only spawn_context_chars, a
+    real signal, yields a context cause. Recording a false 'context_limit_or_timeout'
+    from time alone biased forensic diagnostics."""
     cause = sas._infer_cause({"registered_at": _iso_ago(200)})
-    assert cause["suspected_cause"] == "context_limit_or_timeout"
+    assert cause["suspected_cause"] == "unknown"
+    assert cause["elapsed_s"] >= 120
 
 
 def test_infer_cause_large_context_wins():

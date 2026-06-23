@@ -22,7 +22,6 @@ Output (exit 1):
 """
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -30,13 +29,20 @@ _CLAUDE_DIR = Path(__file__).resolve().parents[3]
 _LIB = _CLAUDE_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
+# SIEGARD BUG-2: share the canonical verdict parser with read_qa_verdict.py so the
+# gate and the helper never diverge. The script's own directory carries it.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
 try:
     from orch_core import TaskStatus, reduce_all, now_iso
+    from read_qa_verdict import extract_verdict
 except ImportError as exc:
     print(json.dumps({
         "status": "error",
         "reason": "internal_error",
-        "detail": f"cannot import orch_core: {exc}",
+        "detail": f"cannot import dependency: {exc}",
     }), file=sys.stderr)
     sys.exit(1)
 
@@ -44,14 +50,25 @@ CRITERION_ID = "all_qa_verdicts_approved"
 PHASE_NAME = "review"
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 
-_VERDICT_RE = re.compile(r"^\s*verdict\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
-_APPROVED_VALUES = {"approved"}
+
+# SIEGARD BUG-2 (extension): only `qa`-type review tasks produce approved/rejected
+# verdicts. Architecture and security reviewers are ALSO review-phase tasks, but emit
+# findings under a different contract — architecture-finding.yaml has no `verdict`
+# field at all, and security-finding.yaml's verdict enum is
+# {approved, approved_with_remediations, blocked}. Collecting their artifacts here
+# read them as "unknown" and blocked the phase with a spurious E08 even after a human
+# approved (forensic report seq 69: "arch review YAML lacks verdict field"). Their
+# severity is governed by check_no_open_critical_findings; the qa-verdict gate scopes
+# to qa tasks only.
+_QA_TASK_TYPE = "qa"
 
 
 def _collect_completed_tasks(state) -> list:
     return [
         task for task in state.tasks.values()
-        if task.phase == PHASE_NAME and task.status == TaskStatus.COMPLETED
+        if task.phase == PHASE_NAME
+        and task.status == TaskStatus.COMPLETED
+        and task.task_type == _QA_TASK_TYPE
     ]
 
 
@@ -101,10 +118,8 @@ def evaluate() -> dict:
             not_approved.append({"artifact": rel_path, "reason": f"unreadable: {exc}"})
             continue
 
-        match = _VERDICT_RE.search(content)
-        verdict_value = match.group(1).lower() if match else None
-
-        if verdict_value in _APPROVED_VALUES:
+        verdict_value = extract_verdict(content)
+        if verdict_value == "approved":
             approved_count += 1
         else:
             not_approved.append({

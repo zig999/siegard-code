@@ -26,6 +26,39 @@ from pathlib import Path
 
 VALID_VERDICTS = {"approved", "rejected"}
 
+# SIEGARD BUG-2 — single source of truth for verdict extraction, imported by every
+# review-phase gate (check_all_qa_verdicts_approved, check_micro_unanimous_clean) so
+# the gates can never disagree on the same artifact (the historical drift: this
+# script captured `(.+)$` while check_all captured `(\S+)`, so a bare
+# `verdict: Approved with caveats` read as "unknown" here but "approved" there).
+#
+# Tolerant of the Markdown decoration the QA templates historically emitted:
+#   verdict: approved
+#   **Verdict:** Approved          (bold field name and/or bold value)
+#   - **verdict**: "approved"      (bullet + bold + quotes)
+# Leading [\s*\-]* absorbs bullet/bold prefixes; [\s*]* around the colon absorbs
+# bold markers; the value is lower-cased before comparison. A line starting with
+# `#` (YAML comment) cannot match — `#` is outside the prefix class. Any value that
+# is not exactly approved/rejected (e.g. "approved with caveats") collapses to
+# "unknown" — gates MUST NOT auto-pass an ambiguous verdict.
+_VERDICT_RE = re.compile(
+    r"^[\s*\-]*verdict[\s*]*:[\s*]*(.+?)[\s*]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def extract_verdict(content: str) -> str:
+    """Returns the canonical verdict for a QA artifact's text.
+
+    One of: "approved" | "rejected" | "unknown". Case-insensitive; tolerant of
+    Markdown bold/bullet prefixes around the field name and the value.
+    """
+    m = _VERDICT_RE.search(content)
+    if not m:
+        return "unknown"
+    raw = m.group(1).strip().strip("*").strip().strip("\"'").strip().lower()
+    return raw if raw in VALID_VERDICTS else "unknown"
+
 
 def read_verdict(path: Path) -> str:
     if not path.exists():
@@ -34,15 +67,7 @@ def read_verdict(path: Path) -> str:
         content = path.read_text(encoding="utf-8")
     except OSError:
         return "file_not_found"
-
-    # Match `verdict:` at any indentation level (covers both YAML frontmatter and body).
-    m = re.search(r"^\s*verdict\s*:\s*(.+)$", content, re.MULTILINE | re.IGNORECASE)
-    if not m:
-        return "unknown"
-
-    # Strip surrounding quotes and whitespace (handles `verdict: "approved"` or `verdict: approved`).
-    raw = m.group(1).strip().strip("\"'")
-    return raw if raw in VALID_VERDICTS else "unknown"
+    return extract_verdict(content)
 
 
 def main() -> None:

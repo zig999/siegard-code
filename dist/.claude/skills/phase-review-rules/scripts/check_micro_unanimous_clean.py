@@ -44,8 +44,15 @@ import re
 import sys
 from pathlib import Path
 
+# SIEGARD BUG-2: share the canonical verdict parser with read_qa_verdict.py so this
+# auto-approval gate and the exit-criteria gate can never disagree on the same
+# artifact. The script's own directory carries the helper module.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from read_qa_verdict import extract_verdict  # noqa: E402
 
-_VERDICT_RE = re.compile(r"^\s*verdict\s*:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
+
 _SEVERITY_RE = re.compile(r"^\s*-?\s*severity\s*:\s*[\"']?(critical|high|medium|low)\b",
                           re.MULTILINE | re.IGNORECASE)
 
@@ -64,14 +71,6 @@ def _read_text(path: Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except OSError:
         return None
-
-
-def _extract_verdict(content: str) -> str:
-    m = _VERDICT_RE.search(content)
-    if not m:
-        return "unknown"
-    raw = m.group(1).strip().strip("\"'").lower()
-    return raw if raw in ("approved", "rejected") else "unknown"
 
 
 def _max_severity(content: str) -> str:
@@ -117,7 +116,7 @@ def evaluate(tasks: list[dict], project_dir: Path) -> dict:
             non_approved.append({"task_id": t["task_id"], "reason": "verdict_artifact_missing"})
             continue
 
-        verdict = _extract_verdict(content)
+        verdict = extract_verdict(content)
         if verdict != "approved":
             non_approved.append({"task_id": t["task_id"], "verdict": verdict})
 

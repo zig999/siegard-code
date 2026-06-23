@@ -9,19 +9,25 @@ terminal event (task_completed or task_failed). If the worker stops silently
 C1/C7: reads worker context from .orch/workers/<worker_id>.json registry instead
 of env vars, so it works regardless of the hook's CWD.
 
-F-03 — correlation gate: SubagentStop fires on the stop of ANY subagent and its
-stdin payload carries no key (it has session_id/transcript_path, not the
-orchestrator's worker_id) that correlates it to a specific registry entry. The old
-code failed EVERY non-terminal registered worker on each stop — that killed sibling
-workers still mid-flight and spawned retries racing the originals (the real F-03
-incident was exactly this multi-worker over-synthesis). The gate now splits on how
-many non-terminal workers are registered:
-  • Exactly one → this stop unambiguously refers to it; a stopped subagent emits no
-    more events, so it is dead → synthesize immediately (no sibling to race).
-  • More than one → cannot tell which stopped → defer to the stale reaper, which
-    only fails workers silent past their task-type threshold (worker_liveness_expired).
-A genuinely dead worker in the multi-worker case still gets a terminal once its
-window expires, via reap_stale_tasks at Step 5.0 / session end.
+F-03 / SIEGARD BUG-1 — correlation gate: SubagentStop fires on the stop of ANY
+subagent and its stdin payload carries no key (it has session_id/transcript_path,
+not the orchestrator's worker_id) that correlates it to a specific registry entry.
+Therefore a stop NEVER proves that a particular registered worker died:
+  • it may be the stop of a sibling worker or an auxiliary subagent, and
+  • the targeted worker may merely be mid-finalization — about to write its
+    artifact and call emit.py.
+The gate's only safe signal is silence-over-time. A worker is synthesized as failed
+ONLY once it has been silent past its task-type stale threshold (worker_liveness_expired),
+the SAME bound the stale reaper uses, so the two never disagree. This holds for ALL
+cases — a single registered worker is treated exactly like one of many.
+
+History: the original code failed EVERY non-terminal worker on each stop, killing
+live siblings (the F-03 incident). A follow-up exempted the "exactly one non-terminal
+worker" case and synthesized it immediately — but that reaped LIVE workers too: a QA
+worker silent only ~107s (threshold 900s) was failed on an unrelated stop, then
+completed normally seconds later (SIEGARD BUG-1). Liveness is now required on every
+path. A genuinely dead worker still gets a terminal once its window expires — here or
+via reap_stale_tasks at Step 5.0 / session end.
 
 The orchestrator writes a registry entry (via register_worker()) before
 spawning each Agent, and removes it (via unregister_worker()) after Step 6.4
@@ -89,12 +95,17 @@ def _infer_cause(entry: dict) -> dict:
         try:
             elapsed = _elapsed_seconds(now_iso(), reg)
             out["elapsed_s"] = round(elapsed, 1)
-            if elapsed < 10:
-                out["suspected_cause"] = "tool_error_or_missing_input"
-            elif elapsed > 120:
-                out["suspected_cause"] = "context_limit_or_timeout"
-            else:
-                out["suspected_cause"] = "unknown"
+            # SIEGARD BUG-1 (honesty): a sub-10s exit strongly implies the worker
+            # never began real work — a tool error or missing input. A LONG elapsed
+            # time is NOT diagnostic: a worker silent for minutes may be slow,
+            # blocked, or finalizing — it is not evidence of context overflow. The old
+            # code asserted "context_limit_or_timeout" purely from elapsed > 120s,
+            # mislabeling long-but-healthy workers (e.g. test-runners) and biasing
+            # downstream diagnostics. The only real context signal is
+            # spawn_context_chars, applied below.
+            out["suspected_cause"] = (
+                "tool_error_or_missing_input" if elapsed < 10 else "unknown"
+            )
         except Exception:  # noqa: BLE001
             out["suspected_cause"] = "unknown"
     cc = entry.get("spawn_context_chars")
@@ -137,16 +148,6 @@ def main() -> int:
         config = {}
     now = now_iso()
 
-    # F-03 correlation: SubagentStop carries no key identifying WHICH subagent
-    # stopped. Count the registered workers that have not yet emitted a terminal —
-    # the synthesis decision depends on whether this stop is unambiguous.
-    non_terminal = [
-        e for e in workers
-        if e.get("task_id") and e.get("attempt") is not None and e.get("worker_id")
-        and not _has_terminal(e["task_id"], e["attempt"], state)
-    ]
-    single_candidate = len(non_terminal) == 1
-
     for entry in workers:
         task_id = entry.get("task_id")
         attempt = entry.get("attempt")
@@ -160,17 +161,16 @@ def main() -> int:
             unregister_worker(worker_id)
             continue
 
-        # F-03 gate. Two cases:
-        #  • Exactly ONE non-terminal worker: this stop unambiguously refers to it,
-        #    and a stopped subagent emits no further events — it is dead. Synthesize
-        #    immediately. No sibling exists to race, so the F-03 corruption (which was
-        #    a MULTI-worker over-synthesis: a sibling's stop killing a live worker)
-        #    cannot occur. This avoids stranding the task for a full stale window.
-        #  • MULTIPLE non-terminal workers: we cannot tell which one stopped, so we
-        #    must not kill a possibly-live sibling. Defer to the stale reaper, which
-        #    only fails workers silent past their task-type threshold.
+        # SIEGARD BUG-1: liveness is required on EVERY path. SubagentStop carries no
+        # key correlating it to a worker (see register_worker — no session_id is
+        # persisted), so "exactly one non-terminal worker" does NOT prove this stop
+        # belongs to it: the stop may be a sibling/auxiliary subagent, or this worker
+        # may be mid-finalization (about to emit its terminal). Synthesize only once
+        # the worker is silent past its task-type stale threshold — the same bound the
+        # stale reaper uses. A task with no recorded activity (last_event_at is None)
+        # has no life to protect: worker_liveness_expired returns True for it.
         task = state.tasks.get(task_id)
-        if not single_candidate and task is not None and not worker_liveness_expired(task, now, config):
+        if task is not None and not worker_liveness_expired(task, now, config):
             continue
 
         # Prefer phase from registry (written at claim time) to avoid a full log

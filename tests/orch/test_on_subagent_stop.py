@@ -252,16 +252,20 @@ def test_hook_handles_multiple_registry_entries(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# F-03 regression — correlation gate: a stop must not kill a still-live SIBLING,
-# but the sole stopping worker (no sibling to race) IS failed immediately.
+# F-03 / SIEGARD BUG-1 regression — correlation gate: a stop must not kill a
+# still-live worker, whether it is one of several OR the sole registered worker.
+# Liveness (silence past the task-type window) is the only synthesis trigger.
 # ---------------------------------------------------------------------------
 
-def test_sole_stopping_worker_synthesized_immediately(tmp_path):
-    """Exactly one non-terminal worker, no config (real window) → synthesized now.
+def test_sole_stopping_worker_within_window_is_deferred(tmp_path):
+    """SIEGARD BUG-1: a single non-terminal worker still within its liveness window
+    is NOT synthesized on a stop.
 
-    With a single candidate the stop unambiguously refers to it and no sibling
-    exists to race, so the hook fails it immediately rather than stranding the task
-    for a full stale window. (The F-03 incident was a MULTI-worker over-synthesis.)
+    SubagentStop carries no key proving the stop belongs to this worker — it may be a
+    sibling/auxiliary subagent's stop, or this worker may be mid-finalization (about to
+    emit its terminal). With the default window (fresh claim) the hook defers to the
+    stale reaper instead of reaping a possibly-live worker. The original bug failed a QA
+    worker silent only ~107s under a 900s window, which then completed seconds later.
     """
     _setup(tmp_path)
     _register_worker(tmp_path, "w_1", "t_001", 1)
@@ -270,9 +274,8 @@ def test_sole_stopping_worker_synthesized_immediately(tmp_path):
     r = _run_hook(tmp_path)
     assert r.returncode == 0
     events = _read_all(tmp_path)
-    assert len(events) == before + 1
-    assert events[-1]["event_type"] == "task_failed"
-    assert events[-1]["task_id"] == "t_001"
+    # Deferred — no synthesis while the worker is still within its window.
+    assert len(events) == before
 
 
 def test_sibling_stop_does_not_kill_live_workers(tmp_path):
@@ -309,21 +312,43 @@ def test_hook_ignores_stdin(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_malformed_config_does_not_crash_hook(tmp_path):
-    """Corrupt config.json → hook falls back to enum defaults, still synthesizes.
+    """Corrupt config.json → hook falls back to enum defaults and does not crash.
 
-    Earlier the ConfigError fallback set config=None, which made the liveness check
-    re-invoke load_config() and re-raise — crashing the hook and silently disabling
-    ALL terminal synthesis exactly when config was broken.
+    The ConfigError fallback sets config={} (not None): worker_liveness_expired then
+    uses the Tier enum defaults instead of re-invoking load_config() and re-raising,
+    which would crash the hook and silently disable ALL terminal synthesis exactly when
+    config is broken. SIEGARD BUG-1 makes this path load-bearing: liveness now gates the
+    single-worker case too, so the {} fallback is actually exercised here. A
+    freshly-claimed worker is within its (enum-default) window → correctly deferred, no
+    crash, no traceback.
     """
-    _setup(tmp_path)  # single worker w_1 on t_001
+    _setup(tmp_path)  # single worker w_1 on t_001, just claimed
     (tmp_path / ".orch" / "config.json").write_text("{ this is not json", encoding="utf-8")
     _register_worker(tmp_path, "w_1", "t_001", 1)
     before = len(_read_all(tmp_path))
 
     r = _run_hook(tmp_path)
     assert r.returncode == 0, r.stderr
+    assert "Traceback" not in r.stderr
     events = _read_all(tmp_path)
-    # Sole stopping worker is failed despite the broken config.
+    # Fresh worker within the enum-default window → deferred, not reaped.
+    assert len(events) == before
+
+
+def test_sole_worker_synthesized_once_expired(tmp_path):
+    """SIEGARD BUG-1 companion: once the sole worker IS past its window, it is failed.
+
+    Confirms the fix only DEFERS live workers — it does not disable synthesis. With the
+    forced-expired config (all thresholds -1) the single registered worker is reaped.
+    """
+    _setup(tmp_path)
+    _force_expired(tmp_path)
+    _register_worker(tmp_path, "w_1", "t_001", 1)
+    before = len(_read_all(tmp_path))
+
+    r = _run_hook(tmp_path)
+    assert r.returncode == 0
+    events = _read_all(tmp_path)
     assert len(events) == before + 1
     assert events[-1]["event_type"] == "task_failed"
     assert events[-1]["task_id"] == "t_001"

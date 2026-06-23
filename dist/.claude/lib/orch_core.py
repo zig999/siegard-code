@@ -2280,7 +2280,11 @@ def default_config() -> dict[str, Any]:
                 "impl": 1200,
                 "planning": 900,
                 "qa": 900,
-                "test-run": 1200,
+                # SIEGARD BUG-1: a real test-runner ran 1496s (a long but live suite);
+                # the old 1200s window would reap it as stale. Test suites emit no
+                # semantic heartbeats while running, so the window must exceed the
+                # worst observed runtime — 1800s (30 min) gives headroom above 1496s.
+                "test-run": 1800,
                 "security-review": 900,
                 "architecture-review": 900,
             },

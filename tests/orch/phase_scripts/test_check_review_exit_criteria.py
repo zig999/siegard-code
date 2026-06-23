@@ -135,6 +135,85 @@ class TestAllQaVerdictsApproved:
         result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
         assert result["met"] is False
 
+    def test_template_frontmatter_artifact_is_met(self, phase_env):
+        """SIEGARD BUG-2: an artifact produced from the official template (YAML
+        frontmatter `verdict:` + bold human label) passes the gate without manual
+        editing — the exact failure mode the forensic report flagged."""
+        _review_phase()
+        _review_task("review_dev_tc_001")
+        qa_dir = phase_env / "specs" / "qa"
+        qa_dir.mkdir(parents=True, exist_ok=True)
+        qa_path = qa_dir / "review_dev_tc_001-qa.md"
+        qa_path.write_text(
+            "---\n"
+            "task_id: review_dev_tc_001\n"
+            "verdict: approved\n"
+            "documentation_verified: true\n"
+            "---\n\n"
+            "# QA Report: review_dev_tc_001\n\n"
+            "**Verdict:** Approved\n"
+        )
+        append_event("worker", "task_claimed", task_id="review_dev_tc_001", attempt=1, data={
+            "phase": "review", "worker_type": "qa", "worker_id": "w_001",
+        })
+        append_event("worker", "task_completed", task_id="review_dev_tc_001", attempt=1, data={
+            "phase": "review", "artifacts": [str(qa_path.relative_to(phase_env))],
+            "summary": "done",
+        })
+        result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["approved"] == 1
+
+    def test_legacy_bold_only_verdict_is_met(self, phase_env):
+        """SIEGARD BUG-2 (defensive net): even a legacy `**Verdict:** Approved` line
+        with no frontmatter is now read as approved instead of 'unknown'."""
+        _review_phase()
+        _review_task("review_dev_tc_001")
+        qa_dir = phase_env / "specs" / "qa"
+        qa_dir.mkdir(parents=True, exist_ok=True)
+        qa_path = qa_dir / "review_dev_tc_001-qa.md"
+        qa_path.write_text("# QA Report\n\n**Verdict:** Approved\n")
+        append_event("worker", "task_claimed", task_id="review_dev_tc_001", attempt=1, data={
+            "phase": "review", "worker_type": "qa", "worker_id": "w_001",
+        })
+        append_event("worker", "task_completed", task_id="review_dev_tc_001", attempt=1, data={
+            "phase": "review", "artifacts": [str(qa_path.relative_to(phase_env))],
+            "summary": "done",
+        })
+        result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
+        assert result["met"] is True
+
+    def test_arch_review_artifact_does_not_block_qa_verdict(self, phase_env):
+        """SIEGARD BUG-2 (extension): an architecture-review task is a review-phase
+        task whose artifact carries findings, not an approved/rejected verdict. The
+        qa-verdict gate scopes to qa-type tasks and must IGNORE it — otherwise the
+        verdict-less arch.yaml reads as 'unknown' and blocks with a spurious E08
+        (forensic report seq 69). Arch/sec severity is governed by no_open_critical."""
+        _review_phase()
+        _review_task("review_dev_tc_001")  # type: qa
+        _complete_review("review_dev_tc_001", phase_env, verdict="approved")
+        # Architecture-review task — completed, artifact has no `verdict` field.
+        append_event("orchestrator", "task_created", task_id="review_arch_001", data={
+            "phase": "review", "tier": "standard", "type": "architecture-review",
+            "spec": "delivery/tc_001.md", "deps": [],
+        })
+        reviews_dir = phase_env / "specs" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        arch_path = reviews_dir / "review_arch_001-arch.yaml"
+        arch_path.write_text("scan:\n  id: ARCH-1\nfindings:\n  - id: AFND-001\n    severity: P1\n")
+        append_event("worker", "task_claimed", task_id="review_arch_001", attempt=1, data={
+            "phase": "review", "worker_type": "architecture-review", "worker_id": "w_arch",
+        })
+        append_event("worker", "task_completed", task_id="review_arch_001", attempt=1, data={
+            "phase": "review", "artifacts": [str(arch_path.relative_to(phase_env))],
+            "summary": "arch done",
+        })
+        result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
+        assert result["met"] is True
+        # Only the qa artifact is counted — the arch artifact is out of scope.
+        assert result["evidence"]["total"] == 1
+        assert result["evidence"]["approved"] == 1
+
 
 # ---------------------------------------------------------------------------
 # check_no_open_critical_findings.py
