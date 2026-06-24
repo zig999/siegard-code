@@ -40,6 +40,14 @@ Each code appears in the event log as `escalation.data.code`.
 
 ## How to respond to an escalation
 
+**First, classify why the run is at rest** (Rec B) — a stopped run is often a normal human gate, not a failure:
+
+```bash
+python3 .claude/scripts/classify_run_status.py
+```
+
+It reports `run_status`: `awaiting_human` (an E99 gate — respond to resume; nothing broke), `failed` (a genuine critical failure — act on `active_escalation`), `needs_review` (a warning), or `no_pending_escalation`. It also splits DLQ tasks into **roots** (true failures) vs **cascaded** (failed only because a dependency was in DLQ) — fixing the roots usually clears the cascade, so a large DLQ count is frequently one root failure plus its fan-out.
+
 **Decision gates** (severity `info` — codes E99_*, E14, E15): respond by selecting an option in the conversation. The orchestrator captures your choice via `AskUserQuestion`, emits the `human_response` event to the log automatically, and resumes the workflow without requiring a separate invocation.
 
 **Error conditions** (severity `warning` or `critical`): the workflow is stopped. Resolve the underlying issue as described in the escalation's `suggested_actions`, then re-invoke the orchestrator.

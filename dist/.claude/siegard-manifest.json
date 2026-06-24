@@ -1,15 +1,15 @@
 {
   "framework": "siegard-code",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-24T19:29:27Z",
+  "generated_at": "2026-06-24T23:50:01Z",
   "hash_normalization": "text-lf",
   "files": [
     {
       "path": "ESCALATION_CODES.md",
-      "sha256": "402c437971528ced17aaa7ebedce084f7abaf9bf8199eabfdeee7d120d76482c"
+      "sha256": "3ca69fc7f32994799729f523bdbe7ad0c87cccccebd3f1f04b0d4bfddcebf18a"
     },
     {
       "path": "agents/dev/u-architecture-reviewer.md",
@@ -21,7 +21,7 @@
     },
     {
       "path": "agents/dev/u-be-planner.md",
-      "sha256": "0b64d73b93cfbc43aa09b9e58e221705a362f459b128d98978653b4725388d9a"
+      "sha256": "47b5f43c10fdf16cfd4aaafc0836cdd144ca27ea1b3a894e5c0f2ea603eb40e9"
     },
     {
       "path": "agents/dev/u-be-qa-docs.md",
@@ -33,7 +33,7 @@
     },
     {
       "path": "agents/dev/u-fe-planner.md",
-      "sha256": "2182c98040dc54b6619758c5c27abdb70042b3b418a6463c4e6e2b6bc75ff04f"
+      "sha256": "fa0779b1a829a0598450761b4bbb48de6c354ec0f46eed1b027712a958c143a2"
     },
     {
       "path": "agents/dev/u-fe-qa-docs.md",
@@ -57,7 +57,7 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "bd3d09642b935b90231d0b735d33aae6e8c570a701e6f4a98361eacd4726e206"
+      "sha256": "56be0b0a41eeda0fcb13fe3a3502367ad479b78b3574df886a860b5dd0b65739"
     },
     {
       "path": "agents/orchestrator-review.md",
@@ -178,6 +178,10 @@
     {
       "path": "scripts/circuit_breaker.py",
       "sha256": "9913bab9e170fb696fbf896c97b19c2ab099d6c118eecb45502d4f71b1b8dbd4"
+    },
+    {
+      "path": "scripts/classify_run_status.py",
+      "sha256": "bef7228f8a2d8e864113c295ed84371255539757388614c023c30c4481a63f3d"
     },
     {
       "path": "scripts/dlq_triage.py",
@@ -317,7 +321,7 @@
     },
     {
       "path": "skills/phase-dev-rules/exit-criteria.json",
-      "sha256": "31f510587f6fc4fdf6350904001af2e43d06bb91898359888575a9d0a18a3051"
+      "sha256": "cfba47ad9bd1e4c4152075df807048bfbf08ae7f9d69ec06974e5b03ed07f9bc"
     },
     {
       "path": "skills/phase-dev-rules/scripts/check_acceptance_criteria_covered.py",
@@ -338,6 +342,10 @@
     {
       "path": "skills/phase-dev-rules/scripts/check_no_open_prohibitions.py",
       "sha256": "e04d6ab94713fc34ee4d6217321a8caf3c51208711146c9d34ebae28bb8584f4"
+    },
+    {
+      "path": "skills/phase-dev-rules/scripts/check_spec_requirements_covered.py",
+      "sha256": "5db30af956426c0c1c159bb0088cc9b428d67f77f0d42a0064cf48bf1e282e22"
     },
     {
       "path": "skills/phase-dev-rules/scripts/select_worker.py",
@@ -569,7 +577,7 @@
     },
     {
       "path": "skills/u-planning/SKILL.md",
-      "sha256": "38de428d0007a10fe719b312aa46ca48b9acc31c1f0086913e2cf74583398ff6"
+      "sha256": "ae36bbc622b54c68a5e54d3d3bab54758a4da3633bd60df1f9cce324432de9d4"
     },
     {
       "path": "skills/u-reverse-spec-analysis/SKILL.md",

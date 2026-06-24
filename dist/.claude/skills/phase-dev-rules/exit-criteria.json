@@ -36,6 +36,13 @@
       "script": "scripts/check_acceptance_criteria_covered.py",
       "required": true,
       "blocking": true
+    },
+    {
+      "id": "spec_requirements_covered",
+      "description": "Rec A — every UC/FEAT defined in a spec the backlog references is covered by at least one Task Contract (origin/bdd_ref/objective). Blocks dev exit when the planner silently under-scoped a requirement. Enforced only for standard/greenfield flows; improve/synthesized backlogs are out of scope (subset by design). BR coverage is informational, not blocking.",
+      "script": "scripts/check_spec_requirements_covered.py",
+      "required": true,
+      "blocking": true
     }
   ]
 }

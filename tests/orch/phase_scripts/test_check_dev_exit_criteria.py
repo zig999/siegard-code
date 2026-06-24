@@ -326,3 +326,147 @@ class TestNoOpenProhibitions:
         result = run_check(DEV_SCRIPTS["check_prohibitions"], phase_env)
         assert result["met"] is False
         assert result["evidence"]["violations"][0]["reason"] == "file_not_found"
+
+
+# ---------------------------------------------------------------------------
+# check_spec_requirements_covered.py  (Rec A — spec→TC coverage gate)
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+
+class TestSpecRequirementsCovered:
+    WF = "wf_dev_test"
+
+    def _spec(self, project_dir, rel, content):
+        path = project_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return rel
+
+    def _tc(self, tc_id, origin, spec_path, bdd_ref=None, objective=""):
+        return {
+            "task_contract": {
+                "id": tc_id, "epic": "EPIC-01", "origin": origin, "type": "feature",
+                "priority": "P0", "scope": "backend", "estimate": "S",
+                "dependencies": [], "persona_coverage": ["user"], "bdd_ref": bdd_ref,
+            },
+            "execution_contract": {
+                "exec_type": "implementation",
+                "objective": objective,
+                "input": {"references": [{"path": spec_path, "version": "1.0.0"}]},
+            },
+        }
+
+    def _backlog(self, project_dir, tcs, triage=None):
+        session = project_dir / ".orch" / "sessions" / self.WF
+        bdir = session / "backlog"
+        bdir.mkdir(parents=True, exist_ok=True)
+        bpath = bdir / "backlog.json"
+        bpath.write_text(_json.dumps(tcs, indent=2), encoding="utf-8")
+        if triage is not None:
+            (session / "triage.json").write_text(_json.dumps(triage), encoding="utf-8")
+        rel = str(bpath.relative_to(project_dir))
+        append_event("orchestrator", "task_created", task_id="dev_planning", data={
+            "phase": "dev", "tier": "standard", "type": "planning", "spec": "manifest", "deps": [],
+        })
+        append_event("worker", "task_claimed", task_id="dev_planning", attempt=1, data={
+            "phase": "dev", "worker_type": "planning", "worker_id": "w_plan",
+        })
+        append_event("worker", "task_completed", task_id="dev_planning", attempt=1, data={
+            "phase": "dev", "artifacts": [rel], "summary": "backlog done",
+        })
+        return rel
+
+    def test_no_backlog_is_met(self, phase_env):
+        _dev_phase()
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["criterion"] == "spec_requirements_covered"
+        assert result["met"] is True
+        assert result["evidence"]["reason"] == "no_backlog_found"
+
+    def test_synthesized_backlog_is_met(self, phase_env):
+        _dev_phase()
+        # improve/synthesized shape: simple task dicts, no execution_contract/origin
+        self._backlog(phase_env, [
+            {"task_id": "dev_tc_001", "spec": "specs/x.spec.md", "deps": [], "type": "impl"},
+        ])
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["reason"] == "synthesized_backlog_no_contract"
+
+    def test_improve_trigger_is_met(self, phase_env):
+        _dev_phase()
+        self._spec(phase_env, "specs/d.spec.md", "## UC-01\n## UC-02\n")
+        self._backlog(phase_env,
+                      [self._tc("TC-01", "UC-01", "specs/d.spec.md")],
+                      triage={"trigger": "improve", "planner_required": True})
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["reason"] == "improve_flow_scoped"
+
+    def test_all_uc_covered_is_met(self, phase_env):
+        _dev_phase()
+        self._spec(phase_env, "specs/d.spec.md", "## UC-01: login\n## UC-02: logout\n")
+        self._backlog(phase_env, [
+            self._tc("TC-01", "UC-01", "specs/d.spec.md"),
+            self._tc("TC-02", "UC-02", "specs/d.spec.md"),
+        ])
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is True
+        assert set(result["evidence"]["required_uc"]) == {"UC-01", "UC-02"}
+        assert result["evidence"]["uncovered_uc"] == []
+
+    def test_uncovered_uc_blocks(self, phase_env):
+        _dev_phase()
+        self._spec(phase_env, "specs/d.spec.md", "## UC-01\n## UC-02\n## UC-03\n")
+        self._backlog(phase_env, [
+            self._tc("TC-01", "UC-01", "specs/d.spec.md"),
+            self._tc("TC-02", "UC-02", "specs/d.spec.md"),
+        ])
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is False
+        assert result["evidence"]["uncovered_uc"] == ["UC-03"]
+
+    def test_uc_covered_via_objective_not_origin(self, phase_env):
+        # Lenient coverage: UC-02 folded into another TC's objective, not its origin.
+        _dev_phase()
+        self._spec(phase_env, "specs/d.spec.md", "## UC-01\n## UC-02\n")
+        self._backlog(phase_env, [
+            self._tc("TC-01", "UC-01", "specs/d.spec.md",
+                     objective="Implement UC-01 and also handle UC-02 in the same flow"),
+        ])
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is True
+
+    def test_uncovered_feat_blocks(self, phase_env):
+        _dev_phase()
+        self._spec(phase_env, "specs/f.feature.spec.md", "# FEAT-01: curation page\n")
+        self._backlog(phase_env, [
+            self._tc("TC-01", "UC-01", "specs/f.feature.spec.md", bdd_ref=None),
+        ])
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is False
+        assert result["evidence"]["uncovered_feat"] == ["FEAT-01"]
+
+    def test_feat_covered_via_bdd_ref(self, phase_env):
+        _dev_phase()
+        self._spec(phase_env, "specs/f.feature.spec.md", "# FEAT-01: curation page\n")
+        self._backlog(phase_env, [
+            self._tc("TC-01", "UC-01", "specs/f.feature.spec.md", bdd_ref="FEAT-01 §9"),
+        ])
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is True
+
+    def test_br_not_referenced_is_informational_not_blocking(self, phase_env):
+        _dev_phase()
+        self._spec(phase_env, "specs/d.spec.md", "## UC-01\n")
+        self._spec(phase_env, "specs/d.back.md", "## BR-01\n## BR-09\n")
+        # backlog references both specs and covers UC-01, mentions BR-01 only.
+        tc = self._tc("TC-01", "UC-01", "specs/d.spec.md", objective="enforce BR-01")
+        tc["execution_contract"]["input"]["references"].append(
+            {"path": "specs/d.back.md", "version": "1.0.0"})
+        self._backlog(phase_env, [tc])
+        result = run_check(DEV_SCRIPTS["check_spec_coverage"], phase_env)
+        assert result["met"] is True  # BR gap never blocks
+        assert result["evidence"]["br_not_referenced"] == ["BR-09"]

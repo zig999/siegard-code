@@ -147,6 +147,21 @@ Before finalizing the backlog, verify:
 
 ---
 
+## Requirement coverage gate (Rec A)
+
+Before finalizing the backlog, verify that **every requirement defined in the referenced specs maps to at least one Task Contract** — and cross-check against the original requirement text passed in the activation prompt (`Original requirement:`):
+- Every `UC-NN` in a referenced `*.spec.md` is the `origin` of a TC, or is explicitly handled within another TC's scope.
+- Every `FEAT-NN` in a referenced `*.feature.spec.md` is referenced by a TC's `bdd_ref`.
+- A requirement intentionally left out of this wave is recorded explicitly in the backlog (e.g. an `## Out of scope` note), never silently dropped.
+
+| Requirement | Covered by | Out-of-scope (reason) |
+|---|---|---|
+| {UC-NN / FEAT-NN} | TC-XX | — |
+
+> Enforced deterministically by `check_spec_requirements_covered.py` at dev exit: an uncovered `UC`/`FEAT` blocks the dev→review transition. Do not rely on this prose alone — but producing an orphan requirement here is a backlog defect.
+
+---
+
 ## Task contract — how to populate
 
 Planner fills `execution_contract` YAML block for each Task Contract in Step 3B before saving `backlog.md`. This is the Orchestrator's primary context-mounting source — replaces ad hoc inference at Developer activation.

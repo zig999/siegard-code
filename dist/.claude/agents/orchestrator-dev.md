@@ -497,7 +497,7 @@ register_worker('u-fe-planner-dev_planning_fe', 'dev_planning_fe', 1, phase='dev
 Spawn **both planners in a single response turn** (two parallel Agent tool calls):
 - BE: `subagent_type: "u-be-planner"`, `ORCH_TASK_ID=dev_planning_be`, write to `<session_dir>/backlog/backlog_be.json`
 - FE: `subagent_type: "u-fe-planner"`, `ORCH_TASK_ID=dev_planning_fe`, write to `<session_dir>/backlog/backlog_fe.json`
-- Each planner prompt must include: ORCH_TASK_ID, ORCH_ATTEMPT, ORCH_WORKER_ID, SPECS_DIR, ORCH_PROJECT_DIR, SESSION_DIR, nesting_depth, handoff_type, changed_files, dev_impact, and explicit instruction to scope tasks to its own stack only (no cross-stack tasks)
+- Each planner prompt must include: ORCH_TASK_ID, ORCH_ATTEMPT, ORCH_WORKER_ID, SPECS_DIR, ORCH_PROJECT_DIR, SESSION_DIR, nesting_depth, handoff_type, changed_files, dev_impact, the original requirement text (Rec A — verbatim `.requirement` from `<session_dir>/triage.json`, or `""` if absent), and explicit instruction to scope tasks to its own stack only (no cross-stack tasks)
 - Each planner must `Emit task_completed with artifacts: [<session_dir>/backlog/backlog_{be|fe}.json] when done`
 
 Wait for both planners to return. Re-read state.
@@ -592,11 +592,18 @@ Spawn via Agent tool:
   Handoff type: <handoff_type>   (new_domain | fast_track | major_evolution | reverse_eng)
   Changed files: <changed_files> (JSON array — empty for new_domain/reverse_eng)
   Dev impact: <dev_impact>       (no_action | reevaluate_task_contracts | stop_domain_task_contracts | "")
+  Original requirement: <requirement_text>
+    (Rec A — verbatim `requirement` from <session_dir>/triage.json, or "" if absent.
+     Cross-check that every clause of this requirement is decomposed into a TC; if a
+     clause is intentionally out of scope, record it explicitly in the backlog. The
+     spec_requirements_covered gate blocks dev exit on any UC/FEAT left uncovered.)
   Write backlog.json to: <session_dir>/backlog/backlog.json
   Write backlog.md  to: <session_dir>/backlog/backlog.md
   Write individual TC files to: <session_dir>/backlog/tc-NNN.md
   Emit task_completed with artifacts: [<session_dir>/backlog/backlog.json] when done.
   ```
+
+  Read `<requirement_text>` from `<session_dir>/triage.json` (`.requirement`) before spawning; pass `""` when triage.json is absent (e.g. a `/u-spec` greenfield run without a triage requirement).
 
 Wait for the planner to return. Re-read state.
 
@@ -982,9 +989,12 @@ python3 .claude/skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py
 python3 .claude/skills/phase-dev-rules/scripts/check_no_open_prohibitions.py
 python3 .claude/skills/phase-dev-rules/scripts/check_all_branches_integrated.py
 python3 .claude/skills/phase-dev-rules/scripts/check_acceptance_criteria_covered.py
+python3 .claude/skills/phase-dev-rules/scripts/check_spec_requirements_covered.py
 ```
 
-If all five return `"met": true`:
+`check_spec_requirements_covered` (Rec A) blocks dev exit when a `UC-NN`/`FEAT-NN` defined in a spec the backlog references is covered by no Task Contract — the planner-under-scoped-a-requirement leak. It self-scopes to standard/greenfield flows (improve/synthesized backlogs return `met: true`, reason recorded in evidence).
+
+If all six return `"met": true`:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -1014,8 +1024,13 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
+  --event-type phase_exit_criterion_met \
+  --data '{"phase":"dev","criterion":"spec_requirements_covered"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
   --event-type phase_exit_approved \
-  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions","all_branches_integrated_to_main","acceptance_criteria_covered"],"next_phase":"review","workflow_id":"<workflow_id>"}'
+  --data '{"phase":"dev","criteria_met":["all_impl_tasks_terminal","all_deliveries_qa_ready","no_open_prohibitions","all_branches_integrated_to_main","acceptance_criteria_covered","spec_requirements_covered"],"next_phase":"review","workflow_id":"<workflow_id>"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \

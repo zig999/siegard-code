@@ -27,6 +27,7 @@ DEV_SCRIPTS = {
     "check_terminal": _script("dev", "check_all_impl_tasks_terminal.py"),
     "check_qa_ready": _script("dev", "check_all_deliveries_qa_ready.py"),
     "check_prohibitions": _script("dev", "check_no_open_prohibitions.py"),
+    "check_spec_coverage": _script("dev", "check_spec_requirements_covered.py"),
     "select_worker": _script("dev", "select_worker.py"),
 }
 

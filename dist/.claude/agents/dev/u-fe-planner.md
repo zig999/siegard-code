@@ -139,6 +139,7 @@ After writing all Task Contracts and before validation, fill the identification 
 ### Step 4 — Validate the backlog
 Before saving, verify:
 - [ ] Every TC has persona_coverage with at least 1 persona
+- [ ] **Every FEAT-NN / UC-NN in a referenced spec maps to a TC (`bdd_ref` / `origin`) or is explicitly out-of-scope, cross-checked against the `Original requirement:` text (Rec A — enforced by `check_spec_requirements_covered`)**
 - [ ] Every TC has bdd_ref declared (FEAT-NN §9 or null)
 - [ ] No TC has estimate: L — split into smaller TCs if needed
 - [ ] Dependencies are explicit and there are no cycles

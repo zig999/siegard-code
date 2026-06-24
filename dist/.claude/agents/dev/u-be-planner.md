@@ -439,6 +439,7 @@ Use `->` to indicate "depends on". If there is a cycle, it is a design error —
 Before saving `backlog.md`, validate:
 
 - [ ] Every TC has persona_coverage with at least 1 persona
+- [ ] **Every UC-NN in a referenced spec maps to a TC `origin` (or is explicitly out-of-scope), cross-checked against the `Original requirement:` text (Rec A — enforced by `check_spec_requirements_covered`)**
 - [ ] Every TC has bdd_ref declared (FEAT-NN §9 or null)
 - [ ] No TC has estimate L — prohibited without splitting into S or M
 - [ ] All dependencies are explicit in the map
