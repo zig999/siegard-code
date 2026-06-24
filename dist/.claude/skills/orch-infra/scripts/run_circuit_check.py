@@ -21,6 +21,7 @@ from orch_core import (
     CorruptedLogError,
     IllegalTransition,
     evaluate_circuit_state,
+    load_config,
     now_iso,
     reduce_all,
 )
@@ -63,7 +64,12 @@ def main() -> int:
         return 1
 
     now = now_iso()
-    cb = evaluate_circuit_state(state, now)
+    # A4: pass operator config so .orch/config.json overrides take effect at runtime.
+    try:
+        config = load_config()
+    except Exception:  # noqa: BLE001
+        config = None
+    cb = evaluate_circuit_state(state, now, config)
 
     tripped = bool(cb.get("should_trip", False) or cb.get("already_tripped", False))
     output: dict = {

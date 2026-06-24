@@ -46,12 +46,18 @@ _TC_BRANCH_RE = re.compile(r"^(?:feat|fix|refactor)/TC[-/]", re.IGNORECASE)
 
 
 def _git(args: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(
-        ["git", *args],
-        cwd=str(_PROJECT_DIR),
-        capture_output=True,
-        text=True,
-    )
+    # M2: bound the call and surface failures — a timeout/exec error returns rc=1 so
+    # callers fail closed instead of reading empty stdout as "clean / all integrated".
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=str(_PROJECT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return 1, ""
     return proc.returncode, proc.stdout.strip()
 
 
@@ -70,29 +76,41 @@ def evaluate() -> dict:
             "detail": f"{_PROJECT_DIR} is not inside a git work tree",
         }
 
-    current_branch = _git(["rev-parse", "--abbrev-ref", "HEAD"])[1]
-    on_main = current_branch == _MAIN
-
-    porcelain = _git(["status", "--porcelain"])[1]
-    clean = porcelain == ""
-
+    rc_branch, current_branch = _git(["rev-parse", "--abbrev-ref", "HEAD"])
+    rc_status, porcelain = _git(["status", "--porcelain"])
     # Local branches not yet merged into the integration branch.
     rc_unmerged, unmerged_out = _git(["branch", "--no-merged", _MAIN, "--format=%(refname:short)"])
-    unmerged_tc = []
-    if rc_unmerged == 0:
-        unmerged_tc = [b.strip() for b in unmerged_out.splitlines()
-                       if _TC_BRANCH_RE.match(b.strip())]
+    rc_wt, wt_out = _git(["worktree", "list", "--porcelain"])
+
+    # M2: a failed git command must NOT read as "clean / all integrated" (fail-open).
+    # Any non-zero rc blocks the gate with an explicit reason.
+    if rc_branch != 0 or rc_status != 0 or rc_unmerged != 0 or rc_wt != 0:
+        return {
+            "status": "blocked",
+            "check": CRITERION_ID,
+            "timestamp": timestamp,
+            "criterion": CRITERION_ID,
+            "met": False,
+            "evidence": {
+                "reason": "git_command_failed",
+                "rc": {"branch": rc_branch, "status": rc_status,
+                       "unmerged": rc_unmerged, "worktree": rc_wt},
+            },
+        }
+
+    on_main = current_branch == _MAIN
+    clean = porcelain == ""
+    unmerged_tc = [b.strip() for b in unmerged_out.splitlines()
+                   if _TC_BRANCH_RE.match(b.strip())]
 
     # Leftover per-TC worktrees (any worktree other than the main one).
     leftover_worktrees = []
-    rc_wt, wt_out = _git(["worktree", "list", "--porcelain"])
-    if rc_wt == 0:
-        main_root = _git(["rev-parse", "--show-toplevel"])[1]
-        for line in wt_out.splitlines():
-            if line.startswith("worktree "):
-                path = line[len("worktree "):].strip()
-                if path and path != main_root:
-                    leftover_worktrees.append(path)
+    main_root = _git(["rev-parse", "--show-toplevel"])[1]
+    for line in wt_out.splitlines():
+        if line.startswith("worktree "):
+            path = line[len("worktree "):].strip()
+            if path and path != main_root:
+                leftover_worktrees.append(path)
 
     met = on_main and clean and not unmerged_tc and not leftover_worktrees
     return {

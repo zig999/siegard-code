@@ -3,10 +3,14 @@
 check_no_open_critical_findings.py — Exit criterion: review / no_open_critical_findings.
 
 Criterion met when:
-  - No QA verdict artifact from completed review-phase tasks contains "severity: critical".
+  - No completed review-phase artifact contains a critical-equivalent severity.
 
-A critical finding is detected when the file contains the pattern:
-  severity: critical  (case-insensitive)
+A critical finding is detected when the file contains, on its own line (case-insensitive):
+  severity: critical   (QA / security artifacts — named scale)
+  severity: P0         (architecture artifacts — P0/P1/P2 scale; P0 "blocks
+                        architectural integrity" and is the critical-equivalent)
+Matching both scales lets this one gate govern the highest-severity finding from QA,
+security, AND architecture reviewers (A1 / SIEGARD code review).
 
 Artifact paths are resolved relative to ORCH_PROJECT_DIR (env var, default: ".").
 
@@ -46,7 +50,9 @@ CRITERION_ID = "no_open_critical_findings"
 PHASE_NAME = "review"
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 
-_CRITICAL_RE = re.compile(r"^\s*severity\s*:\s*critical\s*$", re.MULTILINE | re.IGNORECASE)
+# A1: `critical` (named scale) OR `P0` (architecture P0/P1/P2 scale). The $-anchor keeps
+# the match to a bare value, so `severity: P1` / `severity: high` do not trip the gate.
+_CRITICAL_RE = re.compile(r"^\s*severity\s*:\s*(?:critical|p0)\s*$", re.MULTILINE | re.IGNORECASE)
 
 
 def _collect_artifact_paths(state) -> list[str]:

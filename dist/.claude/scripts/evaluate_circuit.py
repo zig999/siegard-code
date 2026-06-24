@@ -29,6 +29,7 @@ from orch_core import (
     CorruptedLogError,
     IllegalTransition,
     evaluate_circuit_state,
+    load_config,
     now_iso,
     reduce_all,
 )
@@ -59,7 +60,13 @@ def main() -> int:
         return 1
 
     now = now_iso()
-    result = evaluate_circuit_state(state, now)
+    # A4: honor operator overrides in .orch/config.json (was silently ignored — the
+    # evaluator fell back to built-in defaults). Bad config → fall back to defaults.
+    try:
+        config = load_config()
+    except Exception:  # noqa: BLE001
+        config = None
+    result = evaluate_circuit_state(state, now, config)
     print(json.dumps(result))
     return 0
 

@@ -5,6 +5,7 @@ Scripts under test:
   - check_all_qa_verdicts_approved.py
   - check_no_open_critical_findings.py
   - check_documentation_verified.py
+  - check_no_orphan_placeholders.py
 """
 import pytest
 import orch_core
@@ -257,6 +258,44 @@ class TestNoOpenCriticalFindings:
         assert result["evidence"]["clean"] == 1
         assert len(result["evidence"]["with_critical"]) == 1
 
+    def _complete_arch_review(self, task_id, project_dir, severity):
+        """Complete an architecture-review task with a finding at the given P-severity."""
+        append_event("orchestrator", "task_created", task_id=task_id, data={
+            "phase": "review", "tier": "standard", "type": "architecture-review",
+            "spec": "delivery/tc_001.md", "deps": [],
+        })
+        reviews_dir = project_dir / "specs" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        arch_path = reviews_dir / f"{task_id}-arch.yaml"
+        arch_path.write_text(
+            "scan:\n  id: ARCH-1\nfindings:\n"
+            f"  - id: AFND-001\n    pattern: circular_dependency\n    severity: {severity}\n"
+        )
+        append_event("worker", "task_claimed", task_id=task_id, attempt=1, data={
+            "phase": "review", "worker_type": "architecture-review", "worker_id": f"w_{task_id}"})
+        append_event("worker", "task_completed", task_id=task_id, attempt=1, data={
+            "phase": "review", "artifacts": [str(arch_path.relative_to(project_dir))],
+            "summary": "arch done"})
+
+    def test_architecture_p0_finding_blocks(self, phase_env):
+        """A1 (Lote 2): a P0 architecture finding (critical-equivalent on the P0/P1/P2
+        scale) must block — the gate previously matched only `severity: critical` and
+        missed the entire architecture scale."""
+        _review_phase()
+        self._complete_arch_review("review_arch_001", phase_env, "P0")
+        result = run_check(REVIEW_SCRIPTS["check_critical"], phase_env)
+        assert result["met"] is False
+        assert any(v["reason"] == "critical_finding_present"
+                   for v in result["evidence"]["with_critical"])
+
+    def test_architecture_p1_finding_does_not_block(self, phase_env):
+        """A1 (Lote 2): P1 (high-equivalent) is NOT a critical finding — a gate named
+        'no_open_critical_findings' does not block on it."""
+        _review_phase()
+        self._complete_arch_review("review_arch_002", phase_env, "P1")
+        result = run_check(REVIEW_SCRIPTS["check_critical"], phase_env)
+        assert result["met"] is True
+
 
 # ---------------------------------------------------------------------------
 # check_documentation_verified.py
@@ -324,3 +363,88 @@ class TestDocumentationVerified:
         assert result["met"] is False
         assert result["evidence"]["verified_true"] == 1
         assert len(result["evidence"]["verified_false"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# check_no_orphan_placeholders.py  (R2 — orphan placeholder gate)
+# ---------------------------------------------------------------------------
+
+class TestNoOrphanPlaceholders:
+    def _src(self, project_dir, rel, content):
+        path = project_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_empty_project_is_met(self, phase_env):
+        # No source roots present → vacuously met (additive gate, fail-open on empty).
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert result["criterion"] == "no_orphan_placeholders"
+        assert result["met"] is True
+        assert result["evidence"]["scanned"] == 0
+
+    def test_clean_source_is_met(self, phase_env):
+        self._src(phase_env, "frontend/src/features/curation/CurationPage.tsx",
+                  "export function CurationPage() {\n  return <DecisionPanel />;\n}\n")
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["scanned"] == 1
+        assert result["evidence"]["hits"] == []
+
+    def test_headline_placeholder_blocks(self, phase_env):
+        # The exact SIEGARD D1 failure: the entry surface shipped a placeholder.
+        self._src(phase_env, "frontend/src/features/curation/CurationPage.tsx",
+                  "/** Placeholder DecisionPanel — TC-05 swaps the inner content. */\n"
+                  "export function CurationPage() {\n"
+                  "  return <p>Painel de decisão em construção (TC-05).</p>;\n"
+                  "}\n")
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert result["met"] is False
+        markers_hit = {h["marker"] for h in result["evidence"]["hits"]}
+        assert "swaps the inner content" in markers_hit
+        assert "em construção" in markers_hit
+        assert all(h["file"].endswith("CurationPage.tsx") for h in result["evidence"]["hits"])
+
+    def test_todo_tc_marker_blocks(self, phase_env):
+        self._src(phase_env, "src/widget.ts", "// TODO: TC-09 wire the real store\nexport const x = 1;\n")
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert result["met"] is False
+        assert any(h["line"] == 1 for h in result["evidence"]["hits"])
+
+    def test_test_files_are_skipped(self, phase_env):
+        # A marker inside a test fixture is not a shipped surface — must not block.
+        self._src(phase_env, "frontend/src/CurationPage.test.tsx",
+                  "it('renders', () => { /* em construção */ });\n")
+        self._src(phase_env, "frontend/src/__tests__/foo.ts", "// swaps the inner content\n")
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert result["met"] is True
+
+    def test_excluded_dirs_are_skipped(self, phase_env):
+        self._src(phase_env, "src/node_modules/dep/index.js", "// em construção\n")
+        self._src(phase_env, "src/real.ts", "export const ok = true;\n")
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["scanned"] == 1
+
+    def test_extra_marker_env_blocks(self, phase_env):
+        self._src(phase_env, "src/page.tsx", "// stub: pending implementation\nexport const p = 1;\n")
+        # default markers do not include "stub:" — clean until the project adds it.
+        clean = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert clean["met"] is True
+        blocked = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env,
+                            extra_env={"ORCH_PLACEHOLDER_EXTRA_MARKERS": "stub:"})
+        assert blocked["met"] is False
+
+    def test_scan_paths_env_scopes_scan(self, phase_env):
+        self._src(phase_env, "legacy/old.ts", "// em construção\n")  # outside scoped root
+        self._src(phase_env, "frontend/src/new.ts", "export const n = 1;\n")
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env,
+                           extra_env={"ORCH_PLACEHOLDER_SCAN_PATHS": "frontend/src"})
+        assert result["met"] is True
+        assert result["evidence"]["scanned"] == 1
+
+    def test_non_source_extension_ignored(self, phase_env):
+        self._src(phase_env, "src/README.md", "Section em construção\n")
+        result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["scanned"] == 0

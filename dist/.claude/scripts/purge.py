@@ -72,6 +72,7 @@ from orch_core import (
     WORKERS_DIR,
     LOG_PATH,
     LOCK_PATH,
+    LogLock,
     now_iso,
     reduce_all,
 )
@@ -243,8 +244,12 @@ def _archive_and_reset_log(operator: str) -> dict:
     archive_path = ORCH_DIR / archive_name
 
     original_size = LOG_PATH.stat().st_size
-    shutil.copy2(LOG_PATH, archive_path)
-    LOG_PATH.write_bytes(b"")
+    # A5: archive + truncate under the log lock so a concurrent worker append cannot
+    # land between copy2 and the truncation (which would lose that event without ever
+    # archiving it). Reading state for wf_id above is best-effort and stays unlocked.
+    with LogLock():
+        shutil.copy2(LOG_PATH, archive_path)
+        LOG_PATH.write_bytes(b"")
 
     return {
         "status": "reset",

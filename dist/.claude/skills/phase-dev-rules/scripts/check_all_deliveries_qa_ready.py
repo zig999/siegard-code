@@ -53,6 +53,9 @@ PHASE_NAME = "dev"
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 
 _QA_READY_RE = re.compile(r"^\s*qa_ready\s*:\s*true\s*$", re.MULTILINE | re.IGNORECASE)
+# M3: an explicit qa_ready: false anywhere blocks, even if a stray `true` (an example
+# or prose) appears elsewhere — fail-closed against the first-match-wins gap.
+_QA_NOT_READY_RE = re.compile(r"^\s*qa_ready\s*:\s*false\s*$", re.MULTILINE | re.IGNORECASE)
 
 
 def _collect_delivery_paths(state) -> list[str]:
@@ -98,7 +101,9 @@ def evaluate() -> dict:
             not_ready.append({"artifact": rel_path, "reason": f"unreadable: {exc}"})
             continue
 
-        if _QA_READY_RE.search(content):
+        if _QA_NOT_READY_RE.search(content):
+            not_ready.append({"artifact": rel_path, "reason": "qa_ready_false"})
+        elif _QA_READY_RE.search(content):
             ready_count += 1
         else:
             not_ready.append({"artifact": rel_path, "reason": "qa_ready_not_true"})

@@ -125,6 +125,11 @@ def main() -> None:
     result.setdefault("status", "ok" if result.get("met") else "blocked")
     result.setdefault("timestamp", now_iso())
     print(json.dumps(result))
+    # M6: fail-closed exit so the gate is not prompt-trusted — parity with
+    # check_all_test_tasks_terminal.py. Orchestrator-test reads the JSON; CI/operators
+    # read the exit code, which must reflect a blocked criterion.
+    if not result.get("met"):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

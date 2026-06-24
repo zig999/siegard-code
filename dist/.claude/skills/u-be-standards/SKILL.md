@@ -112,6 +112,23 @@ For every Task Contract, verify the following:
 
 ---
 
+## Root-cause falsification (R5)
+
+A finding can be real but its diagnosed cause wrong — and a wrong cause sends the dev fix in the wrong direction (SIEGARD D5: QA blamed a static import for a test timeout and prescribed `React.lazy`; the real cause was CPU contention under the full parallel suite, and the timeout persisted until a file-scoped timeout was added).
+
+**QA side — before assigning a cause to any timeout / flake / performance finding:**
+1. Reproduce in isolation vs. under load — run the failing test alone, then under the full suite.
+2. Vary the relevant knob — timeout, concurrency/`--maxWorkers`, ordering/seed.
+3. Record the result in the finding's `root_cause.evidence`, and set `root_cause.confidence`:
+   - `high` only when the cause was reproduced/verified by steps 1–2;
+   - `low` when the cause is inferred from reading and was NOT reproduced.
+
+Heuristic: **a test that times out in the full suite but passes in isolation ⇒ suspect contention / ordering / shared-state, NOT the code under test, until proven otherwise.**
+
+**Dev side — consuming a QA finding:** a finding with `root_cause.confidence` below `high` carries a *hypothesis*, not a verified cause. Reproduce it before applying the suggested fix; do not apply the prescribed fix verbatim on a `low`-confidence cause.
+
+---
+
 ## Dependency Injection
 
 **Default:** `manual-factory` — unless `CLAUDE.md` declares `di_strategy`.

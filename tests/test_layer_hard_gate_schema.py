@@ -22,6 +22,7 @@ REVIEW_TEST_GATES = [
     "phase-review-rules/scripts/check_all_qa_verdicts_approved.py",
     "phase-review-rules/scripts/check_no_open_critical_findings.py",
     "phase-review-rules/scripts/check_documentation_verified.py",
+    "phase-review-rules/scripts/check_no_orphan_placeholders.py",
     "phase-test-rules/scripts/check_all_test_tasks_terminal.py",
     "phase-test-rules/scripts/check_all_tests_passed.py",
     "phase-test-rules/scripts/check_no_critical_failures.py",

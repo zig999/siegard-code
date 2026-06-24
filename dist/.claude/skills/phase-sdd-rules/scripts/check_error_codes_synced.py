@@ -44,8 +44,14 @@ def _collect_spec_codes() -> tuple[set[str], list[str]]:
     codes: set[str] = set()
     files_scanned: list[str] = []
 
-    for f in sorted(_SPECS_DIR.rglob("*.yaml")):
+    # M12: error codes are declared in .md specs too (*.back.md, *.spec.md), not only
+    # YAML. Scan both; exclude error-codes.md itself so the registry's own codes aren't
+    # counted as references.
+    candidates = sorted(set(_SPECS_DIR.rglob("*.yaml")) | set(_SPECS_DIR.rglob("*.md")))
+    for f in candidates:
         if "_validation" in f.parts:
+            continue
+        if f.name == "error-codes.md":
             continue
         try:
             content = f.read_text(encoding="utf-8")

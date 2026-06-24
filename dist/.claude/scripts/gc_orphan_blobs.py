@@ -28,7 +28,7 @@ _DIST_DIR = _SCRIPTS_DIR.parent
 _LIB = _DIST_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
-from orch_core import BLOBS_DIR, ORCH_DIR, is_blob_ref, now_iso, read_events
+from orch_core import BLOBS_DIR, ORCH_DIR, get_active_workers, is_blob_ref, now_iso, read_events
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +117,10 @@ def main() -> int:
         "--json", action="store_true", dest="as_json",
         help="Machine-readable JSON output."
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Override the active-worker safety check (only when no workers run)."
+    )
     args = parser.parse_args()
 
     log_file = ORCH_DIR / "log.jsonl"
@@ -127,6 +131,24 @@ def main() -> int:
         else:
             print(f"Error: {msg['detail']}", file=sys.stderr)
         return 4
+
+    # A5: deleting blobs while workers are mid-flight can drop a blob a worker just
+    # externalized before its referencing event lands in the log. Refuse --delete when
+    # workers are registered (overridable with --force on a known-idle system). The
+    # docstring's "must NOT run while workers are appending" is now enforced, not advisory.
+    if args.delete and not args.force:
+        active = get_active_workers()
+        if active:
+            msg = {
+                "error": "active_workers",
+                "detail": f"{len(active)} worker(s) registered — refusing --delete; "
+                          f"re-run when idle or pass --force.",
+            }
+            if args.as_json:
+                print(json.dumps(msg), file=sys.stderr)
+            else:
+                print(f"Error: {msg['detail']}", file=sys.stderr)
+            return 3
 
     try:
         result = gc_orphan_blobs(delete=args.delete)

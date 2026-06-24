@@ -22,6 +22,13 @@
       "script": "scripts/check_documentation_verified.py",
       "required": true,
       "blocking": true
+    },
+    {
+      "id": "no_orphan_placeholders",
+      "description": "No delivered source file under the configured scan roots contains an incomplete-work / placeholder marker (R2 — prevents a green, QA-approved, non-functional entry surface)",
+      "script": "scripts/check_no_orphan_placeholders.py",
+      "required": true,
+      "blocking": true
     }
   ]
 }

@@ -40,12 +40,18 @@ _TC_BRANCH_RE = re.compile(r"^(?:feat|fix|refactor)/TC[-/]", re.IGNORECASE)
 
 
 def _git(args: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(
-        ["git", *args],
-        cwd=str(_PROJECT_DIR),
-        capture_output=True,
-        text=True,
-    )
+    # M2: bound the call and surface failures — a timeout/exec error returns rc=1 so
+    # the entry guard fails closed instead of reading empty stdout as "clean".
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=str(_PROJECT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return 1, ""
     return proc.returncode, proc.stdout.strip()
 
 
@@ -64,15 +70,28 @@ def evaluate() -> dict:
             "detail": f"{_PROJECT_DIR} is not inside a git work tree",
         }
 
-    current_branch = _git(["rev-parse", "--abbrev-ref", "HEAD"])[1]
-    on_main = current_branch == _MAIN
-    clean = _git(["status", "--porcelain"])[1] == ""
-
+    rc_branch, current_branch = _git(["rev-parse", "--abbrev-ref", "HEAD"])
+    rc_status, porcelain = _git(["status", "--porcelain"])
     rc_unmerged, unmerged_out = _git(["branch", "--no-merged", _MAIN, "--format=%(refname:short)"])
-    unmerged_tc = []
-    if rc_unmerged == 0:
-        unmerged_tc = [b.strip() for b in unmerged_out.splitlines()
-                       if _TC_BRANCH_RE.match(b.strip())]
+
+    # M2: fail closed on any git failure — never read an errored command as clean/integrated.
+    if rc_branch != 0 or rc_status != 0 or rc_unmerged != 0:
+        return {
+            "status": "blocked",
+            "check": CRITERION_ID,
+            "timestamp": timestamp,
+            "criterion": CRITERION_ID,
+            "met": False,
+            "evidence": {
+                "reason": "git_command_failed",
+                "rc": {"branch": rc_branch, "status": rc_status, "unmerged": rc_unmerged},
+            },
+        }
+
+    on_main = current_branch == _MAIN
+    clean = porcelain == ""
+    unmerged_tc = [b.strip() for b in unmerged_out.splitlines()
+                   if _TC_BRANCH_RE.match(b.strip())]
 
     met = on_main and clean and not unmerged_tc
     return {

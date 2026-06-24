@@ -2231,12 +2231,15 @@ def default_config() -> dict[str, Any]:
             "overrides_by_task_type": {},
         },
         "circuit_breaker": {
+            # A4: window-based breaker only. It relaxes as failures age out of the
+            # rolling window, or via a manual reset (scripts/circuit_breaker.py). There
+            # is no cooldown / success-reset logic — do NOT re-add cooldown_minutes or
+            # reset_on_success_count here unless evaluate_circuit_state implements them
+            # (they were inert config that promised behavior the engine never had).
             "enabled": True,
             "window_minutes": 10,
             "failure_threshold": 50,
             "scope": "workflow",
-            "cooldown_minutes": 30,
-            "reset_on_success_count": 5,
         },
         "payload_limits": {
             "max_inline_bytes": 3500,

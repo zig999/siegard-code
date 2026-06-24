@@ -40,12 +40,18 @@ _ARTIFACT_RE = re.compile(r"^\s*-?\s*(?:path|compliance_report)\s*:\s*(\S+)\s*$"
 
 
 def _git(args: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(
-        ["git", *args],
-        cwd=str(_PROJECT_DIR),
-        capture_output=True,
-        text=True,
-    )
+    # M2: bound the call and surface failures — a timeout/exec error returns rc=1 so
+    # callers fail closed instead of reading empty stdout as "clean".
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=str(_PROJECT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return 1, ""
     return proc.returncode, proc.stdout.strip()
 
 
@@ -98,8 +104,10 @@ def evaluate() -> dict:
         if rc_tracked != 0:
             untracked.append(rel)
             continue
-        _, dirty = _git(["status", "--porcelain", "--", rel])
-        if dirty:
+        # M2: a failed status read must fail closed (treat as uncommitted), not be
+        # mistaken for a clean tree because stdout came back empty.
+        rc_status, dirty = _git(["status", "--porcelain", "--", rel])
+        if rc_status != 0 or dirty:
             uncommitted.append(rel)
         else:
             committed += 1

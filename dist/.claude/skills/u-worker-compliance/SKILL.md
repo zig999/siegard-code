@@ -121,12 +121,12 @@ python3 .claude/skills/u-worker-compliance/scripts/check_worker.py \
   --dir .claude/agents/
 ```
 
-### Validate and emit structured YAML report
+### Validate and emit structured JSON report
 
 ```bash
 python3 .claude/skills/u-worker-compliance/scripts/check_worker.py \
   --dir .claude/agents/ \
-  --format yaml > compliance-report.yaml
+  --format json > compliance-report.json
 ```
 
 ---

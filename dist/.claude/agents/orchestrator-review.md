@@ -920,9 +920,12 @@ Stop. Do NOT evaluate criterion scripts.
 python3 .claude/skills/phase-review-rules/scripts/check_all_qa_verdicts_approved.py
 python3 .claude/skills/phase-review-rules/scripts/check_no_open_critical_findings.py
 python3 .claude/skills/phase-review-rules/scripts/check_documentation_verified.py
+python3 .claude/skills/phase-review-rules/scripts/check_no_orphan_placeholders.py
 ```
 
-If all three return `"met": true`:
+`check_no_orphan_placeholders` (R2) scans the delivered source surface for incomplete-work markers (e.g. `em construção`, `swaps the inner content`, `TODO: TC-`). A leftover placeholder owned by no integration TC is a green-but-non-functional deliverable — this gate blocks it. Projects scope the scan via `ORCH_PLACEHOLDER_SCAN_PATHS` and tune markers via `ORCH_PLACEHOLDER_EXTRA_MARKERS`; with no source root present it returns `met: true` (scanned 0).
+
+If all four return `"met": true`:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -942,8 +945,13 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
+  --event-type phase_exit_criterion_met \
+  --data '{"phase":"review","criterion":"no_orphan_placeholders"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-review \
   --event-type phase_exit_approved \
-  --data '{"phase":"review","criteria_met":["all_qa_verdicts_approved","no_open_critical_findings","documentation_verified"],"next_phase":"test","workflow_id":"<workflow_id>"}'
+  --data '{"phase":"review","criteria_met":["all_qa_verdicts_approved","no_open_critical_findings","documentation_verified","no_orphan_placeholders"],"next_phase":"test","workflow_id":"<workflow_id>"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \

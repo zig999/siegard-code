@@ -41,6 +41,7 @@ REVIEW_SCRIPTS = {
     "check_verdicts": _script("review", "check_all_qa_verdicts_approved.py"),
     "check_critical": _script("review", "check_no_open_critical_findings.py"),
     "check_docs": _script("review", "check_documentation_verified.py"),
+    "check_placeholders": _script("review", "check_no_orphan_placeholders.py"),
     "select_worker": _script("review", "select_worker.py"),
 }
 

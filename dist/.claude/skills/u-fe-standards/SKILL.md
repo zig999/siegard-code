@@ -47,6 +47,7 @@ This skill is the **single source of truth** for the quality standards the Devel
 | Inline CSS | No use of `style=""` or `style={{}}` in JSX — all styling via CSS classes, CSS Modules, or Tailwind | Inline CSS detected — Medium BUG |
 | `transition` | CSS transitions must specify explicit properties (e.g., `transition: opacity 200ms`) — never `transition: all` | `transition: all` detected — Medium BUG |
 | `TODO`/`FIXME` | Forbidden in committed code. Exception: `// TODO(TC-XX):` linked to an active Task Contract | `TODO`/`FIXME` without issue reference — Medium BUG |
+| Entry-surface composition | A route/page that is the feature's entry surface MUST render its real children by the end of the feature wave — never ship a placeholder ("em construção", "swaps the inner content", "Placeholder X") deferred to a later TC unless that TC's acceptance criteria explicitly own the wiring AND the dependency is declared | Entry surface renders a placeholder/stub with no owning composition TC — **High BUG** (gated by `check_no_orphan_placeholders`) |
 | `eslint-disable` | Forbidden without a comment justifying the reason on the same or preceding line | `eslint-disable` without justification — Medium BUG |
 | i18n (when `i18n: true`) | No hardcoded user-facing strings — all text via translation keys | Hardcoded string in rendered output — Medium BUG |
 | Commented-out code | Delete disabled code — do not commit commented-out blocks | Commented-out code block detected — Low BUG |
@@ -192,3 +193,20 @@ This skill is the **single source of truth** for the quality standards the Devel
 | **High** | Acceptance criterion not met, main flow broken | Reject the Task Contract |
 | **Medium** | Edge case not handled, inconsistent behavior | Approve with mandatory caveat |
 | **Low** | Cosmetic issue, unclear error message | Log it, does not block approval |
+
+---
+
+## 6. Root-cause falsification (R5)
+
+A finding can be real but its diagnosed cause wrong — and a wrong cause sends the dev fix in the wrong direction (SIEGARD D5: QA blamed a static import for a `routes.spec.tsx` timeout and prescribed `React.lazy`; the real cause was CPU contention under the full 83-file parallel suite — the spec passed in isolation (~1.3s) and unchanged with `--testTimeout=30000`. `React.lazy` did NOT fix it).
+
+**QA side — before assigning a cause to any timeout / flake / performance finding:**
+1. Reproduce in isolation vs. under load — run the failing test alone, then under the full suite.
+2. Vary the relevant knob — `testTimeout`, concurrency (`--maxWorkers` / `poolOptions`), test ordering/seed.
+3. Record the result in the finding's `root_cause.evidence`, and set `root_cause.confidence`:
+   - `high` only when the cause was reproduced/verified by steps 1–2;
+   - `low` when the cause is inferred from reading and was NOT reproduced.
+
+Heuristic: **a test that times out in the full suite but passes in isolation ⇒ suspect contention / ordering / shared-state, NOT the code under test, until proven otherwise.**
+
+**Dev side — consuming a QA finding:** a finding with `root_cause.confidence` below `high` carries a *hypothesis*, not a verified cause. Reproduce it before applying the suggested fix; do not apply the prescribed fix verbatim on a `low`-confidence cause.

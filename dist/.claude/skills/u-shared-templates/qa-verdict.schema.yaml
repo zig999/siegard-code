@@ -60,6 +60,31 @@ frontmatter:
           suggestion:
             type: string
             description: Recommended fix.
+          root_cause:
+            type: object
+            description: >
+              R5 — root-cause attribution for the finding. MANDATORY for any
+              timeout / flake / performance finding (where a wrong cause sends the
+              dev fix in the wrong direction); optional otherwise. A finding whose
+              cause was inferred from static reading without reproduction MUST set
+              confidence below "high" so the dev does not apply the prescribed fix
+              verbatim — see u-{be,fe}-standards "root-cause falsification".
+            properties:
+              confidence:
+                type: string
+                enum: [high, medium, low]
+                description: >
+                  high  — cause reproduced/verified (e.g. isolated vs full-suite run,
+                          knob varied, bisected). Fix may be applied as prescribed.
+                  medium — cause plausible, partially evidenced.
+                  low   — cause inferred, not reproduced. Dev MUST reproduce before
+                          applying the suggested fix; the suggestion is a hypothesis.
+              evidence:
+                type: string
+                description: >
+                  The observation that supports the cause — e.g. "passes in isolation
+                  (~1.3s), only times out under the full 83-file parallel run; passed
+                  unchanged with --testTimeout=30000 ⇒ contention, not import weight".
 
     test_coverage:
       type: object

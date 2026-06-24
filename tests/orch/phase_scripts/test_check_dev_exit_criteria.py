@@ -175,7 +175,31 @@ class TestAllDeliveriesQaReady:
         _complete_with_delivery("dev_tc_001", phase_env, qa_ready=False)
         result = run_check(DEV_SCRIPTS["check_qa_ready"], phase_env)
         assert result["met"] is False
-        assert any(n["reason"] == "qa_ready_not_true" for n in result["evidence"]["not_ready"])
+        # M3: an explicit qa_ready: false is reported with the precise reason
+        # "qa_ready_false" (was the generic "qa_ready_not_true") and blocks even if a
+        # stray `qa_ready: true` appears elsewhere in the artifact.
+        assert any(n["reason"] == "qa_ready_false" for n in result["evidence"]["not_ready"])
+
+    def test_stray_true_does_not_override_explicit_false(self, phase_env):
+        """M3 regression: a delivery with a stray `qa_ready: true` (e.g. in an example)
+        AND a real `qa_ready: false` must block — false wins over first-match."""
+        _dev_phase()
+        _impl_task("dev_tc_001")
+        delivery_dir = phase_env / ".orch" / "sessions" / "wf_dev_test" / "delivery"
+        delivery_dir.mkdir(parents=True, exist_ok=True)
+        dpath = delivery_dir / "dev_tc_001-delivery.md"
+        dpath.write_text(
+            "# Delivery\n\n"
+            "Example from the template: `qa_ready: true`\n\n"  # stray, appears first
+            "qa_ready: false\n"                                 # the real gate value
+        )
+        append_event("worker", "task_claimed", task_id="dev_tc_001", attempt=1, data={
+            "phase": "dev", "worker_type": "impl", "worker_id": "w_001"})
+        append_event("worker", "task_completed", task_id="dev_tc_001", attempt=1, data={
+            "phase": "dev", "artifacts": [str(dpath.relative_to(phase_env))], "summary": "done"})
+        result = run_check(DEV_SCRIPTS["check_qa_ready"], phase_env)
+        assert result["met"] is False
+        assert any(n["reason"] == "qa_ready_false" for n in result["evidence"]["not_ready"])
 
     def test_qa_ready_true_is_met(self, phase_env):
         _dev_phase()
@@ -263,6 +287,30 @@ class TestNoOpenProhibitions:
         assert result["met"] is False
         assert result["evidence"]["clean"] == 1
         assert len(result["evidence"]["violations"]) == 1
+
+    def test_commented_line_does_not_hide_violation(self, phase_env):
+        """M1 regression: a comment line between `prohibition_violations:` and the first
+        `- ` item must NOT make a real violation read as clean (the prior `(?:\\s*\\n)*`
+        tolerated only blank lines → fail-open)."""
+        _dev_phase()
+        _impl_task("dev_tc_001")
+        delivery_dir = phase_env / ".orch" / "sessions" / "wf_dev_test" / "delivery"
+        delivery_dir.mkdir(parents=True, exist_ok=True)
+        dpath = delivery_dir / "dev_tc_001-delivery.md"
+        dpath.write_text(
+            "# Delivery\n\nqa_ready: true\n"
+            "prohibition_violations:\n"
+            "  # reviewer note inserted between key and list\n"
+            "  - touched a forbidden module\n"
+        )
+        append_event("worker", "task_claimed", task_id="dev_tc_001", attempt=1, data={
+            "phase": "dev", "worker_type": "impl", "worker_id": "w_001"})
+        append_event("worker", "task_completed", task_id="dev_tc_001", attempt=1, data={
+            "phase": "dev", "artifacts": [str(dpath.relative_to(phase_env))], "summary": "done"})
+        result = run_check(DEV_SCRIPTS["check_prohibitions"], phase_env)
+        assert result["met"] is False
+        assert any(v["reason"] == "prohibition_violations_present"
+                   for v in result["evidence"]["violations"])
 
     def test_file_not_found_counts_as_violation(self, phase_env):
         _dev_phase()

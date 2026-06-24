@@ -55,9 +55,13 @@ CRITERION_ID = "no_open_prohibitions"
 PHASE_NAME = "dev"
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 
-# Matches "prohibition_violations:" followed (on the next non-blank line) by a list item
+# Matches "prohibition_violations:" followed by a list item. M1: the gap between the
+# key and the first "- " item may contain blank AND comment-only lines. [ \t] (not \s)
+# avoids newline-overlap, which previously let a commented violation read as clean.
 _VIOLATIONS_RE = re.compile(
-    r"prohibition_violations\s*:\s*\n(?:\s*\n)*\s*-\s+\S",
+    r"prohibition_violations[ \t]*:[ \t]*\n"   # the key line
+    r"(?:[ \t]*(?:#[^\n]*)?\n)*"                # blank or comment-only lines
+    r"[ \t]*-\s+\S",                            # first list item
     re.MULTILINE,
 )
 

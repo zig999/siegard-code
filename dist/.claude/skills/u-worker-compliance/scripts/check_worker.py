@@ -12,6 +12,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -287,7 +288,7 @@ def main() -> None:
     parser.add_argument("--dir", metavar="DIR", help="directory to scan recursively for *.md files")
     parser.add_argument(
         "--format",
-        choices=["human", "yaml"],
+        choices=["human", "json"],
         default="human",
         help="output format (default: human)",
     )
@@ -304,8 +305,11 @@ def main() -> None:
 
     results = [check_file(f) for f in files]
 
-    if args.format == "yaml":
-        print(yaml.dump([r.to_dict() for r in results], default_flow_style=False, sort_keys=False), end="")
+    if args.format == "json":
+        # A7: emit JSON (the project's universal machine contract). The prior
+        # `yaml.dump` referenced a module no longer imported (pyyaml was dropped in
+        # task 03c) and crashed with NameError on any --format yaml call.
+        print(json.dumps([r.to_dict() for r in results], indent=2))
     else:
         print(_format_human(results))
 

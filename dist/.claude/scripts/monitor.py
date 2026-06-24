@@ -13,7 +13,10 @@ Flags:
 from __future__ import annotations
 
 import argparse
-import curses
+try:
+    import curses
+except ImportError:  # M9: curses is absent from the Windows stdlib; --once (plain) still works
+    curses = None  # type: ignore[assignment]
 import os
 import sys
 import time
@@ -2273,6 +2276,12 @@ def main() -> int:
 
     if args.once:
         return run_once(project_dir, args)
+
+    if curses is None:
+        print("monitor: live mode requires the 'curses' module, which is unavailable on "
+              "this platform (e.g. Windows). Use --once for the plain renderer.",
+              file=sys.stderr)
+        return 1
 
     try:
         curses.wrapper(run_live, project_dir, args.interval, args.multi, args.workflow)

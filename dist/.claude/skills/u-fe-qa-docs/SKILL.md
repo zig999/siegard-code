@@ -63,6 +63,8 @@ When diagnosing failures in test-gate, classify each one with:
 
 The diagnosis must be **actionable** — the Developer should be able to fix the issue just by reading the diagnosis, without further investigation.
 
+**Timeout / flake / performance failures require falsification before a cause is assigned.** Do not infer the cause from reading alone — reproduce in isolation vs. under the full suite and vary the relevant knob (`testTimeout`, `--maxWorkers`/`poolOptions`, ordering), then record the result in the finding's `root_cause` (`confidence` + `evidence`). See `u-fe-standards/SKILL.md` → "Root-cause falsification (R5)" for the procedure and the contention heuristic. A `low`-confidence cause is a hypothesis, not a prescription.
+
 ### Test quality criteria
 
 > Refer to the **test quality criteria** table in `standards/SKILL.md`. Use it as a reference when validating the tests delivered by the Developer.
