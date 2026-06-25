@@ -57,6 +57,17 @@ def _cascade_dlq(task_id, dep):
         "phase": "dev", "reason": "cascade_from_dep", "last_error": f"dep {dep} in dlq"})
 
 
+def _worker_exited(task_id, chars=None):
+    append_event("orchestrator", "task_created", task_id=task_id, data={
+        "phase": "dev", "tier": "standard", "type": "impl", "spec": "s", "deps": []})
+    append_event("worker", "task_claimed", task_id=task_id, attempt=1, data={
+        "phase": "dev", "worker_type": "impl", "worker_id": "w"})
+    data = {"phase": "dev", "reason": "worker_exited_without_terminal", "retryable": True}
+    if chars is not None:
+        data["spawn_context_chars"] = chars
+    append_event("worker", "task_failed", task_id=task_id, attempt=1, data=data)
+
+
 class TestClassifyRunStatus:
     def test_no_escalation_is_no_pending(self, tmp_orch):
         _phase()
@@ -113,6 +124,37 @@ class TestClassifyRunStatus:
         assert {c["task_id"] for c in dlq["cascaded"]} == {"dev_tc_002", "dev_tc_003"}
         assert dlq["by_reason"]["cascade_from_dep"] == 2
         assert dlq["by_reason"]["non_retryable"] == 1
+
+    def test_worker_exited_context_empty(self, tmp_orch):
+        _phase()
+        wec = _run(tmp_orch)["worker_exited_context"]
+        assert wec["total"] == 0
+        assert wec["with_context_chars"] == 0
+        assert wec["median_chars"] is None
+
+    def test_worker_exited_context_bands(self, tmp_orch):
+        _phase()
+        _worker_exited("t1", chars=30_000)    # <50k
+        _worker_exited("t2", chars=80_000)    # 50-100k
+        _worker_exited("t3", chars=120_000)   # 100-150k
+        _worker_exited("t4", chars=200_000)   # >150k (context-implicated)
+        _worker_exited("t5", chars=None)      # unrecorded
+        wec = _run(tmp_orch)["worker_exited_context"]
+        assert wec["total"] == 5
+        assert wec["with_context_chars"] == 4
+        assert wec["by_band"] == {"<50k": 1, "50-100k": 1, "100-150k": 1, ">150k": 1, "unrecorded": 1}
+        assert wec["context_implicated"] == 1
+        assert wec["median_chars"] in (80_000, 120_000)  # median of 4 recorded
+
+    def test_worker_exited_unrecorded_is_dominant_on_legacy(self, tmp_orch):
+        # Legacy/un-instrumented runs: chars never populated → all unrecorded.
+        _phase()
+        for i in range(3):
+            _worker_exited(f"t{i}", chars=None)
+        wec = _run(tmp_orch)["worker_exited_context"]
+        assert wec["by_band"]["unrecorded"] == 3
+        assert wec["with_context_chars"] == 0
+        assert wec["context_implicated"] == 0
 
     def test_last_unresolved_escalation_wins(self, tmp_orch):
         # An earlier resolved E99 then a later critical failure → failed.

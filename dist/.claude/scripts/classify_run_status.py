@@ -45,6 +45,11 @@ except ImportError as exc:
     sys.exit(1)
 
 _CASCADE_REASON = "cascade_from_dep"
+_WORKER_EXITED = "worker_exited_without_terminal"
+# Context bands (chars) for the worker_exited correlation view. The on_subagent_stop
+# hook flags suspected_cause="context_limit" only above 150k chars, so >150k is the
+# "context-implicated" band; the rest answer whether exits cluster at high context.
+_CTX_BANDS = [(50_000, "<50k"), (100_000, "50-100k"), (150_000, "100-150k")]
 
 
 def _classify(code: str, severity: str) -> str:
@@ -70,7 +75,10 @@ def _scan_log():
     escalations = []
     resolved = set()
     dlq_reasons: dict[str, str] = {}
+    worker_exited = []  # spawn_context_chars per worker_exited failure (None when unrecorded)
     for ev in read_events():
+        if ev.event_type == "task_failed" and (ev.data or {}).get("reason") == _WORKER_EXITED:
+            worker_exited.append((ev.data or {}).get("spawn_context_chars"))
         if ev.event_type == "escalation":
             d = ev.data or {}
             code = d.get("code", "")
@@ -89,7 +97,38 @@ def _scan_log():
                 resolved.add(tgt)
         elif ev.event_type == "task_dlq" and ev.task_id:
             dlq_reasons[ev.task_id] = (ev.data or {}).get("reason") or "unknown"
-    return escalations, resolved, dlq_reasons
+    return escalations, resolved, dlq_reasons, worker_exited
+
+
+def _worker_exited_context(chars_list: list) -> dict:
+    """Correlate worker_exited failures with their spawn context size (S1 payoff).
+
+    Answers the open causal question: do worker exits cluster at high context?
+    `unrecorded` means spawn_context_chars was not populated at register time
+    (older runs / orchestrators not yet instrumented) — expected until S1 ships.
+    """
+    bands = {label: 0 for _, label in _CTX_BANDS}
+    bands[">150k"] = 0
+    bands["unrecorded"] = 0
+    recorded = []
+    for cc in chars_list:
+        if not isinstance(cc, int):
+            bands["unrecorded"] += 1
+            continue
+        recorded.append(cc)
+        for limit, label in _CTX_BANDS:
+            if cc < limit:
+                bands[label] += 1
+                break
+        else:
+            bands[">150k"] += 1
+    return {
+        "total": len(chars_list),
+        "with_context_chars": len(recorded),
+        "context_implicated": bands[">150k"],  # above the on_subagent_stop threshold
+        "by_band": bands,
+        "median_chars": sorted(recorded)[len(recorded) // 2] if recorded else None,
+    }
 
 
 def _dlq_summary(state, dlq_reasons: dict) -> dict:
@@ -113,7 +152,7 @@ def _dlq_summary(state, dlq_reasons: dict) -> dict:
 def evaluate(project_dir: str) -> dict:
     os.environ["ORCH_PROJECT_DIR"] = project_dir
     state = reduce_all()
-    escalations, resolved, dlq_reasons = _scan_log()
+    escalations, resolved, dlq_reasons, worker_exited = _scan_log()
 
     active = None
     for esc in reversed(escalations):
@@ -123,6 +162,7 @@ def evaluate(project_dir: str) -> dict:
 
     run_status = active["class"] if active else "no_pending_escalation"
     dlq = _dlq_summary(state, dlq_reasons)
+    worker_exited_context = _worker_exited_context(worker_exited)
 
     if run_status == "awaiting_human":
         summary = (f"Run is at a human-decision gate ({active['code']}) — waiting on you, "
@@ -142,6 +182,7 @@ def evaluate(project_dir: str) -> dict:
         "escalation_count": len(escalations),
         "escalations_by_class": _by_class(escalations),
         "dlq": dlq,
+        "worker_exited_context": worker_exited_context,
         "summary": summary,
     }
 

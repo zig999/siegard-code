@@ -795,6 +795,17 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"dev","batch":[{"task_id":"<task_id>","worker_type":"<worker>","tier":"<tier>","stack":"<task.stack>"}],"rationale":"ready queue order, tier priority, per-task stack routing","constraints":{"max_batch":<max_concurrent>,"nesting_depth":<nesting_depth>,"context_estimate":[{"task_id":"<task_id>","total_chars":<total_chars>,"over_threshold":<bool>,"mitigation":"<none|split_spec|summarize_spec|inline_excerpt>"}]}}'
 ```
 
+Then, per task, emit `context_budget_evaluated` (S1 — uniform per-spawn context event across phases, mirroring orchestrator-sdd §5.2.5; feeds the context-vs-worker_exited correlation in `classify_run_status.py`). `<total_chars>` is the per-task value computed above:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type context_budget_evaluated \
+  --task-id <task_id> \
+  --attempt <attempt> \
+  --data "{\"phase\":\"dev\",\"estimated_tokens\":$((<total_chars> / 4)),\"threshold_warn\":40000,\"threshold_block\":50000,\"mitigation\":\"<none|split_spec|summarize_spec|inline_excerpt>\"}"
+```
+
 Then for each task, emit `task_claimed` before any spawn:
 
 ```bash

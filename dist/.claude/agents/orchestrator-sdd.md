@@ -891,9 +891,14 @@ python3 .claude/skills/orch-log/scripts/append.py \
 Register worker:
 ```bash
 python3 -c "
-import sys; sys.path.insert(0,'.claude/lib')
+import sys, os, pathlib; sys.path.insert(0,'.claude/lib')
 from orch_core import register_worker
-register_worker('<worker_id>', '<task_id>', <attempt>, phase='sdd')
+# S1 (instrumentation): record spawn context size so a spec-worker that exits
+# without a terminal event carries spawn_context_chars (on_subagent_stop._infer_cause
+# / classify_run_status). Estimate = spec file size + ~30000 chars fixed overhead.
+_s = pathlib.Path(os.environ.get('ORCH_PROJECT_DIR','.')) / '<task.spec>'
+_est = (_s.stat().st_size if _s.exists() else 0) + 30000
+register_worker('<worker_id>', '<task_id>', <attempt>, phase='sdd', spawn_context_chars=_est)
 "
 ```
 
