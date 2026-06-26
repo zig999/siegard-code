@@ -68,6 +68,20 @@ def _worker_exited(task_id, chars=None):
     append_event("worker", "task_failed", task_id=task_id, attempt=1, data=data)
 
 
+def _stale_reaped_then_completed(task_id):
+    """A worker reaped as stale (task_failed) whose live straggler then completes the
+    SAME attempt → FAILED→completed. Strict reduce_all raises IllegalTransition here;
+    tolerant reduction records it as a violation and keeps going."""
+    append_event("orchestrator", "task_created", task_id=task_id, data={
+        "phase": "dev", "tier": "standard", "type": "impl", "spec": "s", "deps": []})
+    append_event("worker", "task_claimed", task_id=task_id, attempt=1, data={
+        "phase": "dev", "worker_type": "impl", "worker_id": "w"})
+    append_event("stale-monitor", "task_failed", task_id=task_id, attempt=1, data={
+        "phase": "dev", "reason": "stale_timeout", "retryable": True})
+    append_event("worker", "task_completed", task_id=task_id, attempt=1, data={
+        "phase": "dev", "artifacts": []})
+
+
 class TestClassifyRunStatus:
     def test_no_escalation_is_no_pending(self, tmp_orch):
         _phase()
@@ -75,6 +89,24 @@ class TestClassifyRunStatus:
         assert result["status"] == "ok"
         assert result["run_status"] == "no_pending_escalation"
         assert result["dlq"]["total"] == 0
+
+    def test_clean_log_has_no_reduce_violations(self, tmp_orch):
+        _phase()
+        result = _run(tmp_orch)
+        assert result["reduce_violations"] == []
+
+    def test_illegal_transition_does_not_crash_and_is_surfaced(self, tmp_orch):
+        # Strict reduce_all would abort with internal_error here; tolerant reduction
+        # keeps the report readable and lists the skipped transition.
+        _phase()
+        _stale_reaped_then_completed("dev_tc_001")
+        result = _run(tmp_orch)
+        assert result["status"] == "ok"
+        assert len(result["reduce_violations"]) == 1
+        v = result["reduce_violations"][0]
+        assert v["task_id"] == "dev_tc_001"
+        assert v["event_type"] == "task_completed"
+        assert "skipped during tolerant reduction" in result["summary"]
 
     def test_e99_gate_is_awaiting_human(self, tmp_orch):
         _phase()

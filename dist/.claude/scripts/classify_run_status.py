@@ -18,6 +18,11 @@ place, WHY a run is at rest:
   - dlq: failed tasks split into ROOTS (true failures) vs CASCADED (failed only
          because a dependency was in DLQ — `cascade_from_dep`). Fixing the roots
          usually clears the cascade, so "12 DLQ tasks" is often "1 root + 11 cascade".
+  - reduce_violations: illegal transitions skipped during tolerant reduction. This
+         is a READ-ONLY diagnostic; it uses reduce_all_tolerant (not the strict
+         reduce_all the engine uses) so a single bad transition — e.g. a stale-reaped
+         worker's late task_completed (FAILED→completed) — does not crash the report.
+         Each entry is the offending event's locus; an empty list is the normal case.
 
 Classification is by escalation SEVERITY + the E99 special-case, so new codes are
 handled without editing this script.
@@ -38,7 +43,7 @@ _LIB = _CLAUDE_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
 try:
-    from orch_core import read_events, reduce_all, TaskStatus
+    from orch_core import read_events, reduce_all_tolerant, TaskStatus
 except ImportError as exc:
     print(json.dumps({"status": "error", "reason": "internal_error",
                       "detail": f"cannot import orch_core: {exc}"}), file=sys.stderr)
@@ -151,7 +156,10 @@ def _dlq_summary(state, dlq_reasons: dict) -> dict:
 
 def evaluate(project_dir: str) -> dict:
     os.environ["ORCH_PROJECT_DIR"] = project_dir
-    state = reduce_all()
+    # Tolerant reduction (read-only): an illegal transition is recorded and skipped
+    # instead of aborting, so historical/anomalous logs (e.g. a stale-reaped worker's
+    # FAILED→completed straggler) stay readable. The engine still uses strict reduce_all.
+    state, violations = reduce_all_tolerant()
     escalations, resolved, dlq_reasons, worker_exited = _scan_log()
 
     active = None
@@ -175,6 +183,10 @@ def evaluate(project_dir: str) -> dict:
     else:
         summary = "No pending escalation — run is in progress or complete."
 
+    if violations:
+        summary += (f" [{len(violations)} illegal transition(s) skipped during tolerant "
+                    f"reduction — derived counts are partial; see reduce_violations]")
+
     return {
         "status": "ok",
         "run_status": run_status,
@@ -183,6 +195,11 @@ def evaluate(project_dir: str) -> dict:
         "escalations_by_class": _by_class(escalations),
         "dlq": dlq,
         "worker_exited_context": worker_exited_context,
+        "reduce_violations": [
+            {"seq": v.seq, "task_id": v.task_id, "event_type": v.event_type,
+             "workflow_id": v.workflow_id, "phase": v.phase, "message": v.message}
+            for v in violations
+        ],
         "summary": summary,
     }
 
