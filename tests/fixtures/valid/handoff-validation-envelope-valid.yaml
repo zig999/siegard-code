@@ -1,0 +1,7 @@
+# VALID: a passing validation result — status: valid implies errors: []
+status: valid
+errors: []
+warnings: []
+halt_signal: false
+validated_by: u-handoff-validator
+caller: u-spec-orchestrator

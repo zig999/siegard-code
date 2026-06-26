@@ -1,0 +1,68 @@
+# delivery.md schema
+# Artifact produced by impl workers (u-be-developer, u-fe-developer) and consumed by:
+#   - check_all_deliveries_qa_ready.py (exit criterion: all_deliveries_qa_ready)
+#   - orchestrator-review (delivery_artifact_path → QA worker spawn)
+#
+# File format: Markdown with YAML frontmatter.
+# Naming convention: <session_dir>/delivery/<task_id>-delivery.md
+
+schema:
+  type: markdown_with_frontmatter
+
+frontmatter:
+  required:
+    task_id:
+      type: string
+      description: Task Contract ID this delivery corresponds to (e.g. dev_tc_001)
+
+    qa_ready:
+      type: boolean
+      description: >
+        Set to true when the implementation is complete and ready for QA review.
+        Must be exactly the string "true" (case-insensitive) on its own line.
+        Checked by regex: ^\s*qa_ready\s*:\s*true\s*$
+
+    prohibition_violations:
+      type: array
+      items:
+        type: string
+      description: >
+        List of prohibition violation descriptions found during implementation.
+        Empty array when none. Exit criterion check_no_open_prohibitions.py fails
+        if this field is non-empty.
+      example: []
+
+  optional:
+    summary:
+      type: string
+      description: One-line description of what was implemented.
+
+    spec_divergences:
+      type: array
+      items:
+        type: string
+      description: Intentional divergences from spec accepted during implementation.
+      example: []
+
+body:
+  description: >
+    Free-form Markdown describing the implementation. Sections recommended:
+    ## Changes, ## Tests Written, ## Notes for QA.
+    Content is informational — exit criteria are evaluated from frontmatter only.
+
+example: |
+  ---
+  task_id: dev_tc_001
+  qa_ready: true
+  prohibition_violations: []
+  summary: "Implemented POST /auth/login with JWT issuance"
+  spec_divergences: []
+  ---
+
+  ## Changes
+  - Added `src/routes/auth.ts` with login endpoint
+  - Added `src/services/auth_service.ts` with token generation
+
+  ## Tests Written
+  - Unit: auth_service.test.ts (12 cases)
+  - Integration: login.integration.test.ts (4 cases)

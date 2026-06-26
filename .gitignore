@@ -1,9 +1,8 @@
-.claude
+/.claude/
 .examples
 .tools
 .cocoindex_code
 claude_danger.sh
-claude-danger.sh
 claude.md
 tools
 examples
@@ -12,4 +11,8 @@ examples
 extras/
 skills-lock.json
 tests
-docs
+!/tests/
+__pycache__/
+.orch/
+# pytest coverage artifact
+.coverage

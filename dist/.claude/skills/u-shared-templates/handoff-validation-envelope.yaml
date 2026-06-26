@@ -1,0 +1,17 @@
+# handoff-validation-envelope — canonical template
+# Produced by: u-handoff-validator/validate.py (printed as one JSON object to stdout)
+# Consumed by: check_handoff_manifest_approved.py (SDD->Dev gate) + the BE/FE/Spec orchestrators
+# Schema: .claude/skills/u-shared-templates/handoff-validation-envelope.schema.yaml
+# Layer: ephemeral — never persisted; held in the caller's session state only
+# Rules:
+#   - status: valid requires errors: []
+#   - errors[]/warnings[] are rule-id-prefixed strings (e.g. "FLOW-030: ...") — act on the id, not the prose
+#   - halt_signal: true when change_summary.dev_impact = stop_domain_task_contracts (HDF-030)
+#   - caller echoes --caller; validate.py evaluates all rules regardless of caller
+
+status: valid | invalid
+errors: []
+warnings: []
+halt_signal: false
+validated_by: u-handoff-validator
+caller: u-spec-orchestrator | u-be-orchestrator-core | u-fe-orchestrator-core

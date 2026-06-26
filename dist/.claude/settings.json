@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(pytest *)",
+      "Bash(cat *)",
+      "Bash(jq *)",
+      "Bash(export *)",
+      "Bash(mkdir *)",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(tsc *)",
+      "Bash(pnpm *)",
+      "Bash(yarn *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(grep *)",
+      "Bash(cp *)",
+      "Bash(echo *)",
+      "Bash(head *)",
+      "Bash(tail *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ORCH_PROJECT_DIR=$CLAUDE_PROJECT_DIR python3 $CLAUDE_PROJECT_DIR/.claude/hooks/on_stop.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ORCH_PROJECT_DIR=$CLAUDE_PROJECT_DIR python3 $CLAUDE_PROJECT_DIR/.claude/hooks/on_subagent_stop.py"
+          }
+        ]
+      }
+    ]
+  }
+}

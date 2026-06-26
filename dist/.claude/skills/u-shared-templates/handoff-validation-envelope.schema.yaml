@@ -1,0 +1,47 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/handoff-validation-envelope.schema.yaml"
+title: handoff-validation-envelope
+description: >
+  Structured result emitted by u-handoff-validator/validate.py (stdlib, deterministic)
+  as a single flat JSON object on stdout. The caller acts on `status`, `halt_signal`,
+  and `errors[]` (rule-id-prefixed strings). Exit code: 0 = valid, 1 = invalid.
+type: object
+required:
+  - status
+  - errors
+  - warnings
+  - halt_signal
+  - validated_by
+  - caller
+additionalProperties: false
+properties:
+  status:
+    type: string
+    enum: [valid, invalid]
+  errors:
+    type: array
+    description: 'Rule-id-prefixed strings, e.g. "FLOW-030: ...". Empty when status: valid.'
+    items:
+      type: string
+  warnings:
+    type: array
+    items:
+      type: string
+  halt_signal:
+    type: boolean
+    description: "true when change_summary.dev_impact = stop_domain_task_contracts (HDF-030)."
+  validated_by:
+    type: string
+    const: "u-handoff-validator"
+  caller:
+    type: string
+    description: 'Caller identity from --caller (e.g. u-spec-orchestrator); "unknown" on internal error.'
+if:
+  properties:
+    status:
+      const: valid
+  required: [status]
+then:
+  properties:
+    errors:
+      maxItems: 0

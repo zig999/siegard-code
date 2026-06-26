@@ -1,0 +1,122 @@
+# qa-verdict.md schema
+# Artifact produced by QA workers (u-be-qa-docs, u-fe-qa-docs) and consumed by:
+#   - check_all_qa_verdicts_approved.py   (exit criterion: all_qa_verdicts_approved)
+#   - check_no_open_critical_findings.py  (exit criterion: no_open_critical_findings)
+#   - check_documentation_verified.py     (exit criterion: documentation_verified)
+#   - orchestrator-review Step 5          (verdict summary for human approval gate)
+#
+# File format: Markdown with YAML frontmatter.
+# Naming convention: <specs_dir>/qa/<task_id>-qa.md
+
+schema:
+  type: markdown_with_frontmatter
+
+frontmatter:
+  required:
+    task_id:
+      type: string
+      description: Task Contract ID under review (e.g. dev_tc_001)
+
+    verdict:
+      type: string
+      enum: [approved, rejected]
+      description: >
+        Overall QA verdict for this task.
+        - approved: all acceptance criteria met; no critical or high findings (low/medium findings are recorded but do not block)
+        - rejected: at least one critical or high finding; task must be reworked
+        Checked by regex: ^\s*verdict\s*:\s*(\S+)
+        Values checked against: {approved}
+
+    documentation_verified:
+      type: boolean
+      description: >
+        Set to true when the implementation includes adequate documentation
+        (API docs, inline docs, README updates as applicable).
+        At least one qa-verdict.md with documentation_verified: true must exist
+        for the review phase to pass exit criterion documentation_verified.
+
+  optional:
+    findings:
+      type: array
+      description: List of issues found during review.
+      items:
+        required:
+          id:
+            type: string
+            description: Finding identifier (e.g. QA-001)
+          severity:
+            type: string
+            enum: [critical, high, medium, low]
+            description: >
+              Finding severity. "critical" findings block exit criterion
+              no_open_critical_findings. Checked by check_no_open_critical_findings.py.
+          description:
+            type: string
+            description: Clear description of the issue.
+        optional:
+          file:
+            type: string
+            description: File path where the issue was found.
+          suggestion:
+            type: string
+            description: Recommended fix.
+          root_cause:
+            type: object
+            description: >
+              R5 — root-cause attribution for the finding. MANDATORY for any
+              timeout / flake / performance finding (where a wrong cause sends the
+              dev fix in the wrong direction); optional otherwise. A finding whose
+              cause was inferred from static reading without reproduction MUST set
+              confidence below "high" so the dev does not apply the prescribed fix
+              verbatim — see u-{be,fe}-standards "root-cause falsification".
+            properties:
+              confidence:
+                type: string
+                enum: [high, medium, low]
+                description: >
+                  high  — cause reproduced/verified (e.g. isolated vs full-suite run,
+                          knob varied, bisected). Fix may be applied as prescribed.
+                  medium — cause plausible, partially evidenced.
+                  low   — cause inferred, not reproduced. Dev MUST reproduce before
+                          applying the suggested fix; the suggestion is a hypothesis.
+              evidence:
+                type: string
+                description: >
+                  The observation that supports the cause — e.g. "passes in isolation
+                  (~1.3s), only times out under the full 83-file parallel run; passed
+                  unchanged with --testTimeout=30000 ⇒ contention, not import weight".
+
+    test_coverage:
+      type: object
+      description: Summary of test coverage observed.
+      properties:
+        unit: { type: boolean }
+        integration: { type: boolean }
+        e2e: { type: boolean }
+
+example: |
+  ---
+  task_id: dev_tc_001
+  verdict: approved
+  documentation_verified: true
+  findings:
+    - id: QA-001
+      severity: low
+      description: "Missing JSDoc on authService.generateToken()"
+      file: src/services/auth_service.ts
+      suggestion: "Add @param and @returns annotations"
+  test_coverage:
+    unit: true
+    integration: true
+    e2e: false
+  ---
+
+  ## QA Review — dev_tc_001
+
+  Implementation matches spec §3 (POST /auth/login) and §5 (JWT issuance).
+  Token expiry matches BR-007 (15 minutes for access, 7 days for refresh).
+
+  ### Acceptance criteria
+  - [x] 401 on invalid credentials
+  - [x] 200 with {access_token, refresh_token} on success
+  - [x] Rate limiting applied (5 attempts / minute)

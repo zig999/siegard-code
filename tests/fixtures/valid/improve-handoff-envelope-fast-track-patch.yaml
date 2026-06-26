@@ -1,0 +1,20 @@
+handoff_envelope:
+  id: IMPROVE-20260417-110000
+  source: u-improve
+  invocation_source: u-improve
+  improve_session: copy-tweaks
+  improvement_task: "Fix typo in error message description on auth.spec.md §6"
+  mode_hint: "fast-track:patch"
+  affected_specs:
+    - path: "domains/auth/auth.spec.md"
+      sections: ["§6"]
+      change_summary: "Correct typo in error description text"
+  estimated_task_contracts: 1
+  execution_policy:
+    pipeline: full
+    regression_test_required: false
+    planner_required: false
+  return_contract:
+    emit_event: spec_pipeline_return
+    update_field: spec_change_status
+    expected_terminal_states: [completed, failed]

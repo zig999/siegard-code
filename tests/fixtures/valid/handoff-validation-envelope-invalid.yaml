@@ -1,0 +1,9 @@
+# Valid envelope shape reporting status=invalid (a real failure result) — must pass the schema
+status: invalid
+errors:
+  - 'HDF-021: sha256 mismatch for frontend_package entry'
+  - 'FLOW-031: handoff must contain at least one domain'
+warnings: []
+halt_signal: false
+validated_by: u-handoff-validator
+caller: u-fe-orchestrator-core

@@ -1,0 +1,8 @@
+# INVALID: status=valid but errors[] is non-empty — violates the if/then schema rule
+status: valid
+errors:
+  - 'FLOW-030: delivered_by must be "u-spec-orchestrator"'
+warnings: []
+halt_signal: false
+validated_by: u-handoff-validator
+caller: u-be-orchestrator-core

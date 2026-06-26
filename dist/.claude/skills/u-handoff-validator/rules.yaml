@@ -1,0 +1,154 @@
+# Declarative rule catalog for u-handoff-validator.
+# Each rule is evaluated against a loaded handoff-manifest.yaml document.
+# Rule IDs:
+#   - FLOW-NNN reuses existing identifiers from tests/dist/layer5-flows.test.js
+#   - HDF-NNN covers new rules introduced with this skill
+#
+# Field semantics:
+#   applies_to: DESCRIPTIVE ONLY — which caller the rule matters to. The deployed
+#     implementation (validate.py) evaluates ALL rules regardless of --caller; rule
+#     scoping is data-driven: FLOW-037 by handoff.type, HDF-021 only when a
+#     frontend_package is present, HDF-040 only when frontend_artifacts is present.
+#   severity: blocking (populates errors[]) | warning (populates warnings[])
+#   check.type: declarative description — validate.py hard-codes the equivalent check
+#     in stdlib Python. This file is documentation, NOT loaded at runtime; keep it in
+#     sync with validate.py (the source of truth) when rules change.
+
+rules:
+  - id: FLOW-030
+    description: "handoff.delivered_by must be u-spec-orchestrator"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: const_equals
+      path: $.handoff.delivered_by
+      expected: u-spec-orchestrator
+
+  - id: FLOW-031
+    description: "domains[] must have at least 1 entry"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: min_items
+      path: $.domains
+      min: 1
+
+  - id: FLOW-032
+    description: "backend_package[] must have at least 1 entry"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: min_items
+      path: $.backend_package
+      min: 1
+
+  - id: FLOW-033
+    description: "new_domain handoff must NOT include change_summary"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: forbidden_when
+      path: $.change_summary
+      when:
+        path: $.handoff.type
+        equals: new_domain
+
+  - id: FLOW-034
+    description: "major_evolution, fast_track, and reverse_eng handoffs MUST include change_summary"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: required_when
+      path: $.change_summary
+      when:
+        path: $.handoff.type
+        in: [major_evolution, fast_track, reverse_eng]
+
+  - id: FLOW-035
+    description: "change_summary.dev_impact must be a valid enum value"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: enum
+      path: $.change_summary.dev_impact
+      allowed: [no_action, reevaluate_task_contracts, stop_domain_task_contracts]
+      optional: true
+
+  - id: FLOW-036
+    description: "change_summary.type must match handoff.type: fast_track -> [patch, minor]; major_evolution -> [major]; reverse_eng -> [patch, minor, major]"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: conditional_enum
+      conditions:
+        - when: { path: $.handoff.type, equals: fast_track }
+          path: $.change_summary.type
+          allowed: [patch, minor]
+        - when: { path: $.handoff.type, equals: major_evolution }
+          path: $.change_summary.type
+          allowed: [major]
+        - when: { path: $.handoff.type, equals: reverse_eng }
+          path: $.change_summary.type
+          allowed: [patch, minor, major]
+
+  - id: FLOW-037
+    description: "for new_domain and major_evolution, backend_package must include both openapi and back-spec artifacts"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: contains_all_when
+      path: $.backend_package[*].artifact
+      required: [openapi, back-spec]
+      when:
+        path: $.handoff.type
+        in: [new_domain, major_evolution]
+
+  - id: HDF-010
+    description: "handoff.type must be in enum"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: enum
+      path: $.handoff.type
+      allowed: [new_domain, major_evolution, fast_track, reverse_eng]
+
+  - id: HDF-020
+    description: "backend_package[].sha256 must match file contents at {specs_dir}/{path}"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: sha256_integrity
+      path: $.backend_package[*]
+      file_path_field: path
+      hash_field: sha256
+      base_dir_input: specs_dir
+
+  - id: HDF-021
+    description: "frontend_package[].sha256 must match file contents at {specs_dir}/{path}"
+    severity: blocking
+    applies_to: [u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: sha256_integrity
+      path: $.frontend_package[*]
+      file_path_field: path
+      hash_field: sha256
+      base_dir_input: specs_dir
+      optional: true
+
+  - id: HDF-030
+    description: "change_summary.dev_impact = stop_domain_task_contracts — caller must halt affected domains"
+    severity: blocking
+    applies_to: [u-be-orchestrator-core, u-fe-orchestrator-core]
+    check:
+      type: halt_signal
+      path: $.change_summary.dev_impact
+      halt_when: stop_domain_task_contracts
+
+  - id: HDF-040
+    description: "frontend_artifacts when present must include front_md_version, features, flows"
+    severity: blocking
+    applies_to: [u-fe-orchestrator-core, u-spec-orchestrator]
+    check:
+      type: required_subfields_when_present
+      path: $.frontend_artifacts
+      required: [front_md_version, features, flows]

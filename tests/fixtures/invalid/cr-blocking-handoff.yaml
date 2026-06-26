@@ -1,0 +1,26 @@
+id: CR-02
+reported_by: u-fe-developer
+timestamp: "2026-04-10T09:00:00Z"
+task: TC-02
+epic: EPIC-01
+artifact:
+  path: specs/auth/front.md
+  section: "§5 Error Handling"
+  version: 1.0.0
+type: spec_gap
+description: Error codes for failed login are not specified.
+evidence:
+  - Section §5 lists no error codes.
+proposed_change: "Add 401/403 error mapping to §5"
+impact:
+  dev_blocked: true
+  task_contracts_affected:
+    - TC-02
+  scope: small
+resolution:
+  status: open
+  decided_by: ""
+  decision: ""
+  spec_updated: false
+  delivery_updated: false
+  timestamp: ""

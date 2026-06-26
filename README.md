@@ -110,13 +110,21 @@ graph TB
 
 ### Install into your project
 
-Run the differential sync script:
+Copy the contents of `dist/.claude/` into your project's `.claude/` directory:
 
 ```bash
-bash install.sh /path/to/your-project
+cp -r dist/.claude/. /path/to/your-project/.claude/
 ```
 
-`install.sh` copies new files, updates modified ones, and removes obsolete ones — non-invasive to unmanaged files in your project's `.claude/` directory.
+The copy adds and replaces Siegard-managed files; it does not touch unmanaged files already in your project's `.claude/` directory.
+
+Then check installation integrity (from your project root):
+
+```bash
+python3 .claude/scripts/verify_install.py
+```
+
+It compares every installed file against `.claude/siegard-manifest.json` and reports drift (modified, missing, or leftover files) as a JSON envelope — exit code `0` means the installation is intact.
 
 ### Configure your project
 

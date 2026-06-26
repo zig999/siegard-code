@@ -1,0 +1,39 @@
+# improve-handoff-envelope — canonical template
+# Produced by: u-improve (SKILL.md, Step 3a — write-before-confirm)
+# Consumed by: u-spec-orchestrator (via /u-spec command, INVOCATION_SOURCE=u-improve)
+# Schema: .claude/skills/u-shared-templates/improve-handoff-envelope.schema.yaml
+# Layer: ephemeral — passed in-memory between agents; mirrored as YAML block in
+#        {SESSIONS_DIR}/{improve_session}/log-orchestrator-dev.md (handoff_envelope: ...)
+#
+# Rules:
+#   - u-improve writes the envelope to the dev session log BEFORE asking for human
+#     confirmation (write-before-confirm). The block is the single source of truth
+#     for downstream agents — never re-derive its fields by re-prompting the human.
+#   - mode_hint is authoritative for u-spec; the orchestrator validates compatibility
+#     against the fast-track table but does NOT re-classify.
+#   - return_contract.write_to is mandatory: u-spec-orchestrator MUST update
+#     spec_change_status in that file when the spec pipeline reaches a terminal state.
+
+handoff_envelope:
+  id: IMPROVE-<YYYYMMDD-HHMMSS>
+  source: u-improve
+  invocation_source: u-improve
+  improve_session: <session-name>
+  improvement_task: <single objective sentence>
+  mode_hint: fast-track:minor   # one of: fast-track:minor | fast-track:patch | full
+  affected_specs:
+    - path: <relative path from SPECS_DIR>
+      sections: ["§N", "§N"]
+      change_summary: <one sentence>
+  estimated_task_contracts: 1
+  execution_policy:
+    pipeline: lean | full            # lean skips Planner and TDD (visual/cosmetic-only changes)
+    regression_test_required: true   # true when change affects runtime behavior (logic, API, data)
+    planner_required: true | false   # moved into execution_policy (mirrors improve_scope.planner_required)
+  return_contract:
+    emit_event: spec_pipeline_return          # emitted to log.jsonl via orch-report
+    update_field: spec_change_status
+    expected_terminal_states: [completed, failed]
+    # Replaces legacy write_to: pointing to log-orchestrator-dev.md (removed in dist2).
+    # u-spec-orchestrator emits a spec_pipeline_return event to log.jsonl; the
+    # orchestrator reads it via orch-state on the next cycle.

@@ -1,0 +1,48 @@
+{
+  "phase": "dev",
+  "version": "1.0",
+  "criteria": [
+    {
+      "id": "all_impl_tasks_terminal",
+      "description": "All dev-phase tasks have reached a terminal status (completed or dlq). DLQ is accepted-terminal for dev (retries exhausted) and surfaced via evidence.dlq_blocks_criterion; critical-tier DLQ is escalated by the meta-orchestrator (E04). Contrast: the test phase blocks on DLQ.",
+      "script": "scripts/check_all_impl_tasks_terminal.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "all_deliveries_qa_ready",
+      "description": "Every delivery.md artifact from completed dev tasks contains qa_ready: true",
+      "script": "scripts/check_all_deliveries_qa_ready.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "no_open_prohibitions",
+      "description": "No delivery.md artifact contains a non-empty prohibition_violations list",
+      "script": "scripts/check_no_open_prohibitions.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "all_branches_integrated_to_main",
+      "description": "SIEGARD-04 — after dev, HEAD is on the integration branch (main), the working tree is clean, no feat/fix/refactor TC branch remains unmerged, and no per-TC worktree remains. The Orchestrator-Dev merges every qa_ready TC branch into main and removes worktrees before transition so QA (review) runs on the integrated head.",
+      "script": "scripts/check_all_branches_integrated.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "acceptance_criteria_covered",
+      "description": "Rec #11 — every completed dev task's delivery-gate acceptance_criteria block is present with an empty uncovered list and covered == total. Independent gate that surfaces AC coverage gaps at end of dev instead of letting them slip silently into review.",
+      "script": "scripts/check_acceptance_criteria_covered.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "spec_requirements_covered",
+      "description": "Rec A — every UC/FEAT defined in a spec the backlog references is covered by at least one Task Contract (origin/bdd_ref/objective). Blocks dev exit when the planner silently under-scoped a requirement. Enforced only for standard/greenfield flows; improve/synthesized backlogs are out of scope (subset by design). BR coverage is informational, not blocking.",
+      "script": "scripts/check_spec_requirements_covered.py",
+      "required": true,
+      "blocking": true
+    }
+  ]
+}

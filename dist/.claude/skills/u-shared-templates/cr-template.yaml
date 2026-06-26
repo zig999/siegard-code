@@ -1,0 +1,44 @@
+# cr-template.yaml
+# Change Request — canonical schema
+# Usage: copy to $SESSION_DIR/cr/cr-{id}.yaml and populate all fields.
+# Produced by: Developer (spec_gap | infeasibility) | QA (error) | Orchestrator (any)
+# Consumed by: Orchestrator-Dev (triage) → Spec Team (resolution) → backlog update
+
+id: CR-XX                            # sequential, project-scoped (CR-01, CR-02, ...)
+reported_by: ""                      # agent name: u-fe-developer | u-be-developer | u-fe-qa-docs | u-be-qa-docs | u-fe-orchestrator-core | u-be-orchestrator-core
+timestamp: ""                        # ISO-8601: YYYY-MM-DDTHH:MM:SSZ
+
+task: TC-XX                          # Task Contract where the issue was discovered; null for Epic-level CRs
+epic: EPIC-XX
+
+artifact:
+  path: ""                           # file path of the spec artifact with the issue
+  section: ""                        # e.g., "§3 Business Rules", "paths: POST /users", "TC-XX AC-02"
+  version: ""                        # spec version at the time of discovery (from delivery-gate spec_consumed)
+
+type: spec_gap                       # enum: spec_gap | spec_error | infeasibility | design_conflict
+# spec_gap:       required detail not present in spec — Developer had to infer
+# spec_error:     spec contains incorrect, contradictory, or ambiguous information
+# infeasibility:  spec requirement cannot be implemented as written (technical constraint)
+# design_conflict: spec contradicts CLAUDE.md, design system, or another approved spec
+
+description: ""                      # one sentence: what is missing, wrong, or infeasible
+
+evidence: []                         # list of observations supporting the CR
+# - "openapi.yaml POST /users has no 409 conflict response defined"
+# - "BR-03 requires X but BR-07 states the opposite"
+
+proposed_change: ""                  # one sentence: what the spec should say instead; "N/A" for spec_gap discovery only
+
+impact:
+  dev_blocked: false                 # true = Developer cannot proceed without resolution
+  task_contracts_affected: []        # [TC-XX, TC-YY] — other Task Contracts impacted beyond the originating task
+  scope: low | medium | high        # low: isolated fix; medium: 1-2 endpoints or BRs; high: contract or cross-domain
+
+resolution:
+  status: open                       # enum: open | accepted | rejected | deferred
+  decided_by: ""                     # agent or human who resolved
+  decision: ""                       # what was decided (updated spec section, workaround accepted, etc.)
+  spec_updated: false                # true when the spec artifact has been corrected
+  delivery_updated: false            # true when delivery.md spec_divergences reflects the resolution
+  timestamp: ""                      # ISO-8601 when resolved

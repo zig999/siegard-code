@@ -1,0 +1,27 @@
+{
+  "phase": "test",
+  "version": "1.0",
+  "criteria": [
+    {
+      "id": "all_test_tasks_terminal",
+      "description": "All test-phase tasks have reached completed status; DLQ tasks block transition",
+      "script": "scripts/check_all_test_tasks_terminal.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "all_tests_passed",
+      "description": "Every test report artifact from completed test tasks has result: passed",
+      "script": "scripts/check_all_tests_passed.py",
+      "required": true,
+      "blocking": true
+    },
+    {
+      "id": "no_critical_failures",
+      "description": "No test report artifact contains a failure with severity: critical",
+      "script": "scripts/check_no_critical_failures.py",
+      "required": true,
+      "blocking": true
+    }
+  ]
+}
