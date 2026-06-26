@@ -1,4 +1,4 @@
-./.claude
+/.claude/
 .examples
 .tools
 .cocoindex_code
@@ -14,6 +14,5 @@ tests
 !/tests/
 __pycache__/
 .orch/
-./docs
 # pytest coverage artifact
 .coverage
