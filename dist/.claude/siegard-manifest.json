@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-26T10:59:22Z",
+  "generated_at": "2026-06-26T12:46:18Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -485,7 +485,7 @@
     },
     {
       "path": "skills/u-be-review/SKILL.md",
-      "sha256": "672c299797b9991eed57dad3777a469109897294d5189f4cace42ff75df2ae92"
+      "sha256": "9470bbe489bcbeee17323c7d760252a1bc9e7f1a76095c04816c66a838fd6582"
     },
     {
       "path": "skills/u-be-standards/SKILL.md",
