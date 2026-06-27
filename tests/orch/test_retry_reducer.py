@@ -218,46 +218,9 @@ class TestTaskRetried:
         s2 = _state(tmp_path)
         assert s2.tasks["t_001"].worker_id is None
 
-    def test_task_retried_increments_attempts(self, tmp_path):
-        """After task_retried, attempts equals the new attempt number."""
-        _bootstrap(tmp_path)
-        _emit(tmp_path, "w1", "failed", "t_001",
-              data={"phase": "default", "reason": "internal_error", "retryable": True})
-        _append(tmp_path, "orchestrator", "task_scheduled_retry", "t_001",
-                data={
-                    "phase": "default",
-                    "next_retry_at": "2000-01-01T00:00:00+00:00",
-                    "backoff_seconds": 1.0,
-                    "previous_failure_seq": 1,
-                })
-        s = _state(tmp_path)
-        sched_seq = s.tasks["t_001"].evidence[-1]
-
-        _append(tmp_path, "orchestrator", "task_retried", "t_001", attempt=2,
-                data={"phase": "default", "previous_attempt": 1, "scheduled_retry_seq": sched_seq})
-
-        s2 = _state(tmp_path)
-        assert s2.tasks["t_001"].attempts == 2
-
-    def test_task_retried_clears_next_retry_at(self, tmp_path):
-        _bootstrap(tmp_path)
-        _emit(tmp_path, "w1", "failed", "t_001",
-              data={"phase": "default", "reason": "internal_error", "retryable": True})
-        _append(tmp_path, "orchestrator", "task_scheduled_retry", "t_001",
-                data={
-                    "phase": "default",
-                    "next_retry_at": "2000-01-01T00:00:00+00:00",
-                    "backoff_seconds": 1.0,
-                    "previous_failure_seq": 1,
-                })
-        s = _state(tmp_path)
-        sched_seq = s.tasks["t_001"].evidence[-1]
-
-        _append(tmp_path, "orchestrator", "task_retried", "t_001", attempt=2,
-                data={"phase": "default", "previous_attempt": 1, "scheduled_retry_seq": sched_seq})
-
-        s2 = _state(tmp_path)
-        assert s2.tasks["t_001"].next_retry_at is None
+    # test_task_retried_increments_attempts + test_task_retried_clears_next_retry_at
+    # removed — both subsumed by test_scheduled_to_ready_no_deps above, which already
+    # asserts attempts == 2 AND next_retry_at is None on the same transition.
 
 
 # ---------------------------------------------------------------------------

@@ -220,21 +220,8 @@ class TestIllegalTransitions:
         # Message is preserved for legacy string consumers.
         assert "expected ready" in str(exc)
 
-    def test_completed_task_failed_is_noop(self):
-        """Scenario 3.7 (C2 fix): task_failed on COMPLETED task is a no-op, not an error.
-        This prevents log corruption when on_subagent_stop hook races with Step 6.4."""
-        state = fresh()
-        apply_event(state, _evt(EventType.TASK_CREATED, task_id="t_001",
-                                data=_task_data(deps=[])))
-        apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="t_001",
-                                data={"phase": "dev", "worker_type": "impl", "worker_id": "w"}))
-        apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="t_001",
-                                data={"phase": "dev", "artifacts": [], "summary": "done"}))
-
-        # Must NOT raise — idempotent no-op
-        apply_event(state, _evt(EventType.TASK_FAILED, task_id="t_001",
-                                data={"phase": "dev", "reason": "x", "retryable": False}))
-        assert state.tasks["t_001"].status == TaskStatus.COMPLETED
+    # test_completed_task_failed_is_noop removed — duplicate of the same C2 no-op
+    # scenario in TestDuplicateTerminals::test_failed_on_completed_is_noop.
 
 
 # ---------------------------------------------------------------------------

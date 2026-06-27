@@ -89,15 +89,8 @@ class TestTestOrchestratorTransitions:
 
 
 class TestSmRunnerForTestMachine:
-    def test_runner_lists_test_machine(self):
-        result = subprocess.run(
-            ["python3", str(DIST_LIB / "sm_runner.py"), "--list"],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0
-        data = json.loads(result.stdout)
-        assert "test" in data["registered_machines"]
+    # test_runner_lists_test_machine removed — machine registration is asserted for
+    # all 5 machines at once by test_layer_sm_cleanup::test_all_5_machines_registered.
 
     def test_runner_evaluates_T1_block(self):
         inputs = json.dumps({"nesting_depth": 3, "log_seq_at_spawn": 0})
@@ -144,9 +137,8 @@ class TestSmRunnerForTestMachine:
 class TestOrchestratorMdReferencesSmRunner:
     """Green phase must update orchestrator-test.md to call sm_runner.py."""
 
-    def test_orchestrator_test_md_calls_sm_runner(self):
-        content = (DIST_AGENTS / "orchestrator-test.md").read_text()
-        assert "sm_runner.py" in content, "orchestrator-test.md must call sm_runner.py"
+    # test_orchestrator_test_md_calls_sm_runner removed — covered by the parametrized
+    # test_layer_sm_cleanup::test_orchestrator_calls_sm_runner[orchestrator-test.md].
 
     def test_orchestrator_test_md_uses_test_machine(self):
         content = (DIST_AGENTS / "orchestrator-test.md").read_text()

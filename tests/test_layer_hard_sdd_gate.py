@@ -50,13 +50,9 @@ class TestSddGateSemantic:
         assert ev["met"] is False
         assert ev["evidence"]["validator_status"] == "invalid"
 
-    def test_empty_domains_blocked_even_with_status_approved(self, tmp_path):
-        _stage(tmp_path, "invalid/handoff-manifest-empty-domains.yaml")
-        assert _gate(tmp_path).returncode != 0
-
-    def test_no_backend_package_blocked_even_with_status_approved(self, tmp_path):
-        _stage(tmp_path, "invalid/handoff-manifest-no-backend-package.yaml")
-        assert _gate(tmp_path).returncode != 0
+    # test_empty_domains_blocked / test_no_backend_package_blocked removed — these fixtures'
+    # rejection is owned by test_layer_hard_handoff_validator.py; the gate's marker-independence
+    # (approval derived from validator_status, not a Status: marker) is proven by test_wrong_sender above.
 
     def test_missing_manifest_fails_closed(self, tmp_path):
         (tmp_path / "specs").mkdir(parents=True)

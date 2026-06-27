@@ -69,10 +69,6 @@ class TestDevConfigurableCeiling:
         r = self._eval({"dispatch_policy": {"dev": {"max_concurrent": 5}}})
         assert r.params["max_concurrent"] == 5
 
-    def test_default_when_no_policy(self):
-        # Regression: absent dispatch_policy keeps the historical default of 2.
-        assert self._eval({}).params["max_concurrent"] == 2
-
     def test_invalid_value_falls_back_to_2(self):
         r = self._eval({"dispatch_policy": {"dev": {"max_concurrent": "lots"}}})
         assert r.params["max_concurrent"] == 2

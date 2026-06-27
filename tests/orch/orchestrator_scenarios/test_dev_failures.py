@@ -302,56 +302,10 @@ class TestScenarioD_CircuitBreaker:
     def _ts_ago(self, seconds: int) -> str:
         return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
 
-    def test_five_failures_in_window_trips_breaker(self, wf_env):
-        declare_phases()
-        enter_phase("dev", 2)
-        cfg = default_config()
-        cfg["circuit_breaker"]["failure_threshold"] = 5
-
-        for i in range(1, 6):
-            create_task(f"dev_tc_{i:03d}", "dev")
-            claim_task(f"dev_tc_{i:03d}", "dev")
-            fail_task(f"dev_tc_{i:03d}", "dev", retryable=True)
-
-        state = reduce_all()
-        result = evaluate_circuit_state(state, now_iso(), cfg)
-        assert result["should_trip"] is True
-
-    def test_circuit_breaker_tripped_event_updates_state(self, wf_env):
-        declare_phases()
-        enter_phase("dev", 2)
-
-        for i in range(1, 6):
-            create_task(f"dev_tc_{i:03d}", "dev")
-            claim_task(f"dev_tc_{i:03d}", "dev")
-            fail_task(f"dev_tc_{i:03d}", "dev", retryable=True)
-
-        append_event("orchestrator", "circuit_breaker_tripped", data={
-            "phase": "dev",
-            "failure_count": 5,
-            "threshold": 5,
-            "window_start": now_iso(),
-            "window_end": now_iso(),
-        })
-
-        state = reduce_all()
-        assert state.circuit_breaker is not None
-        assert state.circuit_breaker["status"] == "tripped"
-
-    def test_fewer_than_threshold_does_not_trip(self, wf_env):
-        declare_phases()
-        enter_phase("dev", 2)
-        cfg = default_config()
-        cfg["circuit_breaker"]["failure_threshold"] = 5
-
-        for i in range(1, 4):
-            create_task(f"dev_tc_{i:03d}", "dev")
-            claim_task(f"dev_tc_{i:03d}", "dev")
-            fail_task(f"dev_tc_{i:03d}", "dev", retryable=True)
-
-        state = reduce_all()
-        result = evaluate_circuit_state(state, now_iso(), cfg)
-        assert result["should_trip"] is False
+    # test_five_failures_in_window_trips_breaker, test_circuit_breaker_tripped_event_updates_state,
+    # test_fewer_than_threshold_does_not_trip removed — evaluate_circuit_state and the tripped-event
+    # reducer are owned by test_circuit_breaker.py (incl. real-log integration test_50_failures_trip_circuit
+    # and test_circuit_tripped_event_in_state). Only the dev reset+escalation cycle below is unique.
 
     def test_circuit_breaker_reset_via_human_response(self, wf_env):
         declare_phases()
@@ -383,22 +337,5 @@ class TestScenarioD_CircuitBreaker:
         assert state.escalation is None
         assert_run_status(state, "active")
 
-    def test_already_tripped_flag_detected(self, wf_env):
-        declare_phases()
-        enter_phase("dev", 2)
-        cfg = default_config()
-        cfg["circuit_breaker"]["failure_threshold"] = 5
-
-        for i in range(1, 6):
-            create_task(f"dev_tc_{i:03d}", "dev")
-            claim_task(f"dev_tc_{i:03d}", "dev")
-            fail_task(f"dev_tc_{i:03d}", "dev", retryable=True)
-
-        append_event("orchestrator", "circuit_breaker_tripped", data={
-            "phase": "dev", "failure_count": 5, "threshold": 5,
-            "window_start": now_iso(), "window_end": now_iso(),
-        })
-
-        state = reduce_all()
-        result = evaluate_circuit_state(state, now_iso(), cfg)
-        assert result["already_tripped"] is True
+    # test_already_tripped_flag_detected removed — duplicate of
+    # test_circuit_breaker.py::test_already_tripped_flag (evaluate_circuit_state already_tripped path).

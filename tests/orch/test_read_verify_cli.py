@@ -88,31 +88,8 @@ def test_read_tail(tmp_path):
     assert lines[-1]["seq"] == 4
 
 
-def test_read_filter_task_id(tmp_path):
-    _setup_log(tmp_path)
-    r = _run(READ_SCRIPT, ["--task-id", "t_001"], tmp_path)
-    assert r.returncode == 0
-    lines = [json.loads(l) for l in r.stdout.strip().splitlines()]
-    assert len(lines) == 1
-    assert lines[0]["task_id"] == "t_001"
-
-
-def test_read_filter_event_type(tmp_path):
-    _setup_log(tmp_path)
-    r = _run(READ_SCRIPT, ["--event-type", "task_created"], tmp_path)
-    assert r.returncode == 0
-    lines = [json.loads(l) for l in r.stdout.strip().splitlines()]
-    assert len(lines) == 2
-    assert all(e["event_type"] == "task_created" for e in lines)
-
-
-def test_read_filter_phase(tmp_path):
-    _setup_log(tmp_path)
-    r = _run(READ_SCRIPT, ["--phase", "dev"], tmp_path)
-    assert r.returncode == 0
-    lines = [json.loads(l) for l in r.stdout.strip().splitlines()]
-    # phase_entered + task_created × 2
-    assert len(lines) == 3
+# Per-dimension filter correctness (task_id / event_type / phase) is owned by
+# test_read.py::TestReadEventsFiltered. The CLI keeps only the AND-filter arg smoke below.
 
 
 def test_read_multiple_filters_are_AND(tmp_path):

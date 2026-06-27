@@ -69,12 +69,8 @@ def _corrupt_middle_line() -> int:
 
 
 class TestRecoveryE2E:
-    def test_verify_detects_corruption(self, tmp_orch):
-        """M4.1: verify_chain returns ok=False after physical log corruption."""
-        _write_valid_workflow()
-        _corrupt_middle_line()
-        result = verify_chain(mode="strict")
-        assert result.ok is False
+    # test_verify_detects_corruption removed — corruption detection is owned by
+    # test_verify.py (TestVerifyCorruptJSON). The full corrupt→recover→verify-ok chain remains below.
 
     def test_verify_and_recover_restores_integrity(self, tmp_orch):
         """M4.2: after verify_and_recover, verify_chain passes."""
@@ -87,31 +83,10 @@ class TestRecoveryE2E:
         result = verify_chain(mode="strict")
         assert result.ok is True
 
-    def test_recovered_log_is_reducible(self, tmp_orch):
-        """M4.3: reduce_all() succeeds on the recovered log."""
-        _write_valid_workflow()
-        corrupt_seq = _corrupt_middle_line()
-        verify_and_recover(from_seq=corrupt_seq, operator="test", confirm=True)
-
-        state = reduce_all()
-        assert state.last_seq >= 1
-
-    def test_log_recovered_event_is_in_log(self, tmp_orch):
-        """M4.4: log_recovered event is appended after recovery."""
-        _write_valid_workflow()
-        corrupt_seq = _corrupt_middle_line()
-        verify_and_recover(from_seq=corrupt_seq, operator="test", confirm=True)
-
-        from orch_core import read_events
-        event_types = [e.event_type for e in read_events()]
-        assert "log_recovered" in event_types
-
-    def test_recover_without_confirm_raises(self, tmp_orch):
-        """M4.5: verify_and_recover without confirm=True always raises ValueError."""
-        _write_valid_workflow()
-        corrupt_seq = _corrupt_middle_line()
-        with pytest.raises(ValueError, match="confirm"):
-            verify_and_recover(from_seq=corrupt_seq, operator="test", confirm=False)
+    # test_recovered_log_is_reducible, test_log_recovered_event_is_in_log,
+    # test_recover_without_confirm_raises removed — these per-assertion checks duplicate
+    # test_verify_and_recover.py unit tests (test_after_recovery_verify_strict_passes,
+    # test_recovery_emits_log_recovered_event, test_confirm_false_raises).
 
     def test_state_before_corruption_is_preserved(self, tmp_orch):
         """M4.6: events before the corrupted seq are preserved after recovery."""

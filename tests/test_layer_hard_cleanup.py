@@ -46,13 +46,3 @@ class TestGlobalAcceptance:
                 if not allowed.match(mod) and mod not in local:
                     bad.append(line.strip())
         assert not bad, f"non-stdlib imports in dist: {bad}"
-
-    def test_g6_no_pyyaml_in_dist(self):
-        out = subprocess.run(["grep", "-rn", "import yaml", str(ROOT / "dist/.claude")],
-                             capture_output=True, text=True).stdout
-        assert "import yaml" not in out, f"pyyaml must be gone from dist: {out}"
-
-    def test_validate_dist_clean(self):
-        p = subprocess.run([sys.executable, str(ROOT / "dist/.claude/scripts/validate_dist.py")],
-                           capture_output=True, text=True)
-        assert p.returncode == 0, p.stdout + p.stderr

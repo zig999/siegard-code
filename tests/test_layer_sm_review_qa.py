@@ -98,16 +98,5 @@ class TestReviewDynamicConcurrency:
         assert r.params["max_concurrent"] == 3
 
 
-class TestReviewMachineRegistered:
-    def test_review_in_registered_machines(self):
-        import json
-        import subprocess
-
-        result = subprocess.run(
-            ["python3", str(DIST_LIB / "sm_runner.py"), "--list"],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0
-        data = json.loads(result.stdout)
-        assert "review" in data["registered_machines"]
+# TestReviewMachineRegistered removed — all 5 machines' registration is asserted by
+# test_layer_sm_cleanup::test_all_5_machines_registered (single superset check).

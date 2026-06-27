@@ -59,11 +59,5 @@ class TestLayer3CrossReferences:
         templated = path.parent / path.name.replace(".schema.yaml", "-template.yaml")
         assert plain.exists() or templated.exists(), f"No template found for {path.name}"
 
-    @pytest.mark.parametrize(
-        "name,dir_path",
-        [(d["name"], d["path"]) for d in _skill_dirs],
-        ids=[d["name"] for d in _skill_dirs],
-    )
-    def test_skill_dir_has_skill_md(self, name, dir_path):
-        skill_file = dir_path / "SKILL.md"
-        assert skill_file.exists(), f"SKILL.md not found in dist/skills/{name}/"
+    # test_skill_dir_has_skill_md removed — subsumed by
+    # test_layer1_skill_frontmatter::test_skill_md_exists (superset: all skill dirs + content checks).

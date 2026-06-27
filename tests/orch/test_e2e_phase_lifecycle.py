@@ -606,20 +606,9 @@ class TestLogSeqAtSpawn:
 # E.9 — Hash chain integrity across 4-phase workflow
 # ---------------------------------------------------------------------------
 
-class TestHashChainAcrossPhases:
-    def test_verify_chain_strict_after_all_four_phases(self, tmp_orch):
-        """E.9: verify_chain strict mode passes after all 4 phases complete."""
-        _declare_phases()
-        for name, order, to_next in [
-            ("sdd", 1, "dev"), ("dev", 2, "review"),
-            ("review", 3, "test"), ("test", 4, "done"),
-        ]:
-            _enter_phase(name, order)
-            _create_task(f"{name}_t1", name)
-            _run_task(f"{name}_t1", name)
-            _transition_phase(name, to_next, ["criterion_1"])
-        result = verify_chain(mode="strict")
-        assert result.ok is True
+# TestHashChainAcrossPhases removed — near-identical to
+# TestFullFourPhaseLifecycle::test_hash_chain_intact_after_full_workflow (both build
+# a 4-phase log and assert verify_chain(strict).ok). Chain integrity is owned by test_verify.py.
 
 
 

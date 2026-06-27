@@ -65,16 +65,6 @@ class TestScenarioI_E99Unresolved:
         assert state.escalation is not None
         assert "seq" in state.escalation
 
-    def test_e99_escalation_seq_matches_event_seq(self, wf_env):
-        declare_phases()
-        enter_phase("sdd", 1)
-        escalate("E99", "approval required")
-
-        state = reduce_all()
-        # escalation.seq must match the event seq injected by the reducer
-        assert isinstance(state.escalation["seq"], int)
-        assert state.escalation["seq"] > 0
-
     def test_multiple_tasks_pending_while_escalated(self, wf_env):
         declare_phases()
         enter_phase("dev", 2)
@@ -102,43 +92,10 @@ class TestScenarioI_E99Unresolved:
         assert_escalation_present(state, code="E04")
         assert state.escalation["seq"] > first_seq
 
-    def test_e04_dlq_escalation_marks_run_status_escalated(self, wf_env):
-        declare_phases()
-        enter_phase("dev", 2)
-        create_task("dev_tc_001", "dev", tier="critical")
-        claim_task("dev_tc_001", "dev")
-        append_event("w_dev_tc_001", "task_failed", task_id="dev_tc_001", attempt=1, data={
-            "phase": "dev", "reason": "internal_error", "retryable": False,
-        })
-        append_event("orchestrator", "task_dlq", task_id="dev_tc_001", data={
-            "phase": "dev", "reason": "non_retryable", "last_error": "fatal error",
-        })
-        escalate("E04", "critical task in DLQ")
-
-        state = reduce_all()
-        assert_run_status(state, "escalated")
-        assert_escalation_present(state, code="E04")
-
-    def test_e11_missing_input_escalation(self, wf_env):
-        declare_phases()
-        escalate("E11", "required input missing: api_contract",
-                 agent="orchestrator",
-                 evidence=["missing: api_contract.yaml"])
-
-        state = reduce_all()
-        assert_escalation_present(state, code="E11")
-        assert_run_status(state, "escalated")
-
-    def test_e09_spec_divergence_escalation(self, wf_env):
-        declare_phases()
-        enter_phase("dev", 2)
-        escalate("E09", "implementation diverges from spec",
-                 agent="orchestrator-dev",
-                 evidence=["dev_tc_001"])
-
-        state = reduce_all()
-        assert_escalation_present(state, code="E09")
-        assert_run_status(state, "escalated")
+    # test_e04/test_e11/test_e09 emit-tests removed — the reducer treats the escalation code
+    # as opaque, so "escalate(code) → run_status=escalated + escalation populated" is fully
+    # covered by test_e99_sets_escalated_run_status + test_e99_populates_escalation_field.
+    # (E14's distinct skill-behavior and the DLQ→escalation wiring are tested elsewhere.)
 
 
 # ---------------------------------------------------------------------------
@@ -347,14 +304,8 @@ class TestScenarioK_E14ImproveConfirmation:
         state = reduce_all()
         assert_task_status(state, "sdd_spec_001", "completed")
 
-    def test_e14_escalation_seq_is_injected_by_reducer(self, wf_env):
-        """Escalation dict must contain 'seq' field for human_response to reference."""
-        declare_phases()
-        escalate("E14_improve_spec_confirmation", "confirmation required")
-
-        state = reduce_all()
-        assert "seq" in state.escalation
-        assert isinstance(state.escalation["seq"], int)
+    # test_e14_escalation_seq_is_injected_by_reducer removed — reducer seq injection is
+    # code-agnostic and already asserted by test_e99_populates_escalation_field.
 
     def test_workflow_hash_chain_intact_after_escalation_cycle(self, wf_env):
         """Hash chain must remain valid after escalation + human_response cycle."""
