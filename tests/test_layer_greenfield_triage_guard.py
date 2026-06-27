@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "dist" / ".claude" / "lib"))
 
 DIST = Path(__file__).parent.parent / "dist" / ".claude"
-TRIAGE = DIST / "skills" / "u-spec-triage" / "SKILL.md"
+TRIAGE = DIST / "skills" / "u-spec-triage-rules" / "SKILL.md"
 
 
 def _text():
@@ -27,7 +27,7 @@ def _text():
 
 class TestGreenfieldGuardContract:
     def test_skill_exists(self):
-        assert TRIAGE.exists(), "u-spec-triage/SKILL.md must be published"
+        assert TRIAGE.exists(), "u-spec-triage-rules/SKILL.md must be published"
 
     def test_greenfield_detected_by_absence_of_domain_specs(self):
         t = _text()
@@ -57,5 +57,5 @@ class TestTriageStackClassifierPresent:
     """The deterministic stack classifier (P0 fix) backs the front/back legs."""
 
     def test_classifier_script_published(self):
-        script = DIST / "skills" / "u-spec-triage" / "scripts" / "classify_stack.py"
+        script = DIST / "skills" / "u-spec-triage-rules" / "scripts" / "classify_stack.py"
         assert script.exists(), "classify_stack.py must ship with the triage skill"

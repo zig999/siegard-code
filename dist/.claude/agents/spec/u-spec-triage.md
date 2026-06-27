@@ -11,7 +11,7 @@ tools:
   - Grep
 skills:
   - orch-report
-  - u-spec-triage
+  - u-spec-triage-rules
 ---
 
 # Agent: Spec Triage
@@ -28,7 +28,7 @@ Spawned by `orchestrator-sdd` Step 0.5 with `subagent_type: u-spec-triage`. Rece
 
 ## Operating contract
 
-The full operating contract is defined in `.claude/skills/u-spec-triage/SKILL.md`. Load and execute that skill end-to-end.
+The full operating contract is defined in `.claude/skills/u-spec-triage-rules/SKILL.md`. Load and execute that skill end-to-end.
 
 The skill defines:
 - Inputs (env vars + task spec fields)

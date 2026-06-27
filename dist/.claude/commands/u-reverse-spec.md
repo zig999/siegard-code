@@ -61,7 +61,7 @@ Inform the user:
 > - Delete the existing `{SPECS_DIR}/` and re-run `/u-reverse-spec {CODE_DIR}` → triggers **new** mode
 > - If a prior session was interrupted, re-run `/u-reverse-spec {CODE_DIR}` with the existing log → triggers **resume** mode
 
-Do not invoke `u-reverse-spec-orchestrator`. Do not modify any file. Stop.
+Do not invoke `orchestrator-reverse-spec`. Do not modify any file. Stop.
 
 ## Initialization (new mode)
 
@@ -73,7 +73,7 @@ Do not invoke `u-reverse-spec-orchestrator`. Do not modify any file. Stop.
    - `.claude/skills/u-spec-globals/glossary.md`
 
 3. Load the orchestrator agent:
-   - `.claude/agents/reverse-spec/u-reverse-spec-orchestrator.md`
+   - `.claude/agents/reverse-spec/orchestrator-reverse-spec.md`
 
 4. The Orchestrator takes control and starts stack detection.
 

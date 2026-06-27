@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-CLASSIFY = ROOT / "dist/.claude/skills/u-spec-triage/scripts/classify_stack.py"
+CLASSIFY = ROOT / "dist/.claude/skills/u-spec-triage-rules/scripts/classify_stack.py"
 SCRIPTS = ROOT / "dist/.claude/skills/phase-sdd-rules/scripts"
 
 WID = "wf-test"

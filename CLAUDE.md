@@ -289,6 +289,29 @@ Always use `claude-sonnet-4-6` unless explicitly instructed otherwise.
 
 ---
 
+## Naming Convention (MANDATORY)
+
+Commands, agents, and skills live in separate directories and are invoked through different mechanisms, but they are all referenced by **bare name** in routing tables, frontmatter `skills:` lists, and prose. To keep those references unambiguous, names follow one axis: **an agent is named for the role that acts; a skill is named for the capability it holds. A single name MUST NOT be used by both an agent and a skill.**
+
+### Namespaces
+
+| Artifact | Pattern | Examples |
+|----------|---------|----------|
+| Command | `u-<short-verb>` — public, terse (the leading `/` is the type marker; no heavier prefix) | `/u-spec`, `/u-improve`, `/u-dev` |
+| Orchestrator agent | `orchestrator-<phase-or-domain>` (always this prefix) | `orchestrator-sdd`, `orchestrator-dev`, `orchestrator-reverse-spec` |
+| Worker agent | `u-<domain>-<role>` — role nouns: `-developer`, `-planner`, `-reviewer`, `-validator`, `-writer`, `-analyzer`, `-runner`, `-qa`, `-triage` | `u-be-developer`, `u-spec-writer`, `u-be-qa` |
+| Capability skill | `u-<domain>-<capability>` — capability nouns: `-rules`, `-standards`, `-templates`, `-development`, `-writing`, `-review`, `-validation`, `-analysis` | `u-be-development`, `u-spec-writing`, `u-spec-triage-rules` |
+| Engine skill | `orch-*` (engine core) · `phase-*-rules` (phase rules) | `orch-log`, `phase-dev-rules` |
+
+### Rules
+
+* **Actor vs capability:** the worker agent uses a role noun (`u-spec-writer`); its knowledge skill uses a capability noun (`u-spec-writing`). The actor/capability pair must use **different** names.
+* **Disjoint sets:** the set of agent names and the set of skill names MUST NOT intersect. A bare reference like `u-spec-triage` must resolve to exactly one artifact type.
+* **Casing:** kebab-case only. A skill's `name:` frontmatter MUST equal its directory name (see Frontmatter standard).
+* **No type prefixes (`cmd-`/`agent-`/`skill-`):** the directory + invocation mechanism already identify the type; the `/` already marks a command. Disambiguation is by the actor/capability axis above, not by a type tag.
+
+---
+
 ## Skill Development
 
 Each skill must follow this standard:

@@ -4,7 +4,7 @@
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-27T16:16:30Z",
+  "generated_at": "2026-06-27T16:42:53Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,7 +57,7 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "52eb4856d89933f3fbc79ee0052a21557dff18ea1a9783bc76acdae9371e12b8"
+      "sha256": "a49ad22e5236b88a4717d72f3dae42efc405040e6bd009052cb4b6477a9580fa"
     },
     {
       "path": "agents/orchestrator-review.md",
@@ -76,12 +76,12 @@
       "sha256": "8c4df2cca61f8751659d7352b9dad9df868f6458d55b056ab8e7cdb6685aa26b"
     },
     {
-      "path": "agents/reverse-spec/u-reverse-spec-analyzer.md",
-      "sha256": "4fcc9541781f53ea17b75cefb8bbf1c9bdeaa47e7882c0172f236a23f5c229f4"
+      "path": "agents/reverse-spec/orchestrator-reverse-spec.md",
+      "sha256": "af1f54d28bba886701646fe9defc234363e4e17640771b7ed9f7be1114a88425"
     },
     {
-      "path": "agents/reverse-spec/u-reverse-spec-orchestrator.md",
-      "sha256": "34dc03118a7ddeec7d25867034c14e1165d9838b2c6f90fba8671b7e07824e4e"
+      "path": "agents/reverse-spec/u-reverse-spec-analyzer.md",
+      "sha256": "4fcc9541781f53ea17b75cefb8bbf1c9bdeaa47e7882c0172f236a23f5c229f4"
     },
     {
       "path": "agents/reverse-spec/u-reverse-spec-writer.md",
@@ -105,7 +105,7 @@
     },
     {
       "path": "agents/spec/u-spec-triage.md",
-      "sha256": "62ed50b704d515ad93560c98080d645051037bdd8b3a120483a846a876fe0007"
+      "sha256": "7e1fcee2d9602cf3ba44237204a42f17e6741b3ab7c3f1ac7cb8d17ad48f5240"
     },
     {
       "path": "agents/spec/u-spec-validator.md",
@@ -141,7 +141,7 @@
     },
     {
       "path": "commands/u-reverse-spec.md",
-      "sha256": "a1e704e4d55b6dfb0699c6044ee754ff92726a981de0c9a26919b510d7adaaa1"
+      "sha256": "4b4ee3485c34d1bf7e918f3773ab812dfe83b8d7a659edb87f37abd36b82b8f9"
     },
     {
       "path": "commands/u-spec.md",
@@ -832,11 +832,11 @@
       "sha256": "c5c2d653db750b8805f1958e54089f57226c4ea7b5b94c4b49d95abf9675adb7"
     },
     {
-      "path": "skills/u-spec-triage/SKILL.md",
-      "sha256": "e97fe8c01ac7788464c070b8534e97f0762014bc634f0d5c05a3f9bd6904e078"
+      "path": "skills/u-spec-triage-rules/SKILL.md",
+      "sha256": "0a382595cdcf498ec8c4f01de769934f8548a86395b46102350b981812ac7218"
     },
     {
-      "path": "skills/u-spec-triage/scripts/classify_stack.py",
+      "path": "skills/u-spec-triage-rules/scripts/classify_stack.py",
       "sha256": "3f7626d14e45cf289e7ca8c284d969b761f97bb7cd1f0c1121765a70f7f41ef4"
     },
     {

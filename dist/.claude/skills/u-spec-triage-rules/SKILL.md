@@ -1,5 +1,5 @@
 ---
-name: u-spec-triage
+name: u-spec-triage-rules
 description: Triage skill for the SDD phase. Always runs at SDD phase start via dedicated worker. Detects trigger type (standard /u-spec vs improve /u-improve), classifies the requirement or improvement, identifies affected specs and domains, determines mode_hint and execution_policy, and writes triage.json to the session directory. Orchestrator-sdd reads triage.json to derive effective_mode and dispatch workers. Not user-invocable.
 user-invocable: false
 ---
@@ -171,7 +171,7 @@ Applied to `requirement` text. Classification is automatic, deterministic, and
 Run the classifier and store its output verbatim:
 
 ```bash
-python3 .claude/skills/u-spec-triage/scripts/classify_stack.py \
+python3 .claude/skills/u-spec-triage-rules/scripts/classify_stack.py \
   --requirement "<requirement text>"
 ```
 

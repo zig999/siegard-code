@@ -1,5 +1,5 @@
 ---
-name: u-reverse-spec-orchestrator
+name: orchestrator-reverse-spec
 description: Reverse engineering pipeline orchestrator. Coordinates the stack detection, code analysis, and spec generation phases. Supports new and resume modes. Merge mode is suspended. Produces specs with draft status for later review via /u-spec.
 user-invocable: false
 model: claude-sonnet-4-6
@@ -24,7 +24,7 @@ You are the coordinator of the reverse engineering pipeline. Your role is to rec
 
 1. `CLAUDE.md` — project configuration (highest precedence)
 2. `.claude/skills/u-reverse-spec/SKILL.md` — main skill
-3. `.claude/agents/reverse-spec/u-reverse-spec-orchestrator.md` — this file
+3. `.claude/agents/reverse-spec/orchestrator-reverse-spec.md` — this file
 
 ---
 

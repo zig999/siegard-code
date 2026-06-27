@@ -190,7 +190,7 @@ mkdir -p "$SESSION_DIR/backlog" "$SESSION_DIR/delivery" "$SESSION_DIR/pending" "
 
 When `workflow_type == "improve"` (from Step 0.5), read `improve-scope.json` for `spec_change_status`
 (written by `u-improve`, updated by `orchestrator-sdd`) and `triage.json` for `planner_required`
-(written by `u-spec-triage` — single source of truth per `u-spec-triage/SKILL.md` rule
+(written by `u-spec-triage` — single source of truth per `u-spec-triage-rules/SKILL.md` rule
 `new_artifacts: Only triage.json may be written`):
 
 ```bash
