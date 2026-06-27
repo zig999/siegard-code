@@ -4,7 +4,7 @@
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-26T23:14:05Z",
+  "generated_at": "2026-06-27T16:16:30Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -53,7 +53,7 @@
     },
     {
       "path": "agents/dev/u-test-runner.md",
-      "sha256": "c110288802660f5e6ad3a308ed0adaf1f8d7f70ba7253a6846278485542775c8"
+      "sha256": "a16daa2d14684d266a313892aec7dc5366f6cbc47ce9f9935171ba2cee28f7c2"
     },
     {
       "path": "agents/orchestrator-dev.md",
@@ -105,7 +105,7 @@
     },
     {
       "path": "agents/spec/u-spec-triage.md",
-      "sha256": "cbe98e61d55a494b0cc3fd3592abad4b851d5804f7976355f7f97a50d87fc7c3"
+      "sha256": "62ed50b704d515ad93560c98080d645051037bdd8b3a120483a846a876fe0007"
     },
     {
       "path": "agents/spec/u-spec-validator.md",
@@ -129,7 +129,7 @@
     },
     {
       "path": "commands/u-fe-validate.md",
-      "sha256": "d287440473bf6c96cf153d93a770b5fdc8a28a5993dda480a6db2b9a87c4acda"
+      "sha256": "d6fc59d870248f95ce43ca2691740deeb47111511ffb9691dcb4eaed4b31e687"
     },
     {
       "path": "commands/u-improve.md",
@@ -485,7 +485,7 @@
     },
     {
       "path": "skills/u-be-review/SKILL.md",
-      "sha256": "9470bbe489bcbeee17323c7d760252a1bc9e7f1a76095c04816c66a838fd6582"
+      "sha256": "46cd8ee22e6e27ffc25e9bbe7852eaa2e574bb6d2c7b833f9def61b9cffe92e9"
     },
     {
       "path": "skills/u-be-standards/SKILL.md",
@@ -497,7 +497,7 @@
     },
     {
       "path": "skills/u-be-templates/delivery.md",
-      "sha256": "15e688a7e10768bf9d29f3eb2946668736ed0f859b30916539325af156492aae"
+      "sha256": "cc0936e44e46e5f2909aa46c301636b2a094c6e2e5c5994975a332422fa3d535"
     },
     {
       "path": "skills/u-be-templates/infra-pending-items.md",
@@ -505,7 +505,7 @@
     },
     {
       "path": "skills/u-be-templates/qa-report.md",
-      "sha256": "15bbb8d63e42f1bc4392ac2adf29182b15286ee33fbf2138788bc2dd73acc84a"
+      "sha256": "35d99a1c15f5a799d63eb83453b682c3262f3d80824cb596afbbae6716a3580e"
     },
     {
       "path": "skills/u-be-templates/session-decisions.md",
@@ -513,7 +513,7 @@
     },
     {
       "path": "skills/u-bug-investigator/SKILL.md",
-      "sha256": "eb9df2a8f750a066dfce61a5ed271f683353d9ed533f15701b4fafc6fa05938e"
+      "sha256": "47aa71b880ea7189da83650569ee9301f087b3d9c2c3419c7d3b568faeadc83c"
     },
     {
       "path": "skills/u-context-enricher/SKILL.md",
@@ -533,7 +533,7 @@
     },
     {
       "path": "skills/u-fe-review/SKILL.md",
-      "sha256": "dbed2a2b945269d4820782d71cae60dc6bc2e9dcc1e475c2dd94c3045de19c16"
+      "sha256": "c47af9a8920e3d03467ef1c0f663904fb35c4c0fcaaa434d4dfa9f3883246855"
     },
     {
       "path": "skills/u-fe-standards/SKILL.md",
@@ -549,11 +549,11 @@
     },
     {
       "path": "skills/u-fe-templates/delivery.md",
-      "sha256": "116c9497237d17c1a8d1247d692f4c6091f9caf80d016a9ae2f28de104d9e646"
+      "sha256": "9ea563226a8b752c24a56c21e174cd9a41951015941308a5a42b7306974412d4"
     },
     {
       "path": "skills/u-fe-templates/qa-report.md",
-      "sha256": "b30d95b082a1885e7f9bc2d272c1342dbeb7444e8993500d061b9956090d524f"
+      "sha256": "267f83385a84072fb1c36c134cc3afa4d75f3dd815bd6e87cd65fae820972e4e"
     },
     {
       "path": "skills/u-fe-templates/session-decisions.md",
@@ -649,7 +649,7 @@
     },
     {
       "path": "skills/u-shared-templates/delivery-gate.md",
-      "sha256": "23eb15e6e3fccd360da8550894359313dc7c6f3155922bb47e26c918b23bedbc"
+      "sha256": "35d3f667763907ecc60840de1172abc38d8a99a68d38985fce85e09a28b8a0f6"
     },
     {
       "path": "skills/u-shared-templates/delivery.schema.yaml",
@@ -861,7 +861,7 @@
     },
     {
       "path": "skills/u-worker-compliance/SKILL.md",
-      "sha256": "e899a674e672a1dd6bf3e2e1e3691c74cf98ac8b24b4c316267bf08cf6f761b9"
+      "sha256": "d903fa8279914772e65152ea2f7908ebb85de9e65315c558fcc72d35aea24865"
     },
     {
       "path": "skills/u-worker-compliance/scripts/check_worker.py",

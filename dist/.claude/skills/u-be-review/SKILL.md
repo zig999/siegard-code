@@ -2,7 +2,6 @@
 name: u-be-review
 description: Read-only ad-hoc audit of backend code (a file, a directory, or a git diff) against the backend code-review rule registry — correctness, security, layering, API contract, type-safety, conventions, maintainability, explicit prohibitions, engineering principles (SOLID/CLEAN), folder structure, and tests. User-invocable. Emits an ephemeral structured parecer (findings grouped by severity plus a deterministic verdict). Does not modify files, write artifacts, or touch the orchestration log. Use this whenever someone wants a backend code review, a second opinion on a diff or pull request, a quality check before merging, or to verify that changed source files respect the project's backend standards.
 user-invocable: true
-invocation: /u-be-review [target] [--diff] [--focus CR-XXX]
 allowed-tools: Read, Grep, Glob, Bash(git diff:*)
 dependencies:
   required:
@@ -38,8 +37,10 @@ Audit one or more backend source files against the complete set of backend quali
 
 ## Invocation
 
+User-invocable skill — invoke it by name (there is no slash command). Arguments:
+
 ```
-/u-be-review [target] [--diff] [--focus CR-XXX]
+u-be-review [target] [--diff] [--focus CR-XXX]
 ```
 
 | Argument | Required | Description |

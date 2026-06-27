@@ -66,6 +66,13 @@ documentation_verified: <true|false>
 **Evidence:**
 [Error log, screenshot, response payload]
 
+**Root cause:** *(MANDATORY for timeout / flake / performance findings; optional otherwise. Maps to `findings[].root_cause` in `u-shared-templates/qa-verdict.schema.yaml`; see "root-cause falsification" / R5 in `u-fe-standards`.)*
+- **confidence:** high | medium | low
+  - `high` — cause reproduced/verified (e.g. isolated vs full-suite run, knob varied, bisected); fix may be applied as prescribed.
+  - `medium` — cause plausible, partially evidenced.
+  - `low` — cause inferred, not reproduced; the Developer MUST reproduce before applying the suggested fix — the suggestion is a hypothesis.
+- **evidence:** [the observation supporting the cause — e.g. "passes in isolation (~1.3s), only times out under the full parallel run; passed unchanged with a higher test timeout ⇒ contention, not import weight"]
+
 ---
 
 ## Edge Cases — Results

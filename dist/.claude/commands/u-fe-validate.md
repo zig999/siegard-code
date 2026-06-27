@@ -56,16 +56,15 @@ Extract from `$ARGUMENTS`:
 
 ## Files to Read
 
-1. `.claude/skills/u-fe-validate/SKILL.md` — validation process and rules
-2. `.claude/skills/u-fe-standards/SKILL.md` — §2 Code Quality Rules + §3 Visual Design Rules (rule source of truth)
-3. `CLAUDE.md` — check for `i18n: true` flag (affects i18n-hardcode rule)
-4. If `SPECS_DIR` provided: `{SPECS_DIR}/front/design-system/tokens.md` — valid token list
+1. `.claude/skills/u-fe-standards/SKILL.md` — §2 Code Quality Rules + §3 Visual Design Rules (rule source of truth)
+2. `CLAUDE.md` — check for `i18n: true` flag (affects i18n-hardcode rule)
+3. If `SPECS_DIR` provided: `{SPECS_DIR}/front/design-system/tokens.md` — valid token list
 
 ---
 
 ## Execution
 
-Follow the validation process defined in `SKILL.md`:
+This command is self-contained: `u-fe-standards` §2/§3 is the rule source of truth and the steps below are the validation process. For a broader audit (anti-patterns, accessibility, `--fix`), use the `u-fe-review` skill instead.
 
 1. Expand TARGET into file list
 2. Load rule context

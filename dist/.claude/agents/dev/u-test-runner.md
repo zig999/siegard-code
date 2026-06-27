@@ -12,6 +12,8 @@ tools:
   - Read
   - Write
   - Glob
+skills:
+  - orch-report
 ---
 
 # Agent: Test Runner
@@ -109,21 +111,24 @@ Write a JSON report to `.orch/test-reports/{task_id}.json`:
 
 ### Step 4 — Emit terminal event
 
-After writing the report, emit your terminal event to the orchestrator.
+After writing the report, emit exactly one terminal event to the orchestrator, using the `task_id` and `attempt` received in the activation prompt.
 
 **On success (`result: passed`):**
-```
-task_completed with:
-  artifacts: [".orch/test-reports/<task_id>.json"]
-  summary: "all tests passed"
+```bash
+python3 .claude/skills/orch-report/scripts/emit.py \
+  --kind completed \
+  --task-id "<task_id>" \
+  --attempt <attempt> \
+  --data '{"phase": "test", "summary": "all tests passed", "artifacts": [".orch/test-reports/<task_id>.json"]}'
 ```
 
 **On failure (`result: failed` or `result: blocked`):**
-```
-task_failed with:
-  reason: "tests_failed" | "delivery_not_qa_ready"
-  artifacts: [".orch/test-reports/<task_id>.json"]
-  summary: "<one-line failure description>"
+```bash
+python3 .claude/skills/orch-report/scripts/emit.py \
+  --kind failed \
+  --task-id "<task_id>" \
+  --attempt <attempt> \
+  --data '{"phase": "test", "reason": "tests_failed | delivery_not_qa_ready", "retryable": true, "artifacts": [".orch/test-reports/<task_id>.json"]}'
 ```
 
 ---
