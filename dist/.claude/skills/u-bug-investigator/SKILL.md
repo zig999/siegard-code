@@ -1,7 +1,7 @@
 ---
 name: u-bug-investigator
 description: "Root-cause investigation engine for software bugs. Trigger this skill whenever a user is puzzled by incorrect behavior and doesn't know the cause — they observed something wrong and want to understand the mechanism, not get a patch. Use it for: crashes or TypeErrors in specific conditions, services returning wrong status codes for certain inputs, processes that stop silently without errors, memory growing unboundedly, connections dropping unexpectedly, race conditions producing duplicate or corrupt data, behavior that changed after a deploy or dependency upgrade, intermittent failures with no obvious pattern, production incidents where the cause is unknown. Works for reports in any language (English, Portuguese, etc.). Do NOT use when the user already knows what's broken and wants code written, is requesting a code review, needs tests written, or is troubleshooting a tooling/environment issue (package managers, CI pipelines, build tools). When in doubt and the user describes unexpected behavior — use this skill."
-user-invocable: false
+user-invocable: true
 allowed-tools: Read, Grep, Glob
 ---
 

@@ -7,7 +7,7 @@ Two YAML blocks, sequential. QA reads gate first — if `qa_ready: false`, stops
 ````markdown
 ```yaml
 # delivery-gate
-task: TC-XX
+task_id: TC-XX
 layer: semi-permanent
 delivered_by: u-fe-developer
 timestamp: <YYYY-MM-DDTHH:MM:SSZ>

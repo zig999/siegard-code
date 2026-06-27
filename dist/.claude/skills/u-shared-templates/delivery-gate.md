@@ -23,7 +23,7 @@ The delivery-gate is a YAML block placed **at the very top of `tc-XX-delivery.md
 
 ```yaml
 # delivery-gate
-task: TC-XX
+task_id: TC-XX
 layer: semi-permanent
 delivered_by: u-fe-developer | u-be-developer
 timestamp: <YYYY-MM-DDTHH:MM:SSZ>
@@ -88,7 +88,7 @@ The delivery file must start with the gate block in a YAML code fence, followed 
 ~~~markdown
 ```yaml
 # delivery-gate
-task: TC-23
+task_id: TC-23
 layer: semi-permanent
 delivered_by: u-fe-developer
 timestamp: 2026-04-08T17:00:00Z
