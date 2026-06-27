@@ -1,128 +1,124 @@
-# Siegard — System Documentation
+# Siegard Code 2.0 — Documentation
 
-> Documentação do motor de orquestração entregue em `dist/.claude/`.
-> Referencie os arquivos-fonte em `dist/.claude/` para detalhes de implementação.
+> End-user documentation for the orchestration engine shipped in `dist/.claude/`.
+> For implementation detail, reference the source artifacts under `dist/.claude/` directly.
 
 ---
 
 ## What this system is
 
-O siegard é uma **engine de orquestração event-sourced para workflows multi-fase no Claude Code**. Funciona como um Temporal ou Airflow nativo para sub-agentes Claude: coordena execução paralela de workers, mantém estado auditável via log append-only, garante retry automático, detecção de crash e recovery.
+Siegard Code is an **event-sourced orchestration engine for multi-phase workflows in Claude Code**. It coordinates parallel sub-agent execution, keeps auditable state in a single append-only log, and provides automatic retry, crash detection, and recovery — a native Temporal/Airflow for Claude workers.
 
-O sistema é **agnóstico de domínio na infraestrutura** — a lógica de negócio (SDD, Dev, QA, Test) fica em skills de fase plugáveis. O núcleo nunca muda; o comportamento muda pelos skills.
+The core is **domain-agnostic**: business logic (SDD, Dev, Review, Test) lives in pluggable phase-rule skills. The engine never changes; behavior changes through skills.
 
----
-
-## Documentação
-
-| Documento | Conteúdo |
-|-----------|---------|
-| [flow.md](flow.md) | **Resumo: fases, rotas e gates.** Como o siegard funciona e como o workflow é gerido. Comece por aqui. |
-| [agents.md](agents.md) | Todos os agentes: meta-orchestrator, phase orchestrators, workers |
-| [workflow.md](workflow.md) | Engine de workflow: event sourcing, fases, dispatch loop, circuit breaker |
-| [specs.md](specs.md) | Como specs são gerenciadas: pipeline SDD, validações, artefatos |
-| [artifacts.md](artifacts.md) | Catálogo completo de artefatos criados pelo sistema |
+The model in one line: **the log is the truth — everything else is derived.**
 
 ---
 
-## Estrutura do dist
+## Core concepts
+
+| Concept | Meaning |
+|---|---|
+| **Event log** | A single append-only, hash-chained `log.jsonl` per workflow. The only source of truth. |
+| **Derived state** | Current phase, task status, retries — all computed by reducing the log on each read (P1, P2, P12). |
+| **Phase** | A stage of the workflow with its own orchestrator, workers, and deterministic exit criteria. |
+| **Meta-orchestrator** | The single entry point. Routes by phase, runs one phase per invocation. Zero domain logic. |
+| **Phase orchestrator** | Owns one phase: dispatches workers, evaluates exit criteria, requests transitions. |
+| **Worker** | A least-privilege sub-agent that performs one task type and returns a structured artifact. |
+| **Exit criteria** | Testable Python scripts (not prompts) that gate every phase transition (P11). |
+
+---
+
+## Phases
+
+```
+sdd  →  dev  →  review  →  test
+```
+
+| Phase | Orchestrator | Purpose |
+|---|---|---|
+| **SDD** | `orchestrator-sdd` | Write, review, and validate specifications; produce the approved handoff manifest |
+| **Dev** | `orchestrator-dev` | Plan the backlog and implement task contracts |
+| **Review** | `orchestrator-review` | QA, architecture, and security review of deliveries |
+| **Test** | `orchestrator-test` | Verification and final completion |
+
+Canonical phase specification: [`../extras/phases.md`](../extras/phases.md).
+
+---
+
+## Documentation index
+
+> **Status:** this index reflects the v2 architecture. The individual documents below will be authored in upcoming tasks. Until then, the source artifacts in `dist/.claude/` are authoritative.
+
+| Document | Contents | Status |
+|---|---|---|
+| `flow.md` | **Start here.** Phases, routing, gates, and the re-invocation loop end to end | Planned |
+| `installation.md` | Manual copy into `<target>/.claude/`, `verify_install.py`, project configuration | Planned |
+| `commands.md` | Slash commands — `/u-orchestrator` and the rest | Planned |
+| `agents.md` | Meta-orchestrator, the four phase orchestrators, and all workers | Planned |
+| `workflow.md` | Engine internals: event sourcing, log reduction, dispatch loop, idempotency | Planned |
+| `specs.md` | The SDD pipeline: spec writing, validation, handoff manifest | Planned |
+| `artifacts.md` | Catalog of every artifact the system produces and its lifecycle | Planned |
+| `resilience.md` | Failure modes, retry, circuit breaker, DLQ, crash recovery, escalation codes | Planned |
+| `invariants.md` | The 12 architecture invariants (P1–P12) and how they are enforced | Planned |
+
+---
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `/u-orchestrator` | **Primary entry point** — start, resume, or advance a workflow from its event log |
+| `/u-spec` | Create or evolve technical specifications (SDD phase entry) |
+| `/u-dev` | Run an implementation session |
+| `/u-improve` | Capture a structured improvement request |
+| `/u-reverse-spec` | Generate specs from existing source code |
+| `/u-fe-validate` | Frontend code audit against design-system rules |
+| `/u-cleanup` | Garbage-collect orphaned blobs, worktrees, and stale sessions |
+| `/u-doc-cleanup` | Documentation hygiene pass |
+
+---
+
+## The `dist/.claude/` layout
 
 ```
 dist/.claude/
 ├── agents/
-│   ├── orchestrator.md              # Meta-orchestrator (Tier 1)
+│   ├── orchestrator.md              # Meta-orchestrator (entry point, routes only)
 │   ├── orchestrator-sdd.md          # Phase orchestrator — Spec & Design
 │   ├── orchestrator-dev.md          # Phase orchestrator — Implementation
 │   ├── orchestrator-review.md       # Phase orchestrator — QA & Approval
 │   ├── orchestrator-test.md         # Phase orchestrator — Testing
 │   ├── spec/                        # Spec phase workers
 │   ├── dev/                         # Dev phase workers
-│   └── reverse-spec/                # Reverse engineering workers
-├── skills/
-│   ├── orch-log/                    # append, read, verify (log interface)
-│   ├── orch-state/                  # reduce, snapshot, current_phase (state)
-│   ├── orch-report/                 # emit (worker→log, guard-railed)
-│   ├── orch-infra/                  # preflight, integrity, circuit check
-│   ├── phase-sdd-rules/             # SDD worker routing + exit criteria
-│   ├── phase-dev-rules/             # Dev worker routing + exit criteria
-│   ├── phase-review-rules/          # Review worker routing + exit criteria
-│   ├── phase-test-rules/            # Test worker routing + exit criteria
-│   ├── u-spec-*/                    # Spec domain skills
-│   ├── u-be-*/                      # Backend domain skills
-│   ├── u-fe-*/                      # Frontend domain skills
-│   ├── u-shared-templates/          # Schemas e templates compartilhados
-│   └── u-spec-templates/            # Templates de spec (.spec.md, .back.md, etc.)
-├── commands/
-│   ├── u-spec.md                    # Entry point: inicia/retoma SDD phase
-│   ├── u-dev.md                     # Entry point: inicia Dev phase
-│   ├── u-orchestrator.md            # Entry point: retoma/avança qualquer workflow
-│   ├── u-improve.md                 # Entry point: melhoria incremental
-│   ├── u-reverse-spec.md            # Entry point: reverse engineering
-│   ├── u-fe-validate.md             # Utilitário: validação avulsa de frontend
-│   ├── u-cleanup.md                 # Utilitário: GC/purge de runtime .orch
-│   └── u-doc-cleanup.md             # Utilitário: remoção de ruído em docs
-├── hooks/
-│   ├── on_subagent_stop.py          # Sintetiza task_failed para workers que morrem silenciosamente
-│   └── on_stop.py                   # Persiste métricas ao encerrar sessão
-├── scripts/
-│   ├── dlq_triage.py                # Categoriza tarefas em DLQ por tipo de falha
-│   └── evaluate_circuit.py          # Avalia estado do circuit breaker
-├── lib/
-│   └── orch_core.py                 # Biblioteca compartilhada: toda lógica de estado
-└── ESCALATION_CODES.md              # Referência de todos os códigos de escalação
+│   └── reverse-spec/                # Reverse-engineering workers
+├── commands/                        # Slash command entry points
+├── hooks/                           # on_subagent_stop.py, on_stop.py (quality gates)
+├── lib/                             # orch_core.py, sm_runner.py, minimal_yaml.py (stdlib only)
+├── scripts/                         # preflight, circuit breaker, DLQ triage, GC, monitor, …
+├── skills/                          # orch-* engine skills, phase-*-rules, u-* worker skills
+├── settings.json                    # Claude Code settings for target projects
+├── siegard-manifest.json            # Versioned inventory (SHA-256 per file)
+└── ESCALATION_CODES.md              # Escalation code reference
 ```
+
+Runtime state lives in the **target project** under `.orch/sessions/<workflow_id>/`, centered on the append-only `log.jsonl`.
 
 ---
 
-## Arquitetura em dois tiers
+## Architecture invariants (P1–P12)
 
-```
-Usuário
-  │
-  ▼
-[orchestrator]          ← Tier 1: Meta-Orchestrator
-  │ spawna
-  ▼
-[orchestrator-sdd]      ← Tier 2: Phase Orchestrators
-[orchestrator-dev]
-[orchestrator-review]
-[orchestrator-test]
-  │ spawnam
-  ▼
-[workers]               ← Executores concretos
-  │ emitem via orch-report
-  ▼
-[log.jsonl]             ← Fonte única de verdade
-```
-
-**Regra de ouro:** todo estado é derivado do log. Nenhum componente guarda estado próprio. Crash e recovery são triviais — releia o log.
-
----
-
-## Fases do workflow padrão
-
-| Fase | Order | Objetivo | Human gate? |
-|------|-------|---------|-------------|
-| `sdd` | 1 | Escrever e validar todas as specs técnicas | Sim — confirmação antes do primeiro dispatch |
-| `dev` | 2 | Implementar os task contracts do backlog | Não — totalmente autônomo |
-| `review` | 3 | QA das entregas; aprovação humana antes de avançar | Sim — aprovação obrigatória |
-| `test` | 4 | Executar testes; escalate se falhas | Condicional — só se testes falham |
-
----
-
-## Invariantes arquiteturais (nunca violar)
-
-| # | Invariante |
-|---|------------|
-| P1 | Log é a verdade. Todo estado é derivado. |
-| P2 | Orchestrator é função pura do log. Mesmo log → mesmas decisões. |
-| P3 | Append-only. Correções via novos eventos. Nunca edita eventos. |
-| P4 | Idempotência por `(task_id, attempt, event_type)`. Duplicatas rejeitadas. |
-| P5 | Ordenação determinística. Ties resolvidos por `(priority desc, seq asc)`. |
-| P6 | Least privilege. Workers têm apenas `orch-report`. |
-| P7 | Robustez via hooks. Garantias críticas fora do LLM. |
-| P8 | Evidência obrigatória. Toda decisão cita os seqs que a justificam. |
-| P9 | Uma fase por task. Cada task tem exatamente um campo `phase`. |
-| P10 | Transições auditáveis. `phase_transitioned` é sempre um evento. |
-| P11 | Exit criteria em código testável, não em prompts. |
-| P12 | Current phase derivada do log. Nunca armazenada fora dele. |
+| # | Invariant |
+|---|---|
+| P1 | Log is the truth. All state is derived. |
+| P2 | Orchestrator is a pure function of the log. No own state. |
+| P3 | Append-only. Corrections via new events. |
+| P4 | Idempotency by key `(task_id, attempt, event_type)`. |
+| P5 | Deterministic ordering. Ties resolved by `(priority, seq)`. |
+| P6 | Least privilege. Workers have only the tools they need. |
+| P7 | Robustness via hooks. Critical guarantees outside the LLM. |
+| P8 | Evidence mandatory. Every decision cites the events that justify it. |
+| P9 | Every task belongs to exactly one phase. |
+| P10 | Phase transition is an auditable event. |
+| P11 | Exit criteria in testable code, not in prompts. |
+| P12 | Current phase is derived from the log, not stored outside it. |
