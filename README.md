@@ -5,100 +5,119 @@
 <h1 align="center">Siegard Code</h1>
 
 <p align="center">
-  <strong>Autonomous agent infrastructure for Claude Code that ships features — from spec to delivery.</strong>
+  <strong>An event-driven orchestration engine for Claude Code — it runs multi-phase development workflows from specification to tested delivery, autonomously and fully traceable.</strong>
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/version-1.1.0-blue?style=flat-square" alt="Version" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/version-2.0.0-blue?style=flat-square" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License" /></a>
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/works%20with-Claude%20Code-7C3AED?style=flat-square" alt="Works with Claude Code" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/agents-18-orange?style=flat-square" alt="18 Agents" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/skills-24+-yellow?style=flat-square" alt="24+ Skills" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/phases-4-orange?style=flat-square" alt="4 Phases" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/deps-stdlib%20only-yellow?style=flat-square" alt="Zero external dependencies" /></a>
 </p>
 
 <p align="center">
-  <em>18 specialized agents. 3 coordinated teams. One command to orchestrate them all.</em>
+  <em>One log. One entry point. Four phases. Every decision derived from events.</em>
 </p>
 
 ---
 
-Most AI coding tools help you write code. **Siegard Code** manages the entire development lifecycle — it writes specifications, plans backlogs, implements features, runs QA, and delivers tested code. All autonomously, all traceable, all through Claude Code.
+Most AI coding tools chain prompts by hand and lose track between sessions. **Siegard Code 2.0** replaces that with an **event-sourced orchestration engine**: a single append-only log is the source of truth, the orchestrator is a pure function of that log, and every task, retry, failure, and phase transition is an auditable event.
 
-You describe what you want. Siegard's agents handle the rest: the Spec team writes and validates technical specifications, the Dev team plans and implements Task Contracts with automated QA, and the Reverse Spec team can even document existing codebases. Every step produces artifacts. Every decision is logged. Every quality gate has teeth.
+You start a workflow with one command. The meta-orchestrator reads the current phase from the log, runs infrastructure checks, and dispatches the right phase orchestrator — which spawns specialized workers, validates their output against deterministic exit criteria, and advances. Crash mid-run? Re-run the same command — state is reconstructed from the log, not from memory.
 
 > **This is not a product.** It is the agent infrastructure you install into your own projects.
 
 ---
 
-## Why Siegard Code?
+## Why Siegard Code 2.0
 
 | Pain point | How Siegard solves it |
 |---|---|
-| "AI writes code but ignores the spec" | Specs are the **single source of truth** — agents trace every line back to a Task Contract |
-| "No one documents anything" | Documentation is a **byproduct**, not a chore — specs, backlogs, QA reports generated automatically |
-| "Context gets lost between sessions" | **Session resume protocol** reconstructs state from disk artifacts — pick up where you left off |
-| "AI makes changes I didn't ask for" | **Human confirmation required** at every major gate — nothing ships without your approval |
-| "Testing is always an afterthought" | **QA is built into the pipeline** — every Task Contract passes through automated gate validation before delivery |
-| "Design tokens drift across components" | **25 hard design system rules** (R1–R25) + Tailwind v4 token naming enforced by `/u-fe-validate` |
+| "Prompt chaining is fragile and manual" | **Event-driven dispatch** replaces manual chaining — the engine creates, retries, and completes tasks automatically |
+| "State gets lost between sessions" | **The log is the truth.** All state is *derived* — re-run the command and the orchestrator reconstructs exactly where it stopped |
+| "I can't tell why the AI did something" | **Evidence mandatory** — every transition cites the `seq` of the event that justified it (invariant P8) |
+| "Failures hang the whole run" | **Retry + circuit breaker + DLQ** — failing tasks are isolated, the breaker trips on repeated failures, dead tasks land in a triageable queue |
+| "Workers can do anything" | **Least privilege (P6)** — each worker is granted only the tools it needs |
+| "Quality is an afterthought" | **Exit criteria live in testable Python**, not in prompts (P11) — a phase cannot advance until its criteria scripts pass |
 
 ---
 
-## Architecture
+## How it works
 
-Three agent teams work in sequence, connected by formal handoff protocols:
+Siegard runs a workflow through up to four phases. Each phase has a dedicated orchestrator, a set of workers, and deterministic exit criteria evaluated by Python scripts.
+
+```
+sdd  →  dev  →  review  →  test
+```
 
 ```mermaid
 graph TB
-    subgraph INPUT["Input"]
-        REQ[Requirement / Existing code]
+    USER([/u-orchestrator workflow_id])
+    USER --> META
+
+    subgraph ENGINE["Orchestration Engine"]
+        META[Meta-Orchestrator<br/>routes only · zero domain logic]
+        LOG[(log.jsonl<br/>append-only · hash-chained)]
+        META <-->|reduce / append| LOG
     end
 
-    subgraph RSPEC["Reverse Spec Team · 3 agents"]
-        RSORC[Orchestrator]
-        RSANA[Analyzer]
-        RSWRT[Writer]
-        RSORC --> RSANA --> RSWRT
+    META -->|spawn one phase orchestrator| SDD
+    META --> DEV
+    META --> REVIEW
+    META --> TEST
+
+    subgraph PHASES["Phase Orchestrators"]
+        SDD[orchestrator-sdd<br/>Spec & Design]
+        DEV[orchestrator-dev<br/>Implementation]
+        REVIEW[orchestrator-review<br/>QA & Approval]
+        TEST[orchestrator-test<br/>Verification]
     end
 
-    subgraph SPEC["Spec Team · 6 agents"]
-        SPORC[Orchestrator]
-        SPWRT[Spec Writer]
-        SPREV[Spec Reviewer]
-        SPBCK[Back Spec Agent]
-        SPFRT[Front Spec Agent]
-        SPVAL[Spec Validator]
-        SPORC --> SPWRT --> SPREV
-        SPREV -->|APPROVED| SPBCK
-        SPREV -->|REJECTED| SPWRT
-        SPBCK --> SPVAL
-        SPVAL -->|all back.md valid| SPFRT
-        SPFRT --> SPVAL
-        SPVAL -->|INVALID| SPBCK
-        SPVAL -->|INVALID front| SPFRT
-    end
+    SDD -.->|task_created| W1[spec workers]
+    DEV -.->|task_created| W2[be/fe planners + developers]
+    REVIEW -.->|task_created| W3[qa · architecture · security]
+    TEST -.->|task_created| W4[test workers]
 
-    subgraph DEV["Dev Team · 9 agents"]
-        DVORC[Orchestrator-Dev]
-        PLAN[Planner]
-        UIAG[UI Agent]
-        DEVAG[Developer]
-        QAAG[QA & Docs]
-        DVORC --> PLAN --> UIAG --> DEVAG --> QAAG
-        QAAG -->|REJECTED| DEVAG
-    end
-
-    REQ --> RSORC
-    REQ --> SPORC
-    RSWRT -->|specs · draft| SPORC
-    SPVAL -->|VALID| DVORC
-    QAAG -->|APPROVED| FIN[Delivery]
+    SDD -->|phase_complete| META
+    DEV --> META
+    REVIEW --> META
+    TEST -->|completed| DONE([Tested delivery])
 ```
 
-| Team | Agents | What it does |
-|---|---|---|
-| **Spec** | Orchestrator, Writer, Reviewer, Back Spec, Front Spec, Validator | Writes, reviews, and validates technical specifications |
-| **Dev** | Orchestrator, Planner, UI Agent, Developer, QA & Docs (×2 FE/BE) | Plans backlogs, implements code, runs QA |
-| **Reverse Spec** | Orchestrator, Analyzer, Writer | Reverse-engineers specs from existing code |
+| Phase | Orchestrator | Human interaction | Output |
+|---|---|---|---|
+| **SDD** — Specification & Design | `orchestrator-sdd` | Confirmation gate (handoff manifest) | `handoff-manifest.yaml` + validated specs |
+| **Dev** — Implementation | `orchestrator-dev` | Autonomous (no gates) | Delivery artifacts (`qa_ready: true`) |
+| **Review** — QA & Approval | `orchestrator-review` | Approves/rejects QA verdicts | QA verdict files per task |
+| **Test** — Verification | `orchestrator-test` | Semi-autonomous | Test results & final completion |
+
+The **meta-orchestrator** runs exactly **one phase per invocation** (bounding context growth) and returns `phase_advanced`; the entry command re-invokes it until the workflow reaches `completed`, `escalated`, `blocked`, or `error`.
+
+> Canonical specification: [`extras/phases.md`](extras/phases.md).
+
+---
+
+## Architecture invariants
+
+These are enforced across every artifact in the engine:
+
+| # | Invariant |
+|---|---|
+| P1 | Log is the truth. All state is derived. |
+| P2 | Orchestrator is a pure function of the log. No own state. |
+| P3 | Append-only. Corrections via new events. |
+| P4 | Idempotency by key `(task_id, attempt, event_type)`. |
+| P5 | Deterministic ordering. Ties resolved by `(priority, seq)`. |
+| P6 | Least privilege. Workers have only the tools they need. |
+| P7 | Robustness via hooks. Critical guarantees outside the LLM. |
+| P8 | Evidence mandatory. Every decision cites the events that justify it. |
+| P9 | Every task belongs to exactly one phase. |
+| P10 | Phase transition is an auditable event. |
+| P11 | Exit criteria in testable code, not in prompts. |
+| P12 | Current phase is derived from the log, not stored outside it. |
+
+> **Orchestrators require the foreground.** The meta-orchestrator and phase orchestrators depend on Bash for infra checks, log appends, and worker dispatch. Only read-only leaf workers may run in the background. The engine fails fast with `E_NO_BASH` if Bash is unavailable.
 
 ---
 
@@ -107,210 +126,141 @@ graph TB
 ### Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- Python 3.10+ (standard library only — **zero external dependencies**)
 
 ### Install into your project
 
-Copy the contents of `dist/.claude/` into your project's `.claude/` directory:
+There is no install script — installation is a manual copy. Copy the contents of `dist/.claude/` into your project's `.claude/` directory:
 
 ```bash
 cp -r dist/.claude/. /path/to/your-project/.claude/
 ```
 
-The copy adds and replaces Siegard-managed files; it does not touch unmanaged files already in your project's `.claude/` directory.
+The copy adds and replaces Siegard-managed files; it does not touch unmanaged files already in your project's `.claude/`.
 
-Then check installation integrity (from your project root):
+Then verify installation integrity (from your project root):
 
 ```bash
 python3 .claude/scripts/verify_install.py
 ```
 
-It compares every installed file against `.claude/siegard-manifest.json` and reports drift (modified, missing, or leftover files) as a JSON envelope — exit code `0` means the installation is intact.
+It compares every installed file against `.claude/siegard-manifest.json` (SHA-256 per file) and reports drift as a JSON envelope — exit code `0` means the installation is intact. Because no tooling runs at install time, every artifact is **self-describing**: provenance, version, and usage context travel inside the copied files.
 
-### Configure your project
-
-Add these fields to your project's `CLAUDE.md`:
-
-```markdown
-domain: backend           # or "frontend" — determines which pipeline runs
-stack: Node.js, Express   # your tech stack (agents adapt, not hardcode)
-specs_dir: docs/specs     # where specifications live
-
-design_system:            # frontend projects only
-  path: docs/design-system
-  token_prefix: color     # Tailwind v4 @theme token prefix
-```
-
-### Run your first command
+### Run a workflow
 
 ```bash
-# Create a specification from requirements
-/u-spec docs/specs
-
-# Implement from approved specs
-/u-dev docs/specs my-feature
+# Start, resume, or advance a workflow by id
+/u-orchestrator fix-kpi-card
 ```
 
-That's it. The orchestrator detects the mode, activates the right agents, and guides you through every step.
+The orchestrator reads the current phase from `.orch/sessions/<workflow_id>/`, runs preflight checks, enters the correct phase, and drives it to completion — re-invoking itself across phases automatically. If the workflow is new, it initializes the phase declarations; if it already exists, it resumes from the log.
 
 ---
 
 ## Commands
 
-Slash commands cover the entire development lifecycle:
-
-| Command | Purpose | Output |
-|---|---|---|
-| `/u-spec` | Create or evolve technical specifications | Approved specs in `{SPECS_DIR}` |
-| `/u-dev` | Run a development session (plan → implement → QA) | Tested, delivered code |
-| `/u-reverse-spec` | Generate specs from existing source code | Draft specs for review |
-| `/u-spec-triage` | Fix spec validation errors incrementally | Corrected specs |
-| `/u-improve` | Capture an improvement request | `improve_scope` YAML block |
-| `/u-bug-report` | Capture a structured bug report | `bug##.md` |
-| `/u-fe-validate` | Frontend code audit against design system rules | `fe-validate-{run_id}.yaml` |
-| `/u-fe-review` | Ad-hoc frontend review with optional `--fix` mode | Structured findings |
-| `/u-ui-design` | Design amplification and anti-pattern detection | Validated UI spec |
-
-### Workflows
-
-```
-Feature (full):       /u-spec  →  /u-dev  →  /u-fe-validate
-Quick improvement:    /u-improve  →  /u-dev
-Bug fix:              /u-bug-report  →  /u-dev
-Reverse + evolve:     /u-reverse-spec  →  /u-spec  →  /u-dev
-Frontend audit:       /u-fe-validate  (standalone, any codebase)
-```
-
----
-
-## Key Features
-
-### Task Contract Model
-Every feature starts with a **Task Contract** — a formally structured execution unit that defines `task_contract` metadata (id, type, scope, dependencies) and an `execution_contract` (exec_type, input references, constraints, output schema, validation criteria). User Stories are not valid execution units. All agent-to-agent communication uses structured YAML envelopes validated against 13 YAML schemas.
-
-### Spec-First Development
-Specifications are the single source of truth — `openapi.yaml`, use cases, business rules, state machines, `feature.spec.md` (§1–§9 prescriptive structure), and `component.spec.md` (formal props contracts). No code is written without an approved spec.
-
-### Automatic Mode Detection
-The orchestrator reads your project state and selects the right mode: **Spec-first**, **Improve**, **Bug**, **Resume**, or **Reverse-eng review**. No flags, no configuration — it just works.
-
-### Frontend & Backend Pipelines
-One command, two pipelines. The `domain:` field in your `CLAUDE.md` routes to the correct agents. Frontend gets a UI Agent that gates on `ui-spec-gate { ready_for_development: true }` before developer proceeds; backend gets DI / DTO / pagination pattern validation.
-
-### Design System Enforcement (R1–R25)
-25 hard constraints cover spacing, typography, color usage (60-30-10 rule), border radius, touch targets, animations, z-index, and empty states. All tokens use Tailwind v4 `@theme` naming — inline `var(--token)` styles are a code quality violation. The `/u-fe-validate` skill checks 72 rules and produces a structured verdict (`approved` / `approved_with_caveats` / `rejected`).
-
-### Quality Gates with Escalation
-- **Spec Reviewer**: Max 3 rejection cycles before human escalation
-- **Spec Validator**: Cross-reference validation with coverage reports
-- **Developer Agent**: Emits `blocked-report.yaml` if execution_contract is missing; opens CR (`type: spec_gap`) on spec gaps
-- **QA Agent**: Runs `/u-fe-validate`; test-gate with max 3 rework rounds
-- Nothing passes silently — every gate produces artifacts
-
-### Token-Efficient Context Management
-- **Context mounting**: Each agent receives only what it needs
-- **Short mode**: Reactivations use ~2K tokens instead of ~15K
-- **Triage mode**: Process 5–10 errors per session, not 20+ at once
-
-### Session Resilience
-Interrupted? Run the same command again. The orchestrator reads its log file, reconstructs state from disk artifacts, and resumes from the exact stopping point.
-
----
-
-## Project Structure
-
-```
-your-project/
-├── .claude/
-│   ├── agents/
-│   │   ├── dev/                  # Dev team (FE + BE agents + protocols)
-│   │   ├── spec/                 # Spec team (6 agents + protocols)
-│   │   └── reverse-spec/         # Reverse Spec team (3 agents + protocols)
-│   ├── commands/                 # Slash commands
-│   └── skills/                   # 24+ reusable skill libraries
-│       └── u-shared-templates/   # 13 YAML schemas + examples
-├── CLAUDE.md                     # Your project configuration
-├── {SPECS_DIR}/
-│   ├── _global/                  # Shared: conventions, error codes, glossary
-│   ├── domains/{domain}/         # Backend: openapi.yaml + spec.md + back.md
-│   └── front/
-│       ├── feature.spec.md       # §1–§9 prescriptive feature spec
-│       ├── component.spec.md     # Props contract + states + events
-│       ├── decisions.md          # Session-scoped architectural trade-offs
-│       └── design-system/        # Tailwind v4 tokens, R1–R25 rules
-└── {SESSIONS_DIR}/
-    └── {SESSION}/                # Current session working directory
-        ├── backlog.md            # Planned Task Contracts
-        ├── TC-XX-delivery.md     # Delivery artifacts
-        ├── TC-XX-qa.md           # QA reports (fe-validate-{run_id}.yaml)
-        └── log-orchestrator-dev.md
-```
-
----
-
-## Action Guide
-
-| I want to... | Commands |
+| Command | Purpose |
 |---|---|
-| Build a complete feature | `/u-spec` → `/u-dev` → `/u-fe-validate` |
-| Implement from existing specs | `/u-dev` |
-| Fix a bug | `/u-bug-report` → `/u-dev` |
-| Apply a quick improvement | `/u-improve` → `/u-dev` |
-| Document existing code | `/u-reverse-spec` → `/u-spec` |
-| Fix spec validation errors | `/u-spec-triage` |
-| Report a spec problem from dev | `/u-spec` (reverse feedback mode) |
-| Audit frontend code quality | `/u-fe-validate` |
-| Review and fix frontend issues | `/u-fe-review --fix` |
-| Validate visual design decisions | `/u-ui-design` |
+| `/u-orchestrator` | **Primary entry point** — start, resume, or advance any workflow from its event log |
+| `/u-spec` | Create or evolve technical specifications (SDD phase entry) |
+| `/u-dev` | Run an implementation session |
+| `/u-improve` | Capture a structured improvement request |
+| `/u-reverse-spec` | Generate specs from existing source code |
+| `/u-fe-validate` | Frontend code audit against design-system rules |
+| `/u-cleanup` | Garbage-collect orphaned blobs, worktrees, and stale sessions |
+| `/u-doc-cleanup` | Documentation hygiene pass |
+
+---
+
+## Operations & Resilience
+
+The engine ships operational tooling so workflows survive real-world failure modes:
+
+| Concern | Tool |
+|---|---|
+| Pre-run environment check | `scripts/preflight.py` (enforces `bash_available`) |
+| Repeated-failure protection | `scripts/circuit_breaker.py` + `scripts/evaluate_circuit.py` |
+| Dead-letter triage | `scripts/dlq_triage.py` |
+| Stuck / stale detection | `scripts/check_stale.py`, `scripts/monitor.py`, `scripts/fix_stuck_improve.py` |
+| Retry sequence recovery | `scripts/recover_retry_sequence.py` |
+| Escalation handling | `scripts/respond_escalation.py` (see [`ESCALATION_CODES.md`](dist/.claude/ESCALATION_CODES.md)) |
+| Run-status classification | `scripts/classify_run_status.py` |
+| Garbage collection | `scripts/gc_orphan_blobs.py`, `scripts/gc_worktrees.py`, `scripts/purge.py` |
+| Quality gates (outside the LLM) | `hooks/on_subagent_stop.py`, `hooks/on_stop.py` |
+
+The shared engine library lives in `dist/.claude/lib/` (`orch_core.py`, `sm_runner.py`, `minimal_yaml.py`) — pure stdlib, no external dependencies.
+
+---
+
+## Project Structure (this repository)
+
+```
+siegard-code/
+├── dist/.claude/          # Published artifacts — copied into <target>/.claude/
+│   ├── agents/            # orchestrator.md + phase orchestrators + workers (dev/spec/reverse-spec)
+│   ├── commands/          # /u-orchestrator and other entry-point commands
+│   ├── hooks/             # on_subagent_stop.py, on_stop.py
+│   ├── lib/               # orch_core.py, sm_runner.py, minimal_yaml.py (stdlib only)
+│   ├── scripts/           # preflight, circuit breaker, DLQ triage, GC, monitor, …
+│   ├── skills/            # orch-* engine skills, phase-*-rules, u-* worker skills
+│   ├── settings.json      # Claude Code settings for target projects
+│   ├── siegard-manifest.json  # versioned inventory (SHA-256 per file)
+│   └── ESCALATION_CODES.md
+├── docs-en/               # End-user documentation (English)
+├── docs/                  # Internal diagrams and flow maps
+├── extras/                # Reference specs — canonical: phases.md
+├── tests/                 # Validates dist/ artifacts (must pass before release)
+├── skills-lock.json       # Locks external skill versions (e.g. ccc)
+└── assets/                # Logo and images
+```
+
+### Installed layout (in your project)
+
+A workflow's runtime state lives under `.orch/sessions/<workflow_id>/`, with the append-only `log.jsonl` at its core. All other state (current phase, task status, retries) is **derived** from that log on every read.
+
+---
+
+## Release & versioning
+
+This repository ships **versioned distributions**:
+
+1. Change artifacts in `dist/` and pass the test suite (`tests/`)
+2. `python3 gen_manifest.py [--version X.Y.Z]` — regenerates the manifest
+3. Suite green again → commit → tag `vX.Y.Z`
+
+> Any commit that touches `dist/` **must** regenerate the manifest — `tests/test_manifest_integrity.py` fails on a stale one.
+
+External skills (e.g. `ccc`) are pinned in `skills-lock.json` by source hash, analogous to a package lock.
 
 ---
 
 ## Documentation
 
-| Section | Description |
-|---|---|
-| [Overview](docs-en/01-overview/README.md) | Architecture, concepts, glossary |
-| [Installation](docs-en/02-installation/README.md) | Setup and project configuration |
-| [Commands](docs-en/03-commands/README.md) | All commands in detail |
-| [Agent Teams](docs-en/04-teams/README.md) | Spec, Dev, and Reverse Spec teams |
-| [Execution Flows](docs-en/05-flows/README.md) | Step-by-step workflows |
-| [Protocols](docs-en/06-protocols/README.md) | On-demand behavioral protocols |
-| [Skills](docs-en/07-skills/README.md) | 24+ reusable skill libraries |
-| [Artifacts](docs-en/08-artifacts/README.md) | Generated files and lifecycle |
-| [Estimates](docs-en/09-estimates/README.md) | Token and time budgets |
-| [Resilience](docs-en/10-resilience/README.md) | Failure scenarios and recovery |
-| [Reference](docs-en/11-reference/README.md) | Cheat sheet and action guide |
+Full end-user documentation lives in **[`docs-en/`](docs-en/README.md)**. The index there maps the v2 architecture; individual guides (flow, installation, agents, workflow engine, specs, artifacts, resilience, invariants) are being authored in upcoming tasks. Until then, the source artifacts under `dist/.claude/` and [`extras/phases.md`](extras/phases.md) are authoritative.
 
 ---
 
-## Estimates
+## What's new in 2.0
 
-| Mode | Tokens | Time | Scope |
-|---|---|---|---|
-| New spec (full pipeline) | ~19K | 7–12 min | Per domain |
-| Fast-track spec change | ~11K | 4–7 min | Per change |
-| Development (spec-first) | ~14K | 10–18 min | Per Task Contract |
-| Development (improve) | ~10K | 8–13 min | Per Task Contract |
-| Frontend validation (`/u-fe-validate`) | ~4K | 2–4 min | Per file glob |
-| Triage | ~3K | 1–2 min | Per item |
+Version 2.0 is an architectural reset. The v1.x model of three agent teams chained by hand is replaced by a **phase-agnostic, event-sourced orchestration engine**:
 
-## What's in v1.1
-
-| Category | v1.0 | v1.1 | Delta |
-|---|---|---|---|
-| Skills | 18 | 24 | +6 |
-| SDD Templates | 8 | 13 | +5 |
-| YAML Schemas | 0 | 13 | +13 |
-| Design system rules | ~40 informal | 150+ (R1–R25 hard) | +110 |
-| Content lines | ~80k | ~118k | +47% |
+| | v1.x | v2.0 |
+|---|---|---|
+| Coordination | Manual prompt chaining between teams | Event-driven dispatch from an append-only log |
+| State | Reconstructed from scattered artifacts | Derived from a single hash-chained `log.jsonl` |
+| Structure | 3 fixed teams (Spec / Dev / Reverse) | 4 composable phases (`sdd → dev → review → test`) |
+| Entry point | Per-workflow commands | One meta-orchestrator (`/u-orchestrator`) that routes by phase |
+| Reliability | Quality gates in prompts | Exit criteria + retry + circuit breaker + DLQ in testable Python |
+| Guarantees | Convention | 12 enforced architecture invariants (P1–P12) |
 
 ---
 
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution details.
+Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution details.
 
 ---
 
 <p align="center">
-  <strong>Siegard Code</strong> — Because shipping features shouldn't mean losing control.
+  <strong>Siegard Code 2.0</strong> — The log is the truth. Everything else is derived.
 </p>
