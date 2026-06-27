@@ -1,6 +1,6 @@
 ---
 name: u-worker-compliance
-description: Static analysis validator for worker and orchestrator .md protocol compliance (rules W01–W06 — terminal events, canonical phase values, register_worker arguments, emit.py skill declaration). Run scripts/check_worker.py on .claude/agents/**/*.md before promoting to dist/ and as a review-phase gate. Not user-invocable — reviewers and CI run the script directly.
+description: Static analysis validator for worker and orchestrator .md protocol compliance (rules W01–W06 — terminal events, canonical phase values, register_worker arguments, emit.py skill declaration). Run scripts/check_worker.py on .claude/agents/**/*.md before promoting to dist/; enforced in CI by tests/test_worker_compliance_gate.py, which fails the suite on any W01–W06 violation. Not user-invocable — reviewers and CI run the script directly.
 user-invocable: false
 allowed-tools: Bash(python3 *), Read, Glob, Grep
 ---

@@ -10,6 +10,7 @@ tools:
   - Glob
   - Grep
 skills:
+  - orch-report
   - u-spec-triage
 ---
 
@@ -57,9 +58,27 @@ Schema and field semantics defined in the skill's Output section.
 
 ## Terminal events
 
-Emit exactly one terminal event per invocation:
-- `task_completed` with `{"phase":"sdd","artifacts":[".orch/sessions/{workflow_id}/triage.json"], ...}` on success
-- `task_failed` with `{"phase":"sdd","reason":"<code>","retryable":<bool>}` on blocking error
+Emit exactly one terminal event per invocation, using the `task_id` and `attempt` received in the activation prompt.
+
+**On success:**
+
+```bash
+python3 .claude/skills/orch-report/scripts/emit.py \
+  --kind completed \
+  --task-id "<task_id>" \
+  --attempt <attempt> \
+  --data '{"phase": "sdd", "summary": "triage classified <workflow_type>", "artifacts": [".orch/sessions/{workflow_id}/triage.json"]}'
+```
+
+**On blocking error:**
+
+```bash
+python3 .claude/skills/orch-report/scripts/emit.py \
+  --kind failed \
+  --task-id "<task_id>" \
+  --attempt <attempt> \
+  --data '{"phase": "sdd", "reason": "<code>", "retryable": <true|false>}'
+```
 
 Without a terminal event, the orchestrator's check `sdd_triage.status == "completed"` fails and the SDD phase blocks.
 

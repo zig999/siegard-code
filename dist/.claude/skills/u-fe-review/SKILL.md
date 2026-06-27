@@ -2,6 +2,7 @@
 name: u-fe-review
 description: Ad-hoc audit of a frontend component or feature against all quality rules (code quality, design system, visual design, anti-patterns, accessibility). User-invocable. Produces a structured report; with --fix flag also applies mechanical auto-fixes.
 user-invocable: true
+allowed-tools: Read, Grep, Glob, Edit
 dependencies:
   required:
     - skill: u-fe-standards
