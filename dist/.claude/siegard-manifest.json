@@ -4,7 +4,7 @@
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-27T15:51:13Z",
+  "generated_at": "2026-06-27T16:08:15Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -485,7 +485,7 @@
     },
     {
       "path": "skills/u-be-review/SKILL.md",
-      "sha256": "9470bbe489bcbeee17323c7d760252a1bc9e7f1a76095c04816c66a838fd6582"
+      "sha256": "46cd8ee22e6e27ffc25e9bbe7852eaa2e574bb6d2c7b833f9def61b9cffe92e9"
     },
     {
       "path": "skills/u-be-standards/SKILL.md",
@@ -505,7 +505,7 @@
     },
     {
       "path": "skills/u-be-templates/qa-report.md",
-      "sha256": "15bbb8d63e42f1bc4392ac2adf29182b15286ee33fbf2138788bc2dd73acc84a"
+      "sha256": "35d99a1c15f5a799d63eb83453b682c3262f3d80824cb596afbbae6716a3580e"
     },
     {
       "path": "skills/u-be-templates/session-decisions.md",
@@ -533,7 +533,7 @@
     },
     {
       "path": "skills/u-fe-review/SKILL.md",
-      "sha256": "dbed2a2b945269d4820782d71cae60dc6bc2e9dcc1e475c2dd94c3045de19c16"
+      "sha256": "88047223f47736d91047c604f74eed164cefcb1fb047ad36626a477e4fe278d7"
     },
     {
       "path": "skills/u-fe-standards/SKILL.md",
@@ -553,7 +553,7 @@
     },
     {
       "path": "skills/u-fe-templates/qa-report.md",
-      "sha256": "b30d95b082a1885e7f9bc2d272c1342dbeb7444e8993500d061b9956090d524f"
+      "sha256": "267f83385a84072fb1c36c134cc3afa4d75f3dd815bd6e87cd65fae820972e4e"
     },
     {
       "path": "skills/u-fe-templates/session-decisions.md",
