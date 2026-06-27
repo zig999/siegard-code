@@ -5,7 +5,7 @@
 # Consumed by: Orchestrator-Dev (triage) → Spec Team (resolution) → backlog update
 
 id: CR-XX                            # sequential, project-scoped (CR-01, CR-02, ...)
-reported_by: ""                      # agent name: u-fe-developer | u-be-developer | u-fe-qa-docs | u-be-qa-docs | u-fe-orchestrator-core | u-be-orchestrator-core
+reported_by: ""                      # agent name: u-fe-developer | u-be-developer | u-fe-qa | u-be-qa | u-fe-orchestrator-core | u-be-orchestrator-core
 timestamp: ""                        # ISO-8601: YYYY-MM-DDTHH:MM:SSZ
 
 task: TC-XX                          # Task Contract where the issue was discovered; null for Epic-level CRs

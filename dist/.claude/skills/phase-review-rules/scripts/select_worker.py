@@ -19,7 +19,7 @@ import json
 import sys
 
 PHASE_NAME = "review"
-DEFAULT_WORKER = "u-be-qa-docs"
+DEFAULT_WORKER = "u-be-qa"
 VALID_STACKS = {"be", "fe", "fullstack"}
 
 # Stack-independent types: same worker regardless of stack.
@@ -30,9 +30,9 @@ _STACK_INDEPENDENT: dict[str, str] = {
 
 # Stack-dependent: (task_type, stack) → worker.
 _STACK_ROUTING: dict[tuple[str, str], str] = {
-    ("qa", "be"):        "u-be-qa-docs",
-    ("qa", "fe"):        "u-fe-qa-docs",
-    ("qa", "fullstack"): "u-be-qa-docs",
+    ("qa", "be"):        "u-be-qa",
+    ("qa", "fe"):        "u-fe-qa",
+    ("qa", "fullstack"): "u-be-qa",
 }
 
 

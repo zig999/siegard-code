@@ -125,7 +125,7 @@ class TestBeI02PaginationLocation:
         "skills/u-be-development/SKILL.md",
         "agents/dev/u-be-developer.md",
         "skills/u-be-standards/SKILL.md",
-        "agents/dev/u-be-qa-docs.md",
+        "agents/dev/u-be-qa.md",
     ])
     def test_guard40_references_pagination_ts(self, rel):
         content = _read(rel)
@@ -136,7 +136,7 @@ class TestBeI03NullListRule:
     @pytest.mark.parametrize("rel,shapes", [
         ("skills/u-be-standards/SKILL.md", ["{ data: [], pagination:", "{ data: [], meta: { page, limit"]),
         ("agents/dev/u-be-developer.md", ["{ data: [], pagination:"]),
-        ("agents/dev/u-be-qa-docs.md", ["{ data: [], pagination:"]),
+        ("agents/dev/u-be-qa.md", ["{ data: [], pagination:"]),
     ])
     def test_guard41_no_ad_hoc_pagination_shapes(self, rel, shapes):
         content = _read(rel)
@@ -149,7 +149,7 @@ class TestBeI04DiPattern:
         ("skills/u-be-development/SKILL.md", "manual-factory"),
         ("skills/u-be-standards/SKILL.md", "manual-factory"),
         ("agents/dev/u-be-developer.md", "## Dependency Injection"),
-        ("agents/dev/u-be-qa-docs.md", "## Dependency Injection"),
+        ("agents/dev/u-be-qa.md", "## Dependency Injection"),
     ])
     def test_guard42_di_requirements(self, rel, needle):
         content = _read(rel)
@@ -167,7 +167,7 @@ class TestBeI05DtoPattern:
         assert "req.body" in content, "GUARD-43b: prohibition rule must exist"
 
     def test_guard43c_be_qa_docs_req_body_as_high_bug(self):
-        content = _read("agents/dev/u-be-qa-docs.md")
+        content = _read("agents/dev/u-be-qa.md")
         assert "req.body" in content, "GUARD-43c: req.body security risk must be in QA"
         assert "High" in content, "GUARD-43c: must classify req.body as High bug"
 

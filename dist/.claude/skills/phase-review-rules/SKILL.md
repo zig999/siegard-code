@@ -23,7 +23,7 @@ Every script returns a JSON object to stdout and exits 0 on success or 1 on erro
 | `phase_name` | `review` |
 | `order` | `3` |
 | `required` | `true` |
-| `worker_default` | `u-be-qa-docs` |
+| `worker_default` | `u-be-qa` |
 
 ---
 
@@ -35,12 +35,12 @@ Stack is resolved by `orchestrator-review` from the dev-phase handoff context.
 
 | task.type | stack | worker subagent_type |
 |-----------|-------|----------------------|
-| `qa` | `be` | `u-be-qa-docs` |
-| `qa` | `fe` | `u-fe-qa-docs` |
-| `qa` | `fullstack` | `u-be-qa-docs` |
+| `qa` | `be` | `u-be-qa` |
+| `qa` | `fe` | `u-fe-qa` |
+| `qa` | `fullstack` | `u-be-qa` |
 | `architecture-review` | any | `u-architecture-reviewer` |
 | `security-review` | any | `u-security-reviewer` |
-| `*` (default) | any | `u-be-qa-docs` |
+| `*` (default) | any | `u-be-qa` |
 
 ---
 
@@ -59,7 +59,7 @@ python3 .claude/skills/phase-review-rules/scripts/select_worker.py \
 ### Output (exit 0)
 
 ```json
-{"worker": "u-be-qa-docs", "task_type": "qa", "stack": "be", "phase": "review"}
+{"worker": "u-be-qa", "task_type": "qa", "stack": "be", "phase": "review"}
 ```
 
 ### Error (exit 1, stderr)
@@ -256,7 +256,7 @@ python3 .claude/skills/phase-review-rules/scripts/check_micro_unanimous_clean.py
 
 ## scripts/run_suite.py · scripts/parse_test_output.py · scripts/attribute_failures.py · scripts/check_suite_freshness.py
 
-Shared suite-run protocol consumed by `orchestrator-review.md` Step 3.5 (gated by `SHARED_SUITE_RUN=1`). Together they execute build + tests once per round, parse vitest/jest JSON, and produce per-TC attribution slices that QA workers consume in shared mode (`Suite run mode: shared` in the activation prompt). See Step 3.5 of orchestrator-review.md for the call sequence and §"Embedded skills" / Phase 1 §1.S of the QA worker agents (`u-be-qa-docs.md`, `u-fe-qa-docs.md`) for the worker contract.
+Shared suite-run protocol consumed by `orchestrator-review.md` Step 3.5 (gated by `SHARED_SUITE_RUN=1`). Together they execute build + tests once per round, parse vitest/jest JSON, and produce per-TC attribution slices that QA workers consume in shared mode (`Suite run mode: shared` in the activation prompt). See Step 3.5 of orchestrator-review.md for the call sequence and §"Embedded skills" / Phase 1 §1.S of the QA worker agents (`u-be-qa.md`, `u-fe-qa.md`) for the worker contract.
 
 ---
 

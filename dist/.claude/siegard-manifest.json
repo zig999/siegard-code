@@ -4,7 +4,7 @@
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-27T16:42:53Z",
+  "generated_at": "2026-06-27T16:46:39Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -24,8 +24,8 @@
       "sha256": "47b5f43c10fdf16cfd4aaafc0836cdd144ca27ea1b3a894e5c0f2ea603eb40e9"
     },
     {
-      "path": "agents/dev/u-be-qa-docs.md",
-      "sha256": "9b58efa6f9aa98cccb46a6ab308a04363ba478e88e036262bf959d50c82987c6"
+      "path": "agents/dev/u-be-qa.md",
+      "sha256": "8c7ba9b7f37f72ccae07b8302fc50677932d9ac2d7b16dff819a53b92d233c62"
     },
     {
       "path": "agents/dev/u-fe-developer.md",
@@ -36,8 +36,8 @@
       "sha256": "fa0779b1a829a0598450761b4bbb48de6c354ec0f46eed1b027712a958c143a2"
     },
     {
-      "path": "agents/dev/u-fe-qa-docs.md",
-      "sha256": "03c8d2251a29a7bc4a5c653b89c85f98ddbeb66f400b6b716110ec26a7ef88a6"
+      "path": "agents/dev/u-fe-qa.md",
+      "sha256": "6e3b136d28576d9984dd06e40f474c0b657229c7a877c05ad619f7aa79f43664"
     },
     {
       "path": "agents/dev/u-fe-spec-writer.md",
@@ -61,7 +61,7 @@
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "bbc9b18d2371d90a32a4e9cc5f9c08eac13e6f47a7bb882c8f10e777ded56a34"
+      "sha256": "185a2faf0bc95044f6045e4b225e05f9d58a4fca7933bb1e4ed63f69979f8177"
     },
     {
       "path": "agents/orchestrator-sdd.md",
@@ -69,7 +69,7 @@
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "fb906be73d9be1f02e3cce92aa8c0c237412db8f232593f3613e1db1d5643902"
+      "sha256": "9dd3d999530e1047e60aac0aa30b0ea4210cc56b667aae0eb17914de7faacb62"
     },
     {
       "path": "agents/orchestrator.md",
@@ -353,7 +353,7 @@
     },
     {
       "path": "skills/phase-review-rules/SKILL.md",
-      "sha256": "d1e75ebe1e941a00c7182c736dd0bb25e6166d8d97522aef38a571f2bb010435"
+      "sha256": "7627f6fde415e2b586bcba797ecaa589b8610640d1d534b4e612bd9015f0c7f1"
     },
     {
       "path": "skills/phase-review-rules/exit-criteria.json",
@@ -409,7 +409,7 @@
     },
     {
       "path": "skills/phase-review-rules/scripts/select_worker.py",
-      "sha256": "03720d7c8f6b48dc680aa2360994dd2090562463c37847ccacb098a0fa68930a"
+      "sha256": "aee3b1527b604e27f2f408b2560996683e76e7e4e4ff8e4b56c8d66bd1f33208"
     },
     {
       "path": "skills/phase-sdd-rules/SKILL.md",
@@ -493,7 +493,7 @@
     },
     {
       "path": "skills/u-be-templates/SKILL.md",
-      "sha256": "719aaed1db4a1644a8fb1eb57b9647f3d8fec8cd209b46e33fd1d7f5a7519bc9"
+      "sha256": "73f91be746c0127da1d583c841e296073418c3832c0553fc064c9494747d9be8"
     },
     {
       "path": "skills/u-be-templates/delivery.md",
@@ -541,7 +541,7 @@
     },
     {
       "path": "skills/u-fe-templates/SKILL.md",
-      "sha256": "d6ce0d460807027aefb2cf0155b0c867ce00e2e39d854f4e66cc873a33a1ae72"
+      "sha256": "0d2de3027a04962265466824d392374b2974fe0ab03c55e30849d8ca0d3b8e66"
     },
     {
       "path": "skills/u-fe-templates/backend-pending-items.md",
@@ -617,7 +617,7 @@
     },
     {
       "path": "skills/u-shared-templates/blocked-report.schema.yaml",
-      "sha256": "fab627a186e5cc91c09d8211a48d25b462c23d36aebfc6ae3c259037e27d2cf3"
+      "sha256": "1dc81977e534104b1fd484c06cc3c6bfa37ad4a418ae9293e8daa10732112140"
     },
     {
       "path": "skills/u-shared-templates/blocked-report.yaml",
@@ -641,15 +641,15 @@
     },
     {
       "path": "skills/u-shared-templates/cr-template.yaml",
-      "sha256": "5a193ee0da0d6493b0835ed593f985b27656afb0498b223730988eae754cad80"
+      "sha256": "c72cbb2a359e4e5fc73b78379d18f6f3364ea5fe1e4e71dc2170446a7eb63ed2"
     },
     {
       "path": "skills/u-shared-templates/cr.schema.yaml",
-      "sha256": "882b6fd58eb37a304fd186f161abd5f23501636ef182d0a8901909b212998155"
+      "sha256": "b851f3dab8fcfa5d0cdc0ee3aa616998d3b43854ae4e764c5fbf81b93a68e687"
     },
     {
       "path": "skills/u-shared-templates/delivery-gate.md",
-      "sha256": "35d3f667763907ecc60840de1172abc38d8a99a68d38985fce85e09a28b8a0f6"
+      "sha256": "c24b21fe48a7a179bb45ceaed80a7a708999407be1d0299a6385abd34f79a484"
     },
     {
       "path": "skills/u-shared-templates/delivery.schema.yaml",
@@ -705,7 +705,7 @@
     },
     {
       "path": "skills/u-shared-templates/qa-verdict.schema.yaml",
-      "sha256": "0c30e8d04fc268dad1daf1130d7e0c7d3b838f8b8c96a64a3391904a2c1f9d8f"
+      "sha256": "8d342f73ecdc220060f34694b9683932bb3563fc282bd34189f832e7c060c746"
     },
     {
       "path": "skills/u-shared-templates/security-finding.schema.yaml",

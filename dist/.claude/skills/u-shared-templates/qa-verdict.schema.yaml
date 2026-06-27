@@ -1,5 +1,5 @@
 # qa-verdict.md schema
-# Artifact produced by QA workers (u-be-qa-docs, u-fe-qa-docs) and consumed by:
+# Artifact produced by QA workers (u-be-qa, u-fe-qa) and consumed by:
 #   - check_all_qa_verdicts_approved.py   (exit criterion: all_qa_verdicts_approved)
 #   - check_no_open_critical_findings.py  (exit criterion: no_open_critical_findings)
 #   - check_documentation_verified.py     (exit criterion: documentation_verified)

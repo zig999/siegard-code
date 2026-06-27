@@ -30,8 +30,8 @@ properties:
     enum:
       - u-fe-developer
       - u-be-developer
-      - u-fe-qa-docs
-      - u-be-qa-docs
+      - u-fe-qa
+      - u-be-qa
       - u-fe-orchestrator-core
       - u-be-orchestrator-core
   timestamp:

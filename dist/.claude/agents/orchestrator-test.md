@@ -294,7 +294,7 @@ fi
 ```
 
 Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.
-Example: if the output is `{"worker":"u-be-qa-docs","task_type":"test-run","stack":"be","phase":"test"}`, then `selected_worker = "u-be-qa-docs"`.
+Example: if the output is `{"worker":"u-be-qa","task_type":"test-run","stack":"be","phase":"test"}`, then `selected_worker = "u-be-qa"`.
 If the output contains `"status":"error"`, skip this task and emit `task_failed` with `reason: "select_worker_failed", retryable: false`.
 
 #### 4.2 — Claim batch
@@ -321,7 +321,7 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='test', stack='<sta
 
 Emit all Agent tool calls in a **single response turn**.
 
-- `subagent_type`: `selected_worker` (the `worker` field extracted from `select_worker.py` JSON output in Step 4.1 — a plain string like `"u-be-qa-docs"`, not the full JSON)
+- `subagent_type`: `selected_worker` (the `worker` field extracted from `select_worker.py` JSON output in Step 4.1 — a plain string like `"u-be-qa"`, not the full JSON)
 - `prompt` (substitute ALL `<...>` placeholders with actual values before sending — do not pass literals):
   ```
   Execute your test suite run task.

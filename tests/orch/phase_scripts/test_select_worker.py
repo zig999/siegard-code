@@ -108,16 +108,16 @@ class TestSddSelectWorker:
 class TestReviewSelectWorker:
     def test_qa_be(self):
         r = run_select(REVIEW_SCRIPTS["select_worker"], "qa", "be")
-        assert r["worker"] == "u-be-qa-docs"
+        assert r["worker"] == "u-be-qa"
         assert r["phase"] == "review"
 
     def test_qa_fe(self):
         r = run_select(REVIEW_SCRIPTS["select_worker"], "qa", "fe")
-        assert r["worker"] == "u-fe-qa-docs"
+        assert r["worker"] == "u-fe-qa"
 
     def test_qa_fullstack_falls_back_to_be(self):
         r = run_select(REVIEW_SCRIPTS["select_worker"], "qa", "fullstack")
-        assert r["worker"] == "u-be-qa-docs"
+        assert r["worker"] == "u-be-qa"
 
     def test_architecture_review_is_stack_independent(self):
         r_be = run_select(REVIEW_SCRIPTS["select_worker"], "architecture-review", "be")

@@ -122,7 +122,7 @@ runtime_dir: {e.g. docs/runtime/logs}
 test_command: {e.g. npx vitest run --reporter=json}
 build_command: {e.g. npm run build}   # empty string "" skips build step
 
-# --- Backend config (u-be-developer, u-be-qa-docs, u-be-standards) ---
+# --- Backend config (u-be-developer, u-be-qa, u-be-standards) ---
 # All fields are optional. Agents use stated defaults when absent.
 di_strategy: {manual-factory|nestjs-ioc|inversify}       # default: manual-factory
 validation_library: {zod|joi|class-validator}             # default: zod
@@ -138,7 +138,7 @@ pagination:
 # Missing = orchestrator decides (typically 2 for fullstack, 1 for single-domain).
 max_parallel_workers: {e.g. 2}
 
-# --- Frontend config (u-fe-developer, u-fe-qa-docs) ---
+# --- Frontend config (u-fe-developer, u-fe-qa) ---
 i18n: {true|false}   # default: false — enables hardcoded-string checks in QA
 accessibility: {none|wcag-2.1-aa|wcag-2.2-aa}   # default: none — recommended baseline: wcag-2.2-aa
 
@@ -208,7 +208,7 @@ design_system:
   backlog.md              #   Epics and Task Contracts (written by u-planning)
   log-orchestrator-dev.md #   Dev orchestrator session log
   tc-XX-delivery.md       #   Developer delivery (includes delivery-gate YAML block)
-  us-XX-qa.md             #   QA report (written by u-be-qa-docs / u-fe-qa-docs)
+  us-XX-qa.md             #   QA report (written by u-be-qa / u-fe-qa)
   session-decisions.md    #   Cross-session persistent decisions
   triage.json             #   Written by u-spec-triage; read by orchestrator-sdd for dispatch routing
   improve-scope.json      #   Written by /u-improve; read by orchestrator-dev for improve flow

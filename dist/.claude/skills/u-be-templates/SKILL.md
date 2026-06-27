@@ -1,6 +1,6 @@
 ---
 name: u-be-templates
-description: Canonical artifact templates for backend dev-phase workers — delivery.md, qa-report.md, session-decisions.md, infra-pending-items.md. Consumed by u-be-developer and u-be-qa-docs, which read templates by path when producing per-task artifacts. Resource bundle — no scripts. Not user-invocable.
+description: Canonical artifact templates for backend dev-phase workers — delivery.md, qa-report.md, session-decisions.md, infra-pending-items.md. Consumed by u-be-developer and u-be-qa, which read templates by path when producing per-task artifacts. Resource bundle — no scripts. Not user-invocable.
 user-invocable: false
 ---
 
@@ -13,7 +13,7 @@ Resource bundle: backend dev-phase artifact templates. Templates are read by pat
 | Template | Produces | Primary consumer |
 |---|---|---|
 | `delivery.md` | per-task delivery report | u-be-developer |
-| `qa-report.md` | per-task QA report | u-be-qa-docs |
+| `qa-report.md` | per-task QA report | u-be-qa |
 | `session-decisions.md` | session decision record | u-be-developer |
 | `infra-pending-items.md` | pending infrastructure items handoff | u-be-developer |
 

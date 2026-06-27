@@ -25,7 +25,7 @@ properties:
         description: "Format: BLK-YYYYMMDD-HHMMSS"
       reported_by:
         type: string
-        description: "e.g. u-spec-validator | u-spec-reviewer | u-fe-qa-docs"
+        description: "e.g. u-spec-validator | u-spec-reviewer | u-fe-qa"
       artifact:
         type: string
         description: "e.g. domains/auth/openapi.yaml | TC-12"

@@ -292,7 +292,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"review","deps":[],"tier":"standard","type":"qa","spec":"<delivery_path>","stack":"<stack>","qa_mode":"<mode>","concurrency_hint":<int>,"qa_mode_rationale":"<rationale>"}'
 ```
 
-The `stack` field is carried forward from the handoff-manifest (detected in Step 2) so that `select_worker.py` can route QA tasks to the correct agent (`u-be-qa-docs` vs `u-fe-qa-docs`) without replaying the log. The `qa_mode` and `concurrency_hint` fields are read by Step 4.1 (dynamic concurrency) and Step 5.0 (auto-approval gate).
+The `stack` field is carried forward from the handoff-manifest (detected in Step 2) so that `select_worker.py` can route QA tasks to the correct agent (`u-be-qa` vs `u-fe-qa`) without replaying the log. The `qa_mode` and `concurrency_hint` fields are read by Step 4.1 (dynamic concurrency) and Step 5.0 (auto-approval gate).
 
 If no dev completed tasks have delivery artifacts:
 ```json
@@ -306,7 +306,7 @@ Re-read state after all `task_created` events.
 
 ### Step 3.5 — Shared suite run (opt-in: `SHARED_SUITE_RUN=1`)
 
-> Activated only when env `SHARED_SUITE_RUN=1` is exported. Otherwise this entire step is skipped — workers run build + tests locally (legacy Phase 1 in `u-be-qa-docs.md` / `u-fe-qa-docs.md`).
+> Activated only when env `SHARED_SUITE_RUN=1` is exported. Otherwise this entire step is skipped — workers run build + tests locally (legacy Phase 1 in `u-be-qa.md` / `u-fe-qa.md`).
 
 > The shared suite run executes the project's build and test commands ONCE per round and writes a structured manifest with per-TC failure attribution. QA workers consume the attribution slice instead of re-running the suite. Project's `CLAUDE.md` must declare a test command that emits JSON (e.g., `npx vitest run --reporter=json`, `npx jest --json`) for attribution to work; otherwise the parser falls back to degraded mode and workers must fall back to legacy.
 
@@ -536,7 +536,7 @@ python3 .claude/skills/phase-review-rules/scripts/select_worker.py \
 ```
 
 Parse the JSON output and extract the `worker` field. Store it as `selected_worker` for this task.
-Example: if the output is `{"worker":"u-be-qa-docs","task_type":"qa","stack":"be","phase":"review"}`, then `selected_worker = "u-be-qa-docs"`.
+Example: if the output is `{"worker":"u-be-qa","task_type":"qa","stack":"be","phase":"review"}`, then `selected_worker = "u-be-qa"`.
 If the output contains `"status":"error"`, skip this task and emit `task_failed` with `reason: "select_worker_failed", retryable: false`.
 
 #### 4.2 — Emit dispatch_decision and claim batch
@@ -614,7 +614,7 @@ If estimate exceeds threshold, record the mitigation (split, summarize, or accep
 
 Emit all Agent tool calls in a **single response turn**.
 
-- `subagent_type`: `selected_worker` (the `worker` field extracted from `select_worker.py` JSON output in Step 4.1 — a plain string like `"u-be-qa-docs"`, not the full JSON)
+- `subagent_type`: `selected_worker` (the `worker` field extracted from `select_worker.py` JSON output in Step 4.1 — a plain string like `"u-be-qa"`, not the full JSON)
 - `prompt` (substitute ALL `<...>` placeholders with actual values before sending — do not pass literals):
   ```
   Execute your QA review task.
