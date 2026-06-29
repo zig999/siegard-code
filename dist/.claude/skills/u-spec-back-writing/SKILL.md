@@ -24,6 +24,7 @@ user-invocable: false
 - [ ] Error code registered in global catalog for each BR violation
 - [ ] Edge cases documented for each BR (what happens at boundary values)
 - [ ] Conflict resolution documented when two BRs can contradict each other
+- [ ] If a domain concept supports multiple implementations that may grow (e.g., payment method, notification channel, export format), extension strategy declared: `polymorphism` | `strategy pattern` | `closed enum + factory`. If closed (variants will not grow), say so explicitly. Never left implicit.
 
 ## State Machine Checklist
 

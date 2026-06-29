@@ -217,6 +217,59 @@ Prefer per-layer commits when the Task Contract spans multiple modules (e.g., fi
 - Each module/domain must be self-contained — avoid circular dependencies
 - Clearly separate configuration, bootstrap, and application logic
 
+### SRP within a service class
+
+A service class that methods reference two or more distinct noun domains violates SRP — even if it lives in the correct layer.
+
+| Signal | Action |
+|---|---|
+| Method names come from two different noun domains (e.g., `UserService` handling profile + notification + billing) | Split into one service per domain concept |
+| A service method orchestrates unrelated concerns sequentially | Extract each concern into a named helper or a separate service |
+| A service grows past ~5 public methods and they cluster into two natural groups | Split by cluster |
+
+Correct form: one domain concept per service class. Adding a responsibility = new service class, not a new method on the existing one.
+
+### OCP at feature design time
+
+When a domain concept has type variants, choose the implementation strategy before writing code.
+
+| Condition | Implementation |
+|---|---|
+| Spec or `CLAUDE.md` declares the concept extensible (e.g., `PaymentMethod: extensible via Strategy`) | Define an interface + one class per variant + factory function. Adding a variant = new file only, no existing file modified |
+| Variants are closed and will not grow (spec declares `closed enum`) | A single `switch` or lookup map is correct — do not over-engineer |
+| No declaration in spec | Ask before implementing. Default to closed enum if variants are domain-stable (e.g., `OrderStatus`); default to Strategy if variants are integration points (e.g., payment gateways, storage backends) |
+
+Violation to avoid: `switch(type)` inside a service method when the spec declares the concept extensible — this forces a modification to existing code every time a new variant is added.
+
+### ISP at interface design time
+
+Before finalizing an interface with 4+ methods, list its known consumers and verify whether each consumer needs every method.
+
+| Result of the check | Action |
+|---|---|
+| All consumers use all methods | Interface is cohesive — keep it as-is |
+| Consumers use disjoint subsets | Split into one interface per consumer need |
+| One consumer uses all methods; others use a subset | Extract a narrower interface for the subset consumers; full interface remains for the primary consumer |
+
+**Enterprise examples:**
+
+```
+IUserRepository (findByEmail, create, findAll, count, update, delete)
+  → AuthService needs: findByEmail, create
+  → AdminService needs: findAll, count, update, delete
+  → ReportService needs: findAll, count
+  ✗ All consumers import the full interface for methods they never call
+  ✓ Split: IAuthUserRepository, IAdminUserRepository, IReportUserRepository
+
+IPaymentGateway (charge, refund, getStatus)
+  → CheckoutService needs: charge, refund
+  → ReconciliationService needs: charge, getStatus
+  → All consumers use overlapping methods
+  ✓ Interface is cohesive — keep it
+```
+
+Apply this check when defining new interfaces, not retroactively on existing ones unless refactoring is already in scope.
+
 ---
 
 ## Dependency Injection

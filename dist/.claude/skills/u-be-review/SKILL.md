@@ -135,15 +135,17 @@ Each file is audited only against the rules that fit its class (production sourc
 
 ### 9. Engineering principles — `CR-SOL`  (source: u-be-development § Engineering principles, § Architecture)
 
-> **Heuristic** — these are judgment calls. Flag only clear violations; when in doubt, stay silent.
+**Structurally detectable — flag when present (CR-SOL-01, CR-SOL-05):** these patterns are identifiable from the file content without contextual judgment. Do not apply "stay silent when in doubt" to these rules.
 
-| Rule ID | What to detect | Severity |
-|---|---|---|
-| CR-SOL-01 | A class/module spanning more than one layer's responsibility — e.g. a service issuing HTTP responses, or calling the DB driver directly instead of through a repository (SRP / separation of concerns) | Medium |
-| CR-SOL-02 | A domain entity importing a framework or external library (entities must stay framework-free) | Medium |
-| CR-SOL-03 | Circular dependency between modules (A imports B and B imports A, directly or transitively across the scanned set) | Medium |
-| CR-SOL-04 | Deep or concrete inheritance where composition fits (`extends` a concrete domain class, or 3+ inheritance levels) | Low |
-| CR-SOL-05 | A large `switch`/`if-else` on a type field, repeated across files, that should be polymorphism (OCP) | Low |
+**Heuristic — flag only clear violations, stay silent when in doubt (CR-SOL-02, CR-SOL-03, CR-SOL-04):** these require contextual judgment. Only flag when the violation is unambiguous.
+
+| Rule ID | Detection mode | What to detect | Severity |
+|---|---|---|---|
+| CR-SOL-01 | Structural | A class/module spanning more than one layer's responsibility — e.g. a service issuing HTTP responses, or calling the DB driver directly instead of through a repository (SRP / separation of concerns) | Medium |
+| CR-SOL-02 | Heuristic | A domain entity importing a framework or external library (entities must stay framework-free) | Medium |
+| CR-SOL-03 | Heuristic | Circular dependency between modules (A imports B and B imports A, directly or transitively across the scanned set) | Medium |
+| CR-SOL-04 | Heuristic | Deep or concrete inheritance where composition fits (`extends` a concrete domain class, or 3+ inheritance levels) | Low |
+| CR-SOL-05 | Structural | A large `switch`/`if-else` on a type field, repeated across files, that should be polymorphism (OCP) | Low |
 
 ### 10. Folder structure & placement — `CR-FLD`  (source: u-be-development § Default folder structure, § Naming conventions)
 

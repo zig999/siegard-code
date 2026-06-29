@@ -4,7 +4,7 @@
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-27T16:46:39Z",
+  "generated_at": "2026-06-29T16:58:58Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -477,7 +477,7 @@
     },
     {
       "path": "skills/u-be-development/SKILL.md",
-      "sha256": "4e43c02e87acf5becb335be779716cf0b73752218f484f6230fc6f4b5e7333d3"
+      "sha256": "c1a14254d094a9bb9b6519af277a7e536b96a0ef5133fb308e3ecab6f62f8308"
     },
     {
       "path": "skills/u-be-qa-docs/SKILL.md",
@@ -485,7 +485,7 @@
     },
     {
       "path": "skills/u-be-review/SKILL.md",
-      "sha256": "46cd8ee22e6e27ffc25e9bbe7852eaa2e574bb6d2c7b833f9def61b9cffe92e9"
+      "sha256": "fc52dc3bccaa8eb0d223fae6f27efec572908a284a0c03896836726eab415de4"
     },
     {
       "path": "skills/u-be-standards/SKILL.md",
@@ -749,7 +749,7 @@
     },
     {
       "path": "skills/u-spec-back-writing/SKILL.md",
-      "sha256": "2f26db350dd17e3f0407ea351033c897615a2f641b28cdd61145b29a143d6465"
+      "sha256": "9df9bd5d5e977a38d01e5cad050ac6ba44af6fa0ece718e863df88972420439e"
     },
     {
       "path": "skills/u-spec-globals/SKILL.md",
