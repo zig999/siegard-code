@@ -176,6 +176,34 @@ class TestWorkflowIsolation:
         except orch_core.IllegalTransition:
             pass
 
+    def test_task_bound_attribution_survives_interleaving(self, orch_dir, make_event):
+        """5-a: a task_created carrying data.workflow_id binds the task; later
+        events for it attribute to that workflow even after another workflow's
+        phase_declared interleaves (positional fallback would misattribute)."""
+        import orch_core
+        _enter_phase(make_event, phase="dev", wf="A")
+        make_event("task_created", task_id="dev_A_tc_001", data={
+            "phase": "dev", "tier": "standard", "type": "impl", "spec": "s",
+            "deps": [], "workflow_id": "A",
+        })
+        _claim(make_event, "dev_A_tc_001", 1)
+        # Workflow B declares BEFORE A's task completes (interleaving).
+        _enter_phase(make_event, phase="dev", wf="B")
+        _complete(make_event, "dev_A_tc_001", 1)   # positionally under B, bound to A
+
+        state_a = orch_core.reduce_workflow("A")
+        assert state_a.tasks["dev_A_tc_001"].status == orch_core.TaskStatus.COMPLETED
+        state_b = orch_core.reduce_workflow("B")
+        assert "dev_A_tc_001" not in state_b.tasks
+
+    def test_positional_fallback_preserved_for_legacy_logs(self, orch_dir, make_event):
+        """Task events without data.workflow_id and no binding keep the legacy
+        positional attribution (events between phase_declared boundaries)."""
+        import orch_core
+        self._seed_two_workflows(make_event)
+        state = orch_core.reduce_workflow("A")
+        assert "tA" in state.tasks and "tB" not in state.tasks
+
     def test_cli_workflow_flag_isolates(self, orch_dir, make_event):
         self._seed_two_workflows(make_event)
         env = {**os.environ, "ORCH_PROJECT_DIR": str(orch_dir)}

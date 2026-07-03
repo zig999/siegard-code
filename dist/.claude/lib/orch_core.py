@@ -2019,12 +2019,18 @@ def reduce_workflow(workflow_id: str) -> OrchState:
     """Reduce ONLY the events belonging to `workflow_id` into a fresh OrchState.
 
     Workflow isolation (strategy B — derive on reduction; compatible with existing
-    logs, no back-fill). Task events do NOT carry `workflow_id`; association is
-    derived exactly as monitor.py's `_collect_workflow_index` does: every event
-    between one `phase_declared` and the next is attributed to the workflow named
-    by that `phase_declared`. An explicit `data.workflow_id` on an event always
-    wins over the tracked boundary. Events before any `phase_declared` (no tracked
-    workflow and no embedded id) belong to no workflow and are skipped.
+    logs, no back-fill). Attribution precedence per event:
+
+    1. explicit `data.workflow_id` on the event (always wins);
+    2. the task→workflow map: a `task_created` whose resolved workflow is known
+       binds its task_id, and every later event for that task follows the
+       binding — robust against interleaved workflows (5-a: orchestrators stamp
+       `workflow_id` into every task_created they emit);
+    3. positional fallback (legacy logs): every event between one
+       `phase_declared` and the next belongs to the workflow it declared.
+
+    Events before any `phase_declared` with no embedded id and no task binding
+    belong to no workflow and are skipped.
 
     Why this exists: `reduce_all` is global — a single illegal transition in ONE
     workflow aborts reduction for the WHOLE log, stalling every other workflow.
@@ -2042,6 +2048,7 @@ def reduce_workflow(workflow_id: str) -> OrchState:
     """
     state = OrchState()
     current_wf: str | None = None
+    task_wf: dict[str, str] = {}
     for event in read_events():
         data = event.data
         if is_blob_ref(data):
@@ -2053,7 +2060,20 @@ def reduce_workflow(workflow_id: str) -> OrchState:
             declared = data.get("workflow_id")
             if declared:
                 current_wf = declared
-        event_wf = data.get("workflow_id") or current_wf
+        event_wf = (
+            data.get("workflow_id")
+            or (task_wf.get(event.task_id) if event.task_id else None)
+            or current_wf
+        )
+        # Bind the task to its resolved workflow at creation time so later
+        # events for it (claimed/progress/terminal) attribute correctly even
+        # when another workflow's phase_declared interleaves in between.
+        if (
+            event.event_type == EventType.TASK_CREATED.value
+            and event.task_id
+            and event_wf
+        ):
+            task_wf[event.task_id] = event_wf
         if event_wf == workflow_id:
             apply_event(state, event)
     return state
@@ -3478,6 +3498,9 @@ DEV_TRANSITIONS: dict[tuple[str, Callable[[dict], bool]], Action] = {
             "dispatch_parallel_planners",
             {
                 "workers": ["u-be-planner", "u-fe-planner"],
+                # tasks are namespaced by the DevStateMachine wrapper when the
+                # orchestrator passes workflow_id (5-a); this static value is the
+                # legacy fallback for callers that do not.
                 "tasks": ["dev_planning_be", "dev_planning_fe"],
             },
         ),
@@ -3521,6 +3544,19 @@ class DevStateMachine(StateMachine):
 
     def evaluate(self, state: str, inputs: dict) -> Action:
         action = super().evaluate(state, inputs)
+        # 5-a: task IDs are namespaced by workflow so a shared log never
+        # collides across workflows (dev_{workflow_id}_planning_be/fe).
+        # Without workflow_id in inputs the legacy un-namespaced ids stand.
+        if state == "dispatch_planner_stack" and action.name == "dispatch_parallel_planners":
+            wf = inputs.get("workflow_id")
+            if wf:
+                return Action(
+                    "dispatch_parallel_planners",
+                    {
+                        "workers": action.params["workers"],
+                        "tasks": [f"dev_{wf}_planning_be", f"dev_{wf}_planning_fe"],
+                    },
+                )
         if state == "dispatch_planner_stack" and action.name == "error":
             return Action(
                 "error",

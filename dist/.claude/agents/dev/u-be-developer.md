@@ -29,9 +29,9 @@ Resolved from the activation prompt set by the Orchestrator-Dev:
 
 | Variable | Source | Example |
 |---|---|---|
-| `ORCH_TASK_ID` | Activation prompt | `dev_tc_001` |
+| `ORCH_TASK_ID` | Activation prompt | `dev_myflow_tc_001` (opaque, workflow-namespaced) |
 | `ORCH_ATTEMPT` | Activation prompt | `1` |
-| `ORCH_WORKER_ID` | Activation prompt | `u-be-developer-dev_tc_001` |
+| `ORCH_WORKER_ID` | Activation prompt | `u-be-developer-dev_myflow_tc_001` |
 | `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
 | `SPECS_DIR` | Activation prompt | `specs` |
 | `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |

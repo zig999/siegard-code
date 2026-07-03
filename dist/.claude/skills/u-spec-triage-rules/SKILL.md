@@ -433,7 +433,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
 ```
 
 > `task_completed` is mandatory. Without it, the orchestrator's terminal check returns
-> `sdd_triage.status != "completed"` and blocks the entire SDD phase.
+> `sdd_{workflow_id}_triage.status != "completed"` and blocks the entire SDD phase.
 
 ---
 

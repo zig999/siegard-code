@@ -229,8 +229,8 @@ python3 .claude/scripts/gc_worktrees.py --confirm --json
 {
   "status": "dry_run | ok | error",
   "dry_run": true,
-  "remove_worktrees": [{"path": ".orch/worktrees/dev_tc_001", "branch": "feat/TC-dev_tc_001"}],
-  "delete_branches": ["feat/TC-dev_tc_001"],
+  "remove_worktrees": [{"path": ".orch/worktrees/dev_myflow_tc_001", "branch": "feat/TC-dev_myflow_tc_001"}],
+  "delete_branches": ["feat/TC-dev_myflow_tc_001"],
   "kept_unmerged": [],
   "candidates": 1
 }

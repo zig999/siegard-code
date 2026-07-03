@@ -63,7 +63,9 @@ You return exactly one JSON envelope when done (see §Return contract).
 
 | Purpose | Pattern | Example |
 |---------|---------|---------|
-| Test execution task | `test_{dev_task_id}` | `test_dev_tc_001` |
+| Test execution task | `test_{dev_task_id}` | `test_dev_etax-unify_tc_001` |
+
+Dev task IDs are workflow-namespaced (5-a: `dev_{workflow_id}_tc_{n}`), so `test_{dev_task_id}` inherits uniqueness across workflows in the shared log. The authoritative test↔dev correspondence is the `dev_task_id` field in the test task's `task_created` data — never parse it from the task ID.
 
 ---
 
@@ -194,8 +196,9 @@ Store `stack` for worker routing in Step 4.
 ### Step 3 — Test task creation
 
 For each `dev_completed_task` in `dev_completed_tasks`:
-- Skip if a `test_{dev_task_id}` task already exists in `test_tasks`
 - Skip if the dev task has no delivery artifacts
+- Skip if none of the dev task's delivery artifact paths contain `.orch/sessions/<workflow_id>/` — the task belongs to an earlier workflow in the shared log, not to this one
+- **Session-linkage guard (legacy logs):** if a `test_{dev_task_id}` task already exists in `test_tasks`, do NOT skip on existence alone — skip only when its `spec` contains `.orch/sessions/<workflow_id>/` (same workflow → legitimate reuse). Otherwise the existing task belongs to an EARLIER workflow that used the same TC number; create the task as `test_{workflow_id}_{dev_task_id}` instead. (With namespaced dev IDs this cannot happen; the guard protects logs that predate 5-a.)
 
 For each new task to create, extract `delivery_path` from `dev_completed_task.artifacts`
 (first artifact whose name contains "delivery"):
@@ -205,8 +208,10 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-test \
   --event-type task_created \
   --task-id test_{dev_task_id} \
-  --data '{"phase":"test","deps":[],"tier":"standard","type":"test-run","spec":"<delivery_path>","stack":"<stack>"}'
+  --data '{"phase":"test","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"test-run","spec":"<delivery_path>","stack":"<stack>","dev_task_id":"<dev_task_id>"}'
 ```
+
+The `dev_task_id` field is the authoritative test↔dev link (used by the return-to-dev flow) — never derive it by parsing the test task ID.
 
 **Delivery artifacts gate (T3, via state machine):**
 
@@ -518,8 +523,9 @@ Stop.
 
 When `human_response.data.action == "return_to_dev"`:
 
-For each failing test task, determine the originating dev task ID
-(strip the `test_` prefix: `test_dev_tc_001` → `dev_tc_001`).
+For each failing test task, determine the originating dev task ID from the
+`dev_task_id` field in the test task's `task_created` data (Step 3). For legacy
+test tasks without that field, fall back to stripping the `test_` prefix.
 
 Create a revision task in the dev phase:
 
@@ -528,10 +534,10 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-test \
   --event-type task_created \
   --task-id <dev_task_id>_r{revision_n} \
-  --data '{"phase":"dev","deps":[],"tier":"standard","type":"impl","spec":"<original_task.spec>","revision_of":"<dev_task_id>","test_feedback":"<test_report_path>"}'
+  --data '{"phase":"dev","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"impl","spec":"<original_task.spec>","revision_of":"<dev_task_id>","test_feedback":"<test_report_path>"}'
 ```
 
-Where `revision_n` is 1-based (e.g., `dev_tc_001_r1`). If a revision already exists, increment (`_r2`, `_r3`, ...).
+Where `revision_n` is 1-based (e.g., `dev_etax-unify_tc_001_r1` — the namespaced dev ID is inherited). If a revision already exists, increment (`_r2`, `_r3`, ...).
 
 Emit `phase_transitioned` back to dev:
 

@@ -80,7 +80,7 @@ python3 .claude/skills/orch-report/scripts/emit.py \
   --data '{"phase": "sdd", "reason": "<code>", "retryable": <true|false>}'
 ```
 
-Without a terminal event, the orchestrator's check `sdd_triage.status == "completed"` fails and the SDD phase blocks.
+Without a terminal event, the orchestrator's check `sdd_{workflow_id}_triage.status == "completed"` fails and the SDD phase blocks.
 
 ## Precedence rule
 

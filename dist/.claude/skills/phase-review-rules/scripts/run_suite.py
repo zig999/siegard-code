@@ -20,7 +20,7 @@ Usage:
       --suite-run-id sr-1 \
       --workflow-id <wf> \
       --round 1 \
-      --tc-ids dev_tc_001,dev_tc_002 \
+      --tc-ids dev_myflow_tc_001,dev_myflow_tc_002 \
       --signature <hex> \
       [--build-cmd "<cmd>"] \
       --test-cmd "<cmd>" \

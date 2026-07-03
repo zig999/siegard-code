@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-03T13:43:57Z",
+  "generated_at": "2026-07-03T16:35:52Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -13,43 +13,43 @@
     },
     {
       "path": "agents/dev/u-architecture-reviewer.md",
-      "sha256": "afd979147e3c250dd6d36477454493a4d1460ac73a627e4f746622dcecf4878a"
+      "sha256": "5bce99f5145005f157de5e91a4b9441dfa0cfb40be114664cb9ad2e9846238cb"
     },
     {
       "path": "agents/dev/u-be-developer.md",
-      "sha256": "728fef11fb0425ea333f8b5106f47325fb7b74ef98997689b971815e3a0137cd"
+      "sha256": "44d9ebfcc3efa31f7879729c26a406355a1d0b2be961b6060c17afada642ad36"
     },
     {
       "path": "agents/dev/u-be-planner.md",
-      "sha256": "47b5f43c10fdf16cfd4aaafc0836cdd144ca27ea1b3a894e5c0f2ea603eb40e9"
+      "sha256": "70187420de86b004a5607206f2efb395f8fbb50077a6a99ab0fa096bc44a2456"
     },
     {
       "path": "agents/dev/u-be-qa.md",
-      "sha256": "8c7ba9b7f37f72ccae07b8302fc50677932d9ac2d7b16dff819a53b92d233c62"
+      "sha256": "60e429ed56e05ff06e95881c70a72aad20559d998d96d43bbdc2589de8cf9512"
     },
     {
       "path": "agents/dev/u-fe-developer.md",
-      "sha256": "47f2dfe5812de702e3e6ac1d698ba5fa85c8c9f4ad467fc8adb38a2f25a208c2"
+      "sha256": "f611934f5fd5fd850890ac63718b81dbe49bae4ec3d382a22592ea016732cd58"
     },
     {
       "path": "agents/dev/u-fe-planner.md",
-      "sha256": "fa0779b1a829a0598450761b4bbb48de6c354ec0f46eed1b027712a958c143a2"
+      "sha256": "eb2a3811de2afe683b3f2c7d861d66fbb455d7acd67c8c32f5f6a892f918d8c9"
     },
     {
       "path": "agents/dev/u-fe-qa.md",
-      "sha256": "6e3b136d28576d9984dd06e40f474c0b657229c7a877c05ad619f7aa79f43664"
+      "sha256": "3c7942ca919ac417eaf99e2238adb16c3fc4972d5b4992d2f984aa50f9b897ee"
     },
     {
       "path": "agents/dev/u-fe-spec-writer.md",
-      "sha256": "d910bd3900694828afefbeb7c120214e0d1bcfada12f7579bce413a0707d0526"
+      "sha256": "e80a32eebeb897f71d28dc5a8fbcfc43e79888ecabc207c0f6d9724ac3ad0fbc"
     },
     {
       "path": "agents/dev/u-fe-ui.md",
-      "sha256": "1e7f8b9efc0887a31f68f10f8de589446a9da1226e228ecb2641d26c71727eeb"
+      "sha256": "2001c9ee278891deb55261061755ad5ed63fc348e39ee748713db8c0f66dc643"
     },
     {
       "path": "agents/dev/u-security-reviewer.md",
-      "sha256": "0a5894cdf5938a53f134d835eeb45e337e908842abdedacb5b2d8f9ec3a6f269"
+      "sha256": "a6db86bb2129a721bddb7c8a7b700039092315835cd2a525223ffcac1047e8de"
     },
     {
       "path": "agents/dev/u-test-runner.md",
@@ -57,19 +57,19 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "01a2b224ef426335f62782aeb1d0ab242c7567987b170edf50bc312d09ff0e17"
+      "sha256": "ae1f460f1002f595734ba856cb43d0553f071db4b04c18adf3bb83c6c2d779d3"
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "8921f161c17f68c25b4ccd3a095141432a50af21d740515e5d8d936a7b768482"
+      "sha256": "ba38729e6214e53dff37dbf3985fb7ccd831cd38580608cfd79f2d5eb3fc37a1"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "8d6e01ef42698abe249a75053dff08f80fd4c8921ed23cc9b9ee56c2914fcc52"
+      "sha256": "ba467dd1c83b34038160b4267074fb53f505ff3e6e817d99904a135e3e154112"
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "27d93ba633fd4e9f1580a93c193cc2b5ca78ae679735da39daa86c21b9d83e25"
+      "sha256": "3170517c1e171461845e660155d54995dcffdbd4bae8aaecfd9fd88d8b138a93"
     },
     {
       "path": "agents/orchestrator.md",
@@ -105,7 +105,7 @@
     },
     {
       "path": "agents/spec/u-spec-triage.md",
-      "sha256": "7e1fcee2d9602cf3ba44237204a42f17e6741b3ab7c3f1ac7cb8d17ad48f5240"
+      "sha256": "b1e3d2decccc4b75c7d163592c3008800bfb0b007e305ccfc17099a0aa65ff98"
     },
     {
       "path": "agents/spec/u-spec-validator.md",
@@ -165,7 +165,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "f1fa4fc0fba4d7e066a62166d348d85ef91e4e99b89c3c4bf1b1dc07887255aa"
+      "sha256": "6bbf94ec5c221ee8ae5d125e61d0354a2c41371423faad37ece10fee46b28a73"
     },
     {
       "path": "lib/sm_runner.py",
@@ -237,7 +237,7 @@
     },
     {
       "path": "skills/orch-cleanup/SKILL.md",
-      "sha256": "b962e493ea7b59017e8f2af044be4669f553ffaf6f881d557c062dfa731857f7"
+      "sha256": "1ecefa7e241f518c6cdcd8dba1a03be00d9d0cd11e7dbbde2e43e02a64664b43"
     },
     {
       "path": "skills/orch-infra/SKILL.md",
@@ -409,7 +409,7 @@
     },
     {
       "path": "skills/phase-review-rules/scripts/run_suite.py",
-      "sha256": "dfd64311eda3ee6668cc868575b0eb2fb0fa746734ecc678eb17e9d3aafd3c75"
+      "sha256": "5a425b32520928ce1e0bccc2a8a78828115fd0dd8093c27417ce8babadbca74a"
     },
     {
       "path": "skills/phase-review-rules/scripts/select_worker.py",
@@ -429,7 +429,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_all_improve_reviewers_completed.py",
-      "sha256": "4f90f8814a383e4397ea883ad85ed06716ac380322c967f34010be69d5c87ab3"
+      "sha256": "6cc608c6932c8bca3aebfc628de9ce34bcc69ddcaa5d486d41e5b4f51cea9f39"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_error_codes_synced.py",
@@ -841,7 +841,7 @@
     },
     {
       "path": "skills/u-spec-triage-rules/SKILL.md",
-      "sha256": "0a382595cdcf498ec8c4f01de769934f8548a86395b46102350b981812ac7218"
+      "sha256": "ddb060af4bafd3ce0917c95dc7778261d272d92acec437d8fb0dcf01ce3fa774"
     },
     {
       "path": "skills/u-spec-triage-rules/scripts/classify_stack.py",

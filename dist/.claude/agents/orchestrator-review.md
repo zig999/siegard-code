@@ -64,10 +64,10 @@ You return exactly one JSON envelope when done (see §Return contract).
 
 | Purpose | Pattern | Example |
 |---------|---------|---------|
-| QA review task | `review_{dev_task_id}` | `review_dev_tc_001` |
-| QA review task (cross-workflow ID collision) | `review_{workflow_id}_{dev_task_id}` | `review_error-taxonomy-unify_dev_tc_001` |
+| QA review task | `review_{dev_task_id}` | `review_dev_etax-unify_tc_001` |
+| QA review task (cross-workflow ID collision — legacy logs) | `review_{workflow_id}_{dev_task_id}` | `review_etax-unify_dev_tc_001` |
 
-The log is shared across workflows, so a bare `review_{dev_task_id}` from an earlier workflow can collide with the current one. The Step 3 session-linkage guard detects the collision and falls back to the namespaced pattern. The authoritative dev↔review correspondence is the `dev_task_id` field in the review task's `task_created` data — never parse it from the task ID.
+Dev task IDs are workflow-namespaced (5-a: `dev_{workflow_id}_tc_{n}`), so `review_{dev_task_id}` inherits uniqueness across workflows by construction. The collision fallback remains for logs that predate 5-a, where a bare `review_dev_tc_*` from an earlier workflow can collide with the current one. The Step 3 session-linkage guard detects the collision and falls back to the namespaced pattern. The authoritative dev↔review correspondence is the `dev_task_id` field in the review task's `task_created` data — never parse it from the task ID.
 
 ---
 
@@ -297,7 +297,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type task_created \
   --task-id <review_task_id> \
-  --data '{"phase":"review","deps":[],"tier":"standard","type":"qa","spec":"<delivery_path>","stack":"<stack>","dev_task_id":"<dev_task_id>","qa_mode":"<mode>","concurrency_hint":<int>,"qa_mode_rationale":"<rationale>"}'
+  --data '{"phase":"review","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"qa","spec":"<delivery_path>","stack":"<stack>","dev_task_id":"<dev_task_id>","qa_mode":"<mode>","concurrency_hint":<int>,"qa_mode_rationale":"<rationale>"}'
 ```
 
 The `dev_task_id` field is the authoritative dev↔review link (used by the return-to-dev flow) — never derive it by parsing the review task ID.
@@ -897,10 +897,10 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type task_created \
   --task-id <dev_task_id>_r{revision_n} \
-  --data '{"phase":"dev","deps":[],"tier":"standard","type":"impl","spec":"<original_task.spec>","revision_of":"<dev_task_id>","qa_feedback":"<qa_verdict_path>"}'
+  --data '{"phase":"dev","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"impl","spec":"<original_task.spec>","revision_of":"<dev_task_id>","qa_feedback":"<qa_verdict_path>"}'
 ```
 
-Where `revision_n` is 1-based (e.g., `dev_tc_001_r1`).
+Where `revision_n` is 1-based (e.g., `dev_etax-unify_tc_001_r1` — the namespaced dev ID is inherited).
 
 After creating all revision tasks, emit `phase_transitioned` back to dev:
 
@@ -1078,14 +1078,14 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent operator \
   --event-type task_created \
   --task-id review_architecture_$(date +%s) \
-  --data '{"phase":"review","deps":[],"tier":"standard","type":"architecture-review","spec":"<path_to_delivery_or_context>","stack":"<be|fe|fullstack>"}'
+  --data '{"phase":"review","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"architecture-review","spec":"<path_to_delivery_or_context>","stack":"<be|fe|fullstack>"}'
 
 # Security review
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent operator \
   --event-type task_created \
   --task-id review_security_$(date +%s) \
-  --data '{"phase":"review","deps":[],"tier":"standard","type":"security-review","spec":"<path_to_delivery_or_context>","stack":"<be|fe|fullstack>"}'
+  --data '{"phase":"review","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"security-review","spec":"<path_to_delivery_or_context>","stack":"<be|fe|fullstack>"}'
 ```
 
 **Step 2 — Re-invoke the orchestrator:**

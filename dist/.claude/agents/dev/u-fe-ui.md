@@ -30,7 +30,7 @@ Resolved from the activation prompt set by the Orchestrator-Dev:
 
 | Variable | Source | Example |
 |---|---|---|
-| `ORCH_TASK_ID` | Activation prompt | `dev_tc_ui_001` |
+| `ORCH_TASK_ID` | Activation prompt | `dev_myflow_tc_ui_001` (opaque, workflow-namespaced) |
 | `ORCH_ATTEMPT` | Activation prompt | `1` |
 | `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
 | `SPECS_DIR` | Activation prompt | `specs` |

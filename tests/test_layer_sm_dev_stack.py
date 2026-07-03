@@ -32,6 +32,20 @@ class TestDevStackDispatch:
         assert "dev_planning_be" in r.params["tasks"]
         assert "dev_planning_fe" in r.params["tasks"]
 
+    def test_D8_fullstack_namespaces_tasks_by_workflow(self):
+        """5-a: with workflow_id in inputs, planning task IDs are namespaced so a
+        shared log never collides across workflows."""
+        r = self.sm.evaluate(
+            "dispatch_planner_stack",
+            {"stack": "fullstack", "workflow_id": "etax-unify"},
+        )
+        assert r.name == "dispatch_parallel_planners"
+        assert r.params["tasks"] == [
+            "dev_etax-unify_planning_be",
+            "dev_etax-unify_planning_fe",
+        ]
+        assert r.params["workers"] == ["u-be-planner", "u-fe-planner"]
+
     def test_D8_be_dispatches_single_be_planner(self):
         r = self.sm.evaluate("dispatch_planner_stack", {"stack": "be"})
         assert r.name == "dispatch_single_planner"

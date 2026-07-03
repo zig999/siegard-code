@@ -28,9 +28,9 @@ Resolved from the activation prompt set by the Orchestrator-Dev:
 
 | Variable | Source | Example |
 |---|---|---|
-| `ORCH_TASK_ID` | Activation prompt | `dev_planning` |
+| `ORCH_TASK_ID` | Activation prompt | `dev_myflow_planning_fe` (opaque, workflow-namespaced) |
 | `ORCH_ATTEMPT` | Activation prompt | `1` |
-| `ORCH_WORKER_ID` | Activation prompt | `u-fe-planner-dev_planning` |
+| `ORCH_WORKER_ID` | Activation prompt | `u-fe-planner-dev_myflow_planning_fe` |
 | `ORCH_PROJECT_DIR` | Activation prompt | `/path/to/project` |
 | `SPECS_DIR` | Activation prompt | `specs` |
 | `SESSION_DIR` | Activation prompt | `$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>` |
@@ -215,7 +215,7 @@ Save the result to:
 
 > **`<backlog_filename>` resolution:** the activation prompt declares the exact filename via `Write backlog.json to: <path>`. In single-stack runs this is `backlog.json`. In fullstack runs the FE planner is instructed to write `backlog_fe.json` (BE planner writes `backlog_be.json`); the orchestrator merges them into `backlog.json` after both planners return. **Always honour the path in the activation prompt — never hardcode `backlog.json`.**
 
-The backlog file must list every Task Contract with fields: `task_id` (`dev_tc_001`, `dev_tc_002`, …), `spec` (relative path to the TC file from `$ORCH_PROJECT_DIR`), `deps` (array of `dev_tc_NNN` IDs), `tier` (`standard` or `critical`), `type` (`impl`), `stack` (`fe`), and `title`.
+The backlog file must list every Task Contract with fields: `task_id` (`dev_tc_001`, `dev_tc_002`, …), `spec` (relative path to the TC file from `$ORCH_PROJECT_DIR`), `deps` (array of `dev_tc_NNN` IDs), `tier` (`standard` or `critical`), `type` (`impl`), `stack` (`fe`), and `title`. Backlog `task_id`/`deps` values are LOCAL (`dev_tc_{n}`) — the dev orchestrator applies the `dev_{workflow_id}_` namespace to both when emitting `task_created` (5-a); do NOT include the workflow in backlog IDs.
 
 Emit `task_completed` with `artifacts: ["$SESSION_DIR/backlog/<backlog_filename>"]` — using the same filename declared in the activation prompt.
 
