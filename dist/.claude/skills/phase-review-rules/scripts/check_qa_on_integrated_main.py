@@ -11,7 +11,9 @@ this guard confirms that happened before any QA task is dispatched.
 
 Precondition met when, in the project repo:
   - HEAD is on the integration branch (default "main"), and
-  - the working tree is clean, and
+  - the working tree is clean (after applying the clean_tree_gates.ignore_patterns
+    allowlist from .orch/config.json — ignored entries are listed in evidence,
+    never silently dropped), and
   - no TC branch (feat/TC-*, fix/TC-*, refactor/TC-*) remains UNMERGED into it.
 
 This is an entry guard (run at review Step 1), not an exit criterion. If
@@ -32,11 +34,41 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+_CLAUDE_DIR = Path(__file__).resolve().parents[3]
+_LIB = _CLAUDE_DIR / "lib"
+sys.path.insert(0, str(_LIB))
+
+try:
+    from orch_core import load_config, split_porcelain_by_allowlist
+    _HAVE_CORE = True
+except Exception:  # noqa: BLE001
+    _HAVE_CORE = False
+
 CRITERION_ID = "qa_runs_on_integrated_main"
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 _MAIN = os.environ.get("ORCH_MAIN_BRANCH", "main")
 
 _TC_BRANCH_RE = re.compile(r"^(?:feat|fix|refactor)/TC[-/]", re.IGNORECASE)
+
+
+def _split_dirty(porcelain: str) -> tuple[list[str], list[str]]:
+    """(dirty, ignored) after the clean_tree_gates.ignore_patterns allowlist.
+
+    Fail-closed: any failure to load orch_core or the config degrades to NO
+    allowlist (every dirty entry blocks) — a broken config must never relax
+    the gate.
+    """
+    if _HAVE_CORE:
+        try:
+            cfg = load_config().get("clean_tree_gates", {})
+            patterns = cfg.get("ignore_patterns", [])
+            if not isinstance(patterns, list):
+                patterns = []
+            patterns = [p for p in patterns if isinstance(p, str)]
+            return split_porcelain_by_allowlist(porcelain, patterns)
+        except Exception:  # noqa: BLE001
+            pass
+    return [l for l in porcelain.splitlines() if l.strip()], []
 
 
 def _git(args: list[str]) -> tuple[int, str]:
@@ -89,7 +121,8 @@ def evaluate() -> dict:
         }
 
     on_main = current_branch == _MAIN
-    clean = porcelain == ""
+    dirty, ignored = _split_dirty(porcelain)
+    clean = not dirty
     unmerged_tc = [b.strip() for b in unmerged_out.splitlines()
                    if _TC_BRANCH_RE.match(b.strip())]
 
@@ -105,6 +138,8 @@ def evaluate() -> dict:
             "current_branch": current_branch,
             "on_integration_branch": on_main,
             "working_tree_clean": clean,
+            "dirty_entries": dirty,
+            "ignored_by_allowlist": ignored,
             "unmerged_tc_branches": unmerged_tc,
         },
     }

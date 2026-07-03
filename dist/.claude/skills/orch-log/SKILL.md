@@ -1,6 +1,6 @@
 ---
 name: orch-log
-description: Append, read, and verify the append-only orchestration event log (.orch/log.jsonl). Provides append.py (lock + hash chain + schema validation), read.py (filtered queries), and verify.py (hash-chain integrity). Loaded by orchestrators and workers that emit or inspect events. Not user-invocable — callers run the scripts directly.
+description: Append, read, and verify the append-only orchestration event log (.orch/log.jsonl). Provides append.py (lock + hash chain + schema validation), claim.py (atomic check-and-claim for task dispatch), read.py (filtered queries), and verify.py (hash-chain integrity). Loaded by orchestrators and workers that emit or inspect events. Not user-invocable — callers run the scripts directly.
 user-invocable: false
 allowed-tools: Bash(python3 *), Read
 ---
@@ -58,6 +58,43 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --task-id t_001 \
   --data '{"phase":"dev","tier":"standard","type":"impl","spec":"implement X","deps":[]}'
 ```
+
+## scripts/claim.py
+
+Atomically claims a task for dispatch: re-derives the task's status from the log INSIDE the append lock and appends `task_claimed` only when the task is still `ready`. Closes the double-dispatch race — two concurrent orchestrator instances racing on the same batch serialize on the lock; the loser receives `claimed: false` instead of writing a duplicate claim.
+
+Orchestrators MUST use this script (not `append.py`) to emit `task_claimed`.
+
+### Usage
+
+```bash
+python3 .claude/skills/orch-log/scripts/claim.py \
+  --agent <agent-id> \
+  --task-id <id> \
+  [--attempt <n>] \
+  --data '{"phase":"<phase>","worker_type":"<type>","worker_id":"<id>"}'
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--agent` | Yes | Orchestrator identifier emitting the claim |
+| `--task-id` | Yes | Task ID to claim |
+| `--attempt` | No | Attempt number, default `1` |
+| `--data` | Yes (fields) | JSON object; `phase`, `worker_type`, `worker_id` are required by schema |
+
+### Output
+
+Exit 0 (both are expected outcomes — check the `claimed` field):
+```json
+{"claimed": true,  "event": {...}}
+{"claimed": false, "reason": "not_ready:running"}
+```
+
+`claimed: false` means the task is no longer eligible (another instance claimed it, or it left `ready`). The caller MUST drop the task from its dispatch batch and NOT spawn a worker. Reason codes: `task_not_found`, `not_ready:<status>`.
+
+Exit 1: `{"status": "error", "reason": "invalid_json" | "validation_error" | "state_underivable" | "internal_error", "detail": "..."}`.
 
 ## scripts/read.py
 

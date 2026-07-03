@@ -52,7 +52,7 @@ You return exactly one JSON envelope when done (see §Return contract).
 | I2 | Never maintain state between Steps. Re-read log before every decision. |
 | I3 | Every decision must cite the seq numbers that justify it. |
 | I4 | Never execute concrete work (write verdicts, read source code, edit files). |
-| I5 | Always emit `task_claimed` before spawning a worker. |
+| I5 | Always claim via `claim.py` (atomic check-and-claim) before spawning a worker; a `claimed: false` result means do NOT spawn. |
 | I6 | Never emit `task_progress`, `task_completed`, or `task_failed` — worker-only events. |
 | I7 | Never emit `phase_entered` — emitted by meta-orchestrator. |
 | I8 | Human approval is mandatory before any phase transition. The orchestrator MAY synthesize an `auto_approved: true` `human_response` only when (a) Step 5.0 strict gate qualifies and (b) an `E18_auto_approval_granted` escalation was emitted first in the same workflow. Any other auto-emission of `human_response` is forbidden. |
@@ -65,6 +65,9 @@ You return exactly one JSON envelope when done (see §Return contract).
 | Purpose | Pattern | Example |
 |---------|---------|---------|
 | QA review task | `review_{dev_task_id}` | `review_dev_tc_001` |
+| QA review task (cross-workflow ID collision) | `review_{workflow_id}_{dev_task_id}` | `review_error-taxonomy-unify_dev_tc_001` |
+
+The log is shared across workflows, so a bare `review_{dev_task_id}` from an earlier workflow can collide with the current one. The Step 3 session-linkage guard detects the collision and falls back to the namespaced pattern. The authoritative dev↔review correspondence is the `dev_task_id` field in the review task's `task_created` data — never parse it from the task ID.
 
 ---
 
@@ -243,8 +246,11 @@ Output `{"status": "blocked", "reason": "manifest_stack_unresolved"}` and stop.
 ### Step 3 — QA task creation
 
 For each `dev_completed_task` in `dev_completed_tasks`:
-- Skip if a `review_{dev_task_id}` task already exists in `review_tasks`
 - Skip if the dev task has no delivery artifacts
+- Skip if none of the dev task's delivery artifact paths contain `.orch/sessions/<workflow_id>/` — the task belongs to an earlier workflow in the shared log, not to this one
+- **Session-linkage guard (cross-workflow ID collision):** if a `review_{dev_task_id}` task already exists in `review_tasks`, do NOT skip on existence alone. Check its `spec`:
+  - `spec` contains `.orch/sessions/<workflow_id>/` → same workflow → legitimate reuse → skip
+  - otherwise → the existing task belongs to an EARLIER workflow that used the same TC number. Treating it as done would leave the current deliverables unreviewed (silent QA suppression). Create a new task using the namespaced ID `review_{workflow_id}_{dev_task_id}` instead — and apply the same guard to that ID before creating it
 
 For each new task to create:
 
@@ -282,15 +288,17 @@ WARN_EMITTED=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys
 
 When the classifier script fails (exit 1), the SM returns `qa_mode="standard"`, `concurrency_hint=3`, and `warn_emitted=true` with `code=E19_qa_mode_classifier_failed` — emit that warning escalation but do NOT abort the phase. Otherwise the SM populates `concurrency_hint` from the qa_mode (`micro=5, standard=3, full=2`).
 
-Then emit `task_created`:
+Then emit `task_created` (task ID per the Step 3 session-linkage guard: `review_{dev_task_id}`, or `review_{workflow_id}_{dev_task_id}` on cross-workflow collision):
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type task_created \
-  --task-id review_{dev_task_id} \
-  --data '{"phase":"review","deps":[],"tier":"standard","type":"qa","spec":"<delivery_path>","stack":"<stack>","qa_mode":"<mode>","concurrency_hint":<int>,"qa_mode_rationale":"<rationale>"}'
+  --task-id <review_task_id> \
+  --data '{"phase":"review","deps":[],"tier":"standard","type":"qa","spec":"<delivery_path>","stack":"<stack>","dev_task_id":"<dev_task_id>","qa_mode":"<mode>","concurrency_hint":<int>,"qa_mode_rationale":"<rationale>"}'
 ```
+
+The `dev_task_id` field is the authoritative dev↔review link (used by the return-to-dev flow) — never derive it by parsing the review task ID.
 
 The `stack` field is carried forward from the handoff-manifest (detected in Step 2) so that `select_worker.py` can route QA tasks to the correct agent (`u-be-qa` vs `u-fe-qa`) without replaying the log. The `qa_mode` and `concurrency_hint` fields are read by Step 4.1 (dynamic concurrency) and Step 5.0 (auto-approval gate).
 
@@ -552,16 +560,17 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"review","batch":[<task_ids>],"workers":[<selected_worker_ids>],"rationale":"ready-queue tasks selected by tier-then-creation-seq priority; max_concurrent derived from qa_mode distribution","constraints":{"max_concurrent":<computed>,"stale_threshold_s":300,"stack":"<stack>","context_budget_check":"applied","qa_mode_distribution":{"micro":<n>,"standard":<n>,"full":<n>}}}'
 ```
 
-**Then for each task in the batch, emit `task_claimed`:**
+**Then for each task in the batch, claim it atomically** (`claim.py` re-checks eligibility under the log lock — closes the double-dispatch race between concurrent orchestrator instances):
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
+python3 .claude/skills/orch-log/scripts/claim.py \
   --agent orchestrator-review \
-  --event-type task_claimed \
   --task-id <task_id> \
   --attempt <task.attempts + 1> \
   --data '{"phase":"review","worker_type":"<worker>","worker_id":"<worker>-<task_id>"}'
 ```
+
+If the output is `{"claimed": false, ...}`, another orchestrator instance already dispatched this task — remove it from the batch and do NOT register or spawn a worker for it. Proceed with the remaining claimed tasks (if none remain, return to 4.1).
 
 Register:
 ```bash
@@ -877,6 +886,8 @@ Determine which dev tasks need revision:
 - Full rejection: all dev tasks that have a corresponding completed review task with `verdict == rejected`
 - Partial rejection: dev tasks whose IDs appear in `human_response.data.rejected_task_ids`
 
+The review→dev correspondence is the `dev_task_id` field in the review task's `task_created` data (Step 3). For legacy review tasks without that field, fall back to stripping the `review_` prefix.
+
 For each dev task to revise, create a new revision task in the dev phase:
 
 ```bash
@@ -1040,7 +1051,7 @@ Stop.
 |-----------|--------|
 | Infra check blocked | Return `{status: "blocked"}` immediately |
 | No dev delivery artifacts | Return `{status: "blocked"}` |
-| `append.py` exit 1 on `task_claimed` | Skip task, continue |
+| `claim.py` exit 1 or `claimed: false` | Skip task (do not spawn), continue |
 | `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
 | Worker exits without terminal | Do NOT synthesize in Step 4.4 (F-03). The SubagentStop hook fails it if it is the sole stopping worker; otherwise the deterministic reaper (`check_stale.py`) fails it once silent past its task-type threshold. Leave it `running` and re-read state. |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |

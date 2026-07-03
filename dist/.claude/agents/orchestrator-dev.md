@@ -48,7 +48,7 @@ You return exactly one JSON envelope when done (see §Return contract).
 | I2 | Never maintain state between Steps. Re-read log before every decision. |
 | I3 | Every decision must cite the seq numbers that justify it. |
 | I4 | Never execute concrete work (write code, run tests, edit source files). |
-| I5 | Always emit `task_claimed` before spawning a worker. |
+| I5 | Always claim via `claim.py` (atomic check-and-claim) before spawning a worker; a `claimed: false` result means do NOT spawn. |
 | I6 | Never emit `task_progress`, `task_completed`, or `task_failed` — those are worker-only events. |
 | I7 | Never emit `phase_entered` — that is emitted by the meta-orchestrator. |
 | I8 | Dispatch `dev_planning` before any `impl` task. Never dispatch impl without a completed backlog. |
@@ -473,16 +473,18 @@ python3 .claude/skills/phase-dev-rules/scripts/select_worker.py --task-type plan
 python3 .claude/skills/phase-dev-rules/scripts/select_worker.py --task-type planning --stack fullstack_fe
 ```
 
-Claim both:
+Claim both (atomic — `claim.py` re-checks eligibility under the log lock):
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py --agent orchestrator-dev --event-type task_claimed \
+python3 .claude/skills/orch-log/scripts/claim.py --agent orchestrator-dev \
   --task-id dev_planning_be --attempt 1 \
   --data '{"phase":"dev","worker_type":"u-be-planner","worker_id":"u-be-planner-dev_planning_be"}'
 
-python3 .claude/skills/orch-log/scripts/append.py --agent orchestrator-dev --event-type task_claimed \
+python3 .claude/skills/orch-log/scripts/claim.py --agent orchestrator-dev \
   --task-id dev_planning_fe --attempt 1 \
   --data '{"phase":"dev","worker_type":"u-fe-planner","worker_id":"u-fe-planner-dev_planning_fe"}'
 ```
+
+If either output is `{"claimed": false, ...}`, a concurrent orchestrator instance already dispatched that task — do NOT register or spawn that planner; continue with the one(s) actually claimed (re-enter the cycle if none).
 
 Register both workers:
 ```bash
@@ -555,15 +557,16 @@ python3 .claude/skills/phase-dev-rules/scripts/select_worker.py \
 
 Store the `worker` field from the output as `planner_worker`. Construct `planner_worker_id = "<planner_worker>-dev_planning"`.
 
-Claim:
+Claim (atomic — `claim.py` re-checks eligibility under the log lock):
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
+python3 .claude/skills/orch-log/scripts/claim.py \
   --agent orchestrator-dev \
-  --event-type task_claimed \
   --task-id dev_planning \
   --attempt 1 \
   --data '{"phase":"dev","worker_type":"<planner_worker>","worker_id":"<planner_worker>-dev_planning"}'
 ```
+
+If the output is `{"claimed": false, ...}`, a concurrent orchestrator instance already dispatched this task — do NOT register or spawn; re-enter the cycle.
 
 Register worker:
 ```bash
@@ -806,16 +809,17 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data "{\"phase\":\"dev\",\"estimated_tokens\":$((<total_chars> / 4)),\"threshold_warn\":40000,\"threshold_block\":50000,\"mitigation\":\"<none|split_spec|summarize_spec|inline_excerpt>\"}"
 ```
 
-Then for each task, emit `task_claimed` before any spawn:
+Then for each task, claim it atomically before any spawn (`claim.py` re-checks eligibility under the log lock — closes the double-dispatch race between concurrent orchestrator instances):
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
+python3 .claude/skills/orch-log/scripts/claim.py \
   --agent orchestrator-dev \
-  --event-type task_claimed \
   --task-id <task_id> \
   --attempt <task.attempts + 1> \
   --data '{"phase":"dev","worker_type":"<worker>","worker_id":"<worker>-<task_id>"}'
 ```
+
+If the output is `{"claimed": false, ...}`, another orchestrator instance already dispatched this task — remove it from the batch and do NOT register or spawn a worker for it. Proceed with the remaining claimed tasks (if none remain, return to the cycle start).
 
 Register worker:
 ```bash
@@ -1106,7 +1110,7 @@ Re-read state. Determine:
 | Infra check blocked | Return `{status: "blocked"}` immediately |
 | `handoff-manifest.yaml` missing or not approved | Return `{status: "blocked"}` |
 | Backlog artifact not found after planning | Escalate E07 |
-| `append.py` exit 1 on `task_claimed` | Skip task, continue |
+| `claim.py` exit 1 or `claimed: false` | Skip task (do not spawn), continue |
 | `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
 | Worker exits without terminal | Do NOT synthesize in Step 5.4 (F-03). The SubagentStop hook fails it if it is the sole stopping worker; otherwise the deterministic reaper (`check_stale.py`, Step 5.0) fails it once silent past its task-type threshold. Leave it `running` and re-read state. |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |

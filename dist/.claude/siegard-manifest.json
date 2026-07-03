@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-06-29T16:58:58Z",
+  "generated_at": "2026-07-03T13:32:08Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,19 +57,19 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "a49ad22e5236b88a4717d72f3dae42efc405040e6bd009052cb4b6477a9580fa"
+      "sha256": "f78f66e4096cbb033f49c343b453b0e5f649c43f548bc3e36883b16c95ae4308"
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "185a2faf0bc95044f6045e4b225e05f9d58a4fca7933bb1e4ed63f69979f8177"
+      "sha256": "4a6623c6ad8350fdbbdc7976f34b4f9a6e28a3b60b8a7651199611825535fcd8"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "c7720fe7406fc2532cf9107a52784e38117c2c3ff41584a76c9321a7036b9ce7"
+      "sha256": "620fa6588bf1e776d99fdfa91fd4bd6e8f766e9b9a9705181b6bd70b3c3a3892"
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "9dd3d999530e1047e60aac0aa30b0ea4210cc56b667aae0eb17914de7faacb62"
+      "sha256": "15e46dd8febdfd23992b35aa2344c8a887c19787e6a7406af94a3afb83838805"
     },
     {
       "path": "agents/orchestrator.md",
@@ -165,7 +165,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "9b0877902f54723e6fad9c133665e9a9a70af75965b9ca56d40a5c6bee1df5b2"
+      "sha256": "f1fa4fc0fba4d7e066a62166d348d85ef91e4e99b89c3c4bf1b1dc07887255aa"
     },
     {
       "path": "lib/sm_runner.py",
@@ -257,11 +257,15 @@
     },
     {
       "path": "skills/orch-log/SKILL.md",
-      "sha256": "ebe26143a31d552f28e8505eee81f62db1c6f94a19d03dc578540ed3d668fcc8"
+      "sha256": "c958125e51f84bec3c32d1329ecd76973e36aa2ef30d6d11cea7a52eb13947d0"
     },
     {
       "path": "skills/orch-log/scripts/append.py",
       "sha256": "ba8c876fae1b42aaa082466b7028f7b42a2d97c4ac25ad3ce27011fcef9173bf"
+    },
+    {
+      "path": "skills/orch-log/scripts/claim.py",
+      "sha256": "9ca871ea8354270762712e755088685b453b5ee3b63ca77b7b10347018abf076"
     },
     {
       "path": "skills/orch-log/scripts/read.py",
@@ -329,7 +333,7 @@
     },
     {
       "path": "skills/phase-dev-rules/scripts/check_all_branches_integrated.py",
-      "sha256": "95b96c5bb99980aecd9f0f788eae2aeec7010427572fcab0f8088148af510272"
+      "sha256": "b8c61e326d6ac9a739de03cdbcd3daac04ea18cae3bfb76ddd87c1f47c9723cc"
     },
     {
       "path": "skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py",
@@ -385,7 +389,7 @@
     },
     {
       "path": "skills/phase-review-rules/scripts/check_qa_on_integrated_main.py",
-      "sha256": "9ab78d7f0e142481a1ca0795e4886ca78c5495d61f3baa8d1497605c868bd502"
+      "sha256": "5cc0fa9e9357a3b9a952d2e4b22e68f6e78e37508739378de9cad6d59642cabb"
     },
     {
       "path": "skills/phase-review-rules/scripts/check_suite_freshness.py",
@@ -413,7 +417,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/SKILL.md",
-      "sha256": "ab4c622d94e6fa40ad0f396e53b5472f3c5d308cc174066763a3b9cd342263cc"
+      "sha256": "67b6b7f0deccb63a14dfd4365335ba86c62cbac41152d1bda435551638e3e789"
     },
     {
       "path": "skills/phase-sdd-rules/exit-criteria.json",
@@ -446,6 +450,10 @@
     {
       "path": "skills/phase-sdd-rules/scripts/generate_handoff_manifest.py",
       "sha256": "1df04d4379255a147b1c50e0975791fad5ea54e35998258ad26d0bd877f64569"
+    },
+    {
+      "path": "skills/phase-sdd-rules/scripts/identify_invalid_domains.py",
+      "sha256": "b8ae71b7b8c395be55cd13ce28ae9cbee3435e26b5fcf84d9b589c4919da02c5"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/select_worker.py",

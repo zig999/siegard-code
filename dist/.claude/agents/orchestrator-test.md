@@ -51,7 +51,7 @@ You return exactly one JSON envelope when done (see §Return contract).
 | I2 | Never maintain state between Steps. Re-read log before every decision. |
 | I3 | Every decision must cite the seq numbers that justify it. |
 | I4 | Never execute concrete work (run tests, edit source files, read test output directly). |
-| I5 | Always emit `task_claimed` before spawning a worker. |
+| I5 | Always claim via `claim.py` (atomic check-and-claim) before spawning a worker; a `claimed: false` result means do NOT spawn. |
 | I6 | Never emit `task_progress`, `task_completed`, or `task_failed` — worker-only events. |
 | I7 | Never emit `phase_entered` — emitted by the meta-orchestrator. |
 | I8 | Human intervention is required only when tests fail or exit criteria are not met. |
@@ -299,14 +299,17 @@ If the output contains `"status":"error"`, skip this task and emit `task_failed`
 
 #### 4.2 — Claim batch
 
+Claim each task atomically (`claim.py` re-checks eligibility under the log lock — closes the double-dispatch race between concurrent orchestrator instances):
+
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
+python3 .claude/skills/orch-log/scripts/claim.py \
   --agent orchestrator-test \
-  --event-type task_claimed \
   --task-id <task_id> \
   --attempt <task.attempts + 1> \
   --data '{"phase":"test","worker_type":"<worker>","worker_id":"<worker>-<task_id>"}'
 ```
+
+If the output is `{"claimed": false, ...}`, another orchestrator instance already dispatched this task — remove it from the batch and do NOT register or spawn a worker for it.
 
 Register:
 ```bash
@@ -568,7 +571,7 @@ Stop.
 |-----------|--------|
 | Infra check blocked | Return `{status: "blocked"}` immediately |
 | No dev delivery artifacts | Return `{status: "blocked"}` |
-| `append.py` exit 1 on `task_claimed` | Skip task, continue |
+| `claim.py` exit 1 or `claimed: false` | Skip task (do not spawn), continue |
 | `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
 | Worker exits without terminal | Do NOT synthesize in Step 4.4 (F-03). The SubagentStop hook fails it if it is the sole stopping worker; otherwise the deterministic reaper (`check_stale.py`) fails it once silent past its task-type threshold. Leave it `running` and re-read state. |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` |

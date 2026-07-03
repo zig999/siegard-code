@@ -47,7 +47,7 @@ You return exactly one JSON envelope when done (see §Return contract).
 | I2 | Never maintain state between Steps. Re-read log before every decision. |
 | I3 | Every decision must cite the seq numbers that justify it. |
 | I4 | Never execute concrete work (write specs, read domain content, edit source files). |
-| I5 | Always emit `task_claimed` before spawning a worker. |
+| I5 | Always claim via `claim.py` (atomic check-and-claim) before spawning a worker; a `claimed: false` result means do NOT spawn. |
 | I6 | Never emit `task_progress`, `task_completed`, or `task_failed` — those are worker-only events. |
 | I7 | Never emit `phase_entered` — that is emitted by the meta-orchestrator. |
 | I8 | Human confirmation is mandatory before first dispatch, unless `log_seq_at_spawn > 0`. |
@@ -203,16 +203,17 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"sdd","batch":["sdd_triage"],"rationale":"triage_synchronous_first_dispatch","constraints":{"effective_mode":"unknown_pre_triage","batch_size_limit":1,"bypass_e99":"unknown_pre_triage"}}'
 ```
 
-Claim task:
+Claim task (atomic — `claim.py` re-checks eligibility under the log lock):
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
+python3 .claude/skills/orch-log/scripts/claim.py \
   --agent orchestrator-sdd \
-  --event-type task_claimed \
   --task-id sdd_triage \
   --attempt 1 \
   --data '{"phase":"sdd","worker_type":"u-spec-triage","worker_id":"u-spec-triage-sdd_triage"}'
 ```
+
+If the output is `{"claimed": false, ...}`, a concurrent orchestrator instance already dispatched triage — do NOT register or spawn; re-read state and continue from there.
 
 Register worker:
 
@@ -761,7 +762,7 @@ All `sdd_improve_*` tasks must be terminal. The `check_all_domains_validated.py`
 Run until no ready tasks remain or a stop condition is hit (max 30 iterations, safety limit).
 
 > **STATE_DERIVATION_ONCE policy:** each Step 5 iteration consists of TWO decision sub-cycles, each calling `reduce.py` exactly once:
-> 1. **Pre-dispatch sub-cycle (5.0 → 5.3):** reduce.py at 5.0 derives the snapshot used by 5.1 (batch selection), 5.2 (claims), 5.2.5 (budget), and 5.3 (spawn). No re-read between these sub-steps.
+> 1. **Pre-dispatch sub-cycle (5.0 → 5.3):** reduce.py at 5.0 derives the snapshot used by 5.1 (batch selection), 5.2 (claims), 5.2.5 (budget), and 5.3 (spawn). No re-read between these sub-steps — dispatch races against concurrent orchestrator instances are closed by `claim.py` (5.2), which re-checks each task's eligibility atomically under the log lock; a `claimed: false` task is dropped from the batch.
 > 2. **Post-dispatch sub-cycle (5.4 → 5.5):** reduce.py at 5.4 derives a fresh snapshot reflecting worker terminal events. Used by 5.4 (terminal verification) and 5.5 (retry/DLQ decisions). No re-read between these sub-steps.
 > The two reduce calls are required because worker spawn (5.3) is an async breakpoint that mutates state externally — re-reading after the breakpoint is correctness-preserving, not redundant derivation.
 
@@ -877,16 +878,17 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"sdd","batch":[<list of task_ids in batch>],"rationale":"ready_queue_top_<N>_in_<effective_mode>_mode","constraints":{"effective_mode":"<effective_mode>","batch_size_limit":<2_if_standard_else_1>,"workers":[<list of selected_worker per task>]}}'
 ```
 
-For each task, emit `task_claimed` before any spawn:
+For each task, claim it atomically before any spawn (`claim.py` re-checks eligibility under the log lock — closes the double-dispatch race between concurrent orchestrator instances):
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
+python3 .claude/skills/orch-log/scripts/claim.py \
   --agent orchestrator-sdd \
-  --event-type task_claimed \
   --task-id <task_id> \
   --attempt <task.attempts + 1> \
   --data '{"phase":"sdd","worker_type":"<worker>","worker_id":"<worker>-<task_id>"}'
 ```
+
+If the output is `{"claimed": false, ...}`, another orchestrator instance already dispatched this task — remove it from the batch and do NOT register or spawn a worker for it. Proceed with the remaining claimed tasks (if none remain, return to Step 5.0).
 
 Register worker:
 ```bash
@@ -1250,7 +1252,8 @@ import sys, json, re
 sys.path.insert(0, '.claude/lib')
 from orch_core import read_events_filtered, EventType
 events = read_events_filtered(event_type=EventType.TASK_CREATED)
-repair_ids = [e.task_id for e in events if e.task_id and re.match(r'sdd_.+_spec-writer-repair-\d+', e.task_id)]
+# Any repair stage counts — a reduced (stage-granular) repair cycle may not include a spec-writer task.
+repair_ids = [e.task_id for e in events if e.task_id and re.match(r'sdd_.+_spec-\w+-repair-\d+', e.task_id)]
 cycles = max((int(re.search(r'-repair-(\d+)', t).group(1)) for t in repair_ids), default=0) if repair_ids else 0
 print(json.dumps({'repair_cycles': cycles}))
 "
@@ -1260,37 +1263,23 @@ Store result as `repair_cycles`.
 
 **If `repair_cycles >= 2` OR `effective_mode != "standard"`:** skip to E08 escalation below.
 
-**Step R2 — Identify INVALID domains:**
+**Step R2 — Identify INVALID domains and defect origins:**
 
 ```bash
-python3 -c "
-import os, sys, re
-from pathlib import Path
-specs_dir = os.environ.get('SPECS_DIR', 'specs')
-project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
-val_dir = Path(project_dir) / specs_dir / '_validation'
-invalid = []
-if val_dir.exists():
-    for f in val_dir.glob('*-validation.md'):
-        content = f.read_text()
-        if re.search(r'status:\s*INVALID', content, re.IGNORECASE):
-            domain = f.stem.replace('-validation', '')
-            invalid.append(domain)
-import json; print(json.dumps({'invalid_domains': invalid}))
-"
+python3 .claude/skills/phase-sdd-rules/scripts/identify_invalid_domains.py
 ```
 
-Store result as `invalid_domains`.
+Store `invalid_domains` and `defect_origins` from the output. `defect_origins` maps each INVALID domain to the pipeline stage its blocking issues point at, derived from the machine-readable `{domain}-validation-result.yaml` (`responsible` fields): `"back"` when ALL blocking issues belong to `u-spec-back`, `null` otherwise (mixed/front/writer/missing/unparseable).
 
 **Step R2.5 — State machine routes repair vs escalate:**
 
 ```bash
 RESULT=$(python3 .claude/lib/sm_runner.py --machine sdd --state exit_criteria_failed \
-  --inputs "{\"effective_mode\": \"$effective_mode\", \"repair_cycles\": $repair_cycles, \"invalid_domains\": $INVALID_DOMAINS_JSON}")
+  --inputs "{\"effective_mode\": \"$effective_mode\", \"repair_cycles\": $repair_cycles, \"invalid_domains\": $INVALID_DOMAINS_JSON, \"defect_origins\": $DEFECT_ORIGINS_JSON}")
 ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['action'])")
 ```
 
-`$ACTION` is `dispatch_repair_pipeline` (SM populates `repair_cycle_n`, `domains`, `pipeline`) or `escalate_e08` (SM populates `reason` ∈ `max_repair_cycles_reached | no_repairable_invalid_domains | non_standard_mode`).
+`$ACTION` is `dispatch_repair_pipeline` (SM populates `repair_cycle_n`, `domains`, and per-domain `pipelines` — reduced `["spec-back","spec-validator"]` only for domains with `defect_origin == "back"`, full pipeline otherwise) or `escalate_e08` (SM populates `reason` ∈ `max_repair_cycles_reached | no_repairable_invalid_domains | non_standard_mode`).
 
 **If `$ACTION == "escalate_e08"`:** skip to E08 escalation below.
 
@@ -1298,27 +1287,27 @@ ACTION=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin
 
 Repair cycle number: `repair_n = repair_cycles + 1`.
 
-For each `domain` in `invalid_domains`, create repair tasks (same pipeline order as the standard pipeline — spec-writer → spec-reviewer → spec-back → spec-validator):
+For each `domain` in the SM's `params.domains`, create repair tasks following THAT domain's `params.pipelines[domain]` — stage-granular repair:
+
+- `defect_origin == "back"` → `["spec-back", "spec-validator"]` — earlier-stage artifacts (writer/reviewer) were approved; the repair workers reuse them as inputs, they are NOT regenerated
+- any other origin (writer, front, mixed, `null`) → full pipeline `["spec-writer", "spec-reviewer", "spec-back", "spec-validator"]`
+
+Never create repair tasks for a domain that is not in `params.domains` — repair scope is exactly the evidence in the validation reports, never "the neighboring domain as a precaution".
+
+Task creation rules (per domain, per stage in its pipeline, in order):
+
+- Task ID: `sdd_<domain>_<stage>-repair-<repair_n>` (the `-repair-{N}` suffix avoids idempotency collision with the original pipeline tasks)
+- `deps`: `[]` for the FIRST stage of the domain's pipeline; `["sdd_<domain>_<previous_stage>-repair-<repair_n>"]` for each subsequent stage
+- The FIRST stage of the pipeline carries `"repair_context":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/_validation/<domain>-validation.md"` in its data
+
+Example — reduced pipeline (defect_origin `back`):
 
 ```bash
-# Task IDs use -repair-{N} suffix to avoid idempotency collision with original pipeline tasks
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type task_created \
-  --task-id sdd_<domain>_spec-writer-repair-<repair_n> \
-  --data '{"phase":"sdd","deps":[],"tier":"standard","type":"spec-writer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>,"repair_context":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/_validation/<domain>-validation.md"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type task_created \
-  --task-id sdd_<domain>_spec-reviewer-repair-<repair_n> \
-  --data '{"phase":"sdd","deps":["sdd_<domain>_spec-writer-repair-<repair_n>"],"tier":"standard","type":"spec-reviewer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>}'
-
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
   --task-id sdd_<domain>_spec-back-repair-<repair_n> \
-  --data '{"phase":"sdd","deps":["sdd_<domain>_spec-reviewer-repair-<repair_n>"],"tier":"standard","type":"spec-back","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>}'
+  --data '{"phase":"sdd","deps":[],"tier":"standard","type":"spec-back","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>,"repair_context":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/_validation/<domain>-validation.md"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
@@ -1326,6 +1315,8 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --task-id sdd_<domain>_spec-validator-repair-<repair_n> \
   --data '{"phase":"sdd","deps":["sdd_<domain>_spec-back-repair-<repair_n>"],"tier":"standard","type":"spec-validator","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>}'
 ```
+
+Example — full pipeline (any other origin): same shape with the four stages `spec-writer → spec-reviewer → spec-back → spec-validator` chained by `deps`, `repair_context` on `spec-writer`.
 
 After all repair tasks created, return to **Step 5** (dispatch loop). The loop will pick up the new `ready` tasks and dispatch them.
 
@@ -1371,7 +1362,7 @@ After all repair tasks created, return to **Step 5** (dispatch loop). The loop w
 | Situation | Action |
 |-----------|--------|
 | Infra check blocked | Return `{status: "blocked"}` immediately |
-| `append.py` exit 1 on `task_claimed` | Skip task, record issue, continue |
+| `claim.py` exit 1 or `claimed: false` | Skip task (do not spawn), record issue, continue |
 | `reduce.py` exit 1 | Emit E12 via `append.py` (does not require reduce output), return `{status: "escalated", summary: "reduce_failed — see E12"}` |
 | Worker exits without terminal | Do NOT synthesize in Step 5.4 (F-03). The SubagentStop hook fails it if it is the sole stopping worker; otherwise the deterministic reaper (`check_stale.py`) fails it once silent past its task-type threshold. Leave it `running` and re-read state. |
 | Circuit tripped during loop | Return `{status: "error", summary: "circuit_tripped"}` (E10 emitted by meta-orchestrator) |

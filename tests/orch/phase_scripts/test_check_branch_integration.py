@@ -155,3 +155,75 @@ class TestQaOnIntegratedMain:
         out = run_check(QA_ON_MAIN, repo)
         assert out["status"] == "blocked"
         assert "feat/TC-09" in out["evidence"]["unmerged_tc_branches"]
+
+
+# ── clean_tree_gates.ignore_patterns allowlist (both gates) ─────────────────
+#
+# Eternal audit: pre-existing operator tooling (dev.sh, tmux.conf) blocked the
+# review entry gate, and a framework fix applied during recovery blocked the dev
+# exit gate. The allowlist lets the operator declare workflow-irrelevant entries
+# in .orch/config.json; everything ignored is listed in evidence (transparency).
+
+import json as _json
+
+
+def _write_allowlist(repo: Path, patterns: list[str]) -> None:
+    orch = repo / ".orch"
+    orch.mkdir(exist_ok=True)
+    (orch / "config.json").write_text(
+        _json.dumps({"clean_tree_gates": {"ignore_patterns": patterns}})
+    )
+
+
+class TestCleanTreeAllowlist:
+    @pytest.mark.parametrize("gate", [DEV_INTEGRATED, QA_ON_MAIN])
+    def test_allowlisted_untracked_does_not_block(self, repo, gate):
+        _write_allowlist(repo, ["dev.sh", "tmux*"])
+        (repo / "dev.sh").write_text("#!/bin/sh\n")
+        (repo / "tmux.conf").write_text("set -g\n")
+        out = run_check(gate, repo)
+        assert out["status"] == "ok", out
+        assert out["evidence"]["working_tree_clean"] is True
+        # Transparency: ignored entries are visible, never silent.
+        ignored = "\n".join(out["evidence"]["ignored_by_allowlist"])
+        assert "dev.sh" in ignored and "tmux.conf" in ignored
+
+    @pytest.mark.parametrize("gate", [DEV_INTEGRATED, QA_ON_MAIN])
+    def test_non_allowlisted_still_blocks(self, repo, gate):
+        _write_allowlist(repo, ["dev.sh"])
+        (repo / "dev.sh").write_text("#!/bin/sh\n")
+        (repo / "wip.txt").write_text("workflow-relevant dirt\n")
+        out = run_check(gate, repo)
+        assert out["status"] == "blocked"
+        assert out["evidence"]["working_tree_clean"] is False
+        assert any("wip.txt" in l for l in out["evidence"]["dirty_entries"])
+        assert any("dev.sh" in l for l in out["evidence"]["ignored_by_allowlist"])
+
+    def test_pattern_matches_basename_in_subdir(self, repo):
+        _write_allowlist(repo, ["*.local.md"])
+        # docs/ must be tracked — git collapses fully-untracked dirs to "?? docs/".
+        (repo / "docs").mkdir()
+        (repo / "docs" / "index.md").write_text("tracked\n")
+        _git(repo, "add", "docs/index.md")
+        _git(repo, "commit", "-q", "-m", "docs")
+        (repo / "docs" / "notes.local.md").write_text("x\n")
+        out = run_check(DEV_INTEGRATED, repo)
+        assert out["status"] == "ok", out
+        assert out["evidence"]["ignored_by_allowlist"]
+
+    def test_no_config_keeps_strict_behavior(self, repo):
+        (repo / "dev.sh").write_text("#!/bin/sh\n")
+        out = run_check(DEV_INTEGRATED, repo)
+        assert out["status"] == "blocked"
+        assert out["evidence"]["ignored_by_allowlist"] == []
+
+    def test_broken_config_fails_closed(self, repo):
+        """Invalid config JSON must degrade to NO allowlist (strictest), never
+        relax the gate."""
+        orch = repo / ".orch"
+        orch.mkdir(exist_ok=True)
+        (orch / "config.json").write_text("{not json")
+        (repo / "dev.sh").write_text("#!/bin/sh\n")
+        out = run_check(DEV_INTEGRATED, repo)
+        assert out["status"] == "blocked"
+        assert out["evidence"]["ignored_by_allowlist"] == []

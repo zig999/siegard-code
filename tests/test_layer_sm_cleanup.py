@@ -132,7 +132,7 @@ class TestNoExternalDependencies:
         "typing", "datetime", "collections", "subprocess", "uuid", "hashlib",
         "argparse", "io", "shutil", "tempfile", "functools", "itertools",
         "abc", "copy", "time", "logging", "warnings", "__future__",
-        "fcntl", "random",
+        "fcntl", "random", "fnmatch",
     }
 
     def test_orch_core_stdlib_only(self):

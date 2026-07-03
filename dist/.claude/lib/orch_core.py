@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover — Windows (fcntl is POSIX-only)
     fcntl = None  # type: ignore[assignment]
     _HAS_FCNTL = False
     import msvcrt
+import fnmatch
 import hashlib
 import json
 import os
@@ -1230,65 +1231,122 @@ def append_event(
                 _reason = _fn(data, _existing)
                 if _reason:
                     raise PreconditionViolation(f"{event_type} rejected: {_reason}")
-        last = last_event()
-        # SIEGARD-03: refuse to chain onto a corrupted tail. If the last event no
-        # longer matches its own hash, the log is already corrupt — fail HERE (at
-        # append) instead of propagating an invalid prev_hash into every following
-        # event (the cascade that forces recovery to truncate N valid events).
-        # Cost: one hash recompute per append (cheap).
-        if last is not None and last.compute_hash() != last.hash:
-            raise CorruptedLogError(
-                f"refusing to append onto corrupted tail: seq={last.seq} hash mismatch"
-            )
-        seq = (last.seq + 1) if last else 1
-        prev_hash = last.hash if last else "GENESIS"
+        return _append_event_locked(agent, event_type, task_id, attempt, data)
 
-        event_id = new_event_id()
 
-        serialized_size = len(canonical_json(data).encode("utf-8"))
-        if serialized_size > MAX_INLINE_PAYLOAD:
-            blob_ref, blob_hash = externalize_blob(data, event_id)
-            stored_data: dict[str, Any] = {
-                "_blob_ref": blob_ref,
-                "_size": serialized_size,
-                "_blob_hash": blob_hash,
-            }
-        else:
-            stored_data = data
-
-        event = Event(
-            seq=seq,
-            event_id=event_id,
-            ts=now_iso(),
-            agent=agent,
-            event_type=event_type,
-            task_id=task_id,
-            attempt=attempt,
-            data=stored_data,
-            prev_hash=prev_hash,
-            hash="",
+def _append_event_locked(
+    agent: str,
+    event_type: str,
+    task_id: str | None,
+    attempt: int,
+    data: dict[str, Any],
+) -> Event:
+    """Write path of append_event. Caller MUST hold LogLock and have validated
+    event_type/data already. Extracted so claim_task can run a state check and
+    the append under the SAME lock acquisition (atomic check-and-append)."""
+    last = last_event()
+    # SIEGARD-03: refuse to chain onto a corrupted tail. If the last event no
+    # longer matches its own hash, the log is already corrupt — fail HERE (at
+    # append) instead of propagating an invalid prev_hash into every following
+    # event (the cascade that forces recovery to truncate N valid events).
+    # Cost: one hash recompute per append (cheap).
+    if last is not None and last.compute_hash() != last.hash:
+        raise CorruptedLogError(
+            f"refusing to append onto corrupted tail: seq={last.seq} hash mismatch"
         )
-        event.hash = event.compute_hash()
+    seq = (last.seq + 1) if last else 1
+    prev_hash = last.hash if last else "GENESIS"
 
-        line_bytes = (
-            json.dumps(event.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-            + "\n"
-        ).encode("utf-8")
+    event_id = new_event_id()
 
-        # SIEGARD-03: append in a single os.write on an O_APPEND fd. Under LogLock
-        # there are no concurrent cooperating writers; the win is shrinking the
-        # "partial line" window if the process is killed mid-append (the dominant
-        # corruption vector, correlated with worker kills). fsync preserves
-        # durability. Blobs (MAX_INLINE_PAYLOAD) keep the line small, so it
-        # typically fits in a single atomic write (<= PIPE_BUF).
-        fd = os.open(LOG_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-        try:
-            os.write(fd, line_bytes)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+    serialized_size = len(canonical_json(data).encode("utf-8"))
+    if serialized_size > MAX_INLINE_PAYLOAD:
+        blob_ref, blob_hash = externalize_blob(data, event_id)
+        stored_data: dict[str, Any] = {
+            "_blob_ref": blob_ref,
+            "_size": serialized_size,
+            "_blob_hash": blob_hash,
+        }
+    else:
+        stored_data = data
+
+    event = Event(
+        seq=seq,
+        event_id=event_id,
+        ts=now_iso(),
+        agent=agent,
+        event_type=event_type,
+        task_id=task_id,
+        attempt=attempt,
+        data=stored_data,
+        prev_hash=prev_hash,
+        hash="",
+    )
+    event.hash = event.compute_hash()
+
+    line_bytes = (
+        json.dumps(event.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n"
+    ).encode("utf-8")
+
+    # SIEGARD-03: append in a single os.write on an O_APPEND fd. Under LogLock
+    # there are no concurrent cooperating writers; the win is shrinking the
+    # "partial line" window if the process is killed mid-append (the dominant
+    # corruption vector, correlated with worker kills). fsync preserves
+    # durability. Blobs (MAX_INLINE_PAYLOAD) keep the line small, so it
+    # typically fits in a single atomic write (<= PIPE_BUF).
+    fd = os.open(LOG_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        os.write(fd, line_bytes)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
     return event
+
+
+def claim_task(
+    agent: str,
+    task_id: str,
+    attempt: int = 1,
+    data: dict[str, Any] | None = None,
+) -> tuple[Event | None, str | None]:
+    """Atomic check-and-claim — serializes dispatch against the append lock.
+
+    The orchestrators' dispatch cycle is read-then-append: derive state, pick a
+    batch, append task_claimed per task. Two concurrent orchestrator instances
+    can both read the same READY task before either claim lands (double-dispatch
+    race). This function closes that window: it re-derives the task's status
+    from the log INSIDE LogLock and appends task_claimed only when the task is
+    still claimable (status == ready). Racing claimants serialize on the lock;
+    the loser gets a structured refusal instead of writing a duplicate claim.
+
+    Returns:
+        (event, None)  — claim appended.
+        (None, reason) — not claimable; reason is "task_not_found" or
+                         "not_ready:<current status>". Caller MUST drop the
+                         task from its dispatch batch and NOT spawn a worker.
+
+    Raises:
+        EventValidationError: data missing required task_claimed fields.
+        IllegalTransition / CorruptedLogError: log cannot be replayed.
+        LockTimeoutError, OSError: as append_event.
+    """
+    if data is None:
+        data = {}
+    _validate_event_data(EventType.TASK_CLAIMED.value, data)
+    ensure_dirs()
+    with LogLock():
+        state = reduce_all()
+        task = state.tasks.get(task_id)
+        if task is None:
+            return None, "task_not_found"
+        if task.status != TaskStatus.READY:
+            return None, f"not_ready:{TaskStatus(task.status).value}"
+        event = _append_event_locked(
+            agent, EventType.TASK_CLAIMED.value, task_id, attempt, data
+        )
+        return event, None
 
 
 # ---------------------------------------------------------------------------
@@ -1434,6 +1492,11 @@ class OrchState:
     last_snapshot_seq: int = 0
     # ISO timestamps of every task_failed event — used by evaluate_circuit_state
     failure_timestamps: list[str] = field(default_factory=list)
+    # Audited no-op events: duplicates the reducer absorbed instead of raising
+    # IllegalTransition (e.g. a duplicate task_claimed from a concurrent
+    # orchestrator). Fail loud, not fail dead — visible in reduce output, never
+    # silent, never fatal. Each entry: {seq, event_type, task_id, reason}.
+    anomalies: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1448,6 +1511,7 @@ class OrchState:
             "last_snapshot_seq": self.last_snapshot_seq,
             # C3: expose failure_timestamps so orchestrator can evaluate circuit breaker
             "failure_timestamps": self.failure_timestamps,
+            "anomalies": self.anomalies,
         }
 
     @classmethod
@@ -1464,6 +1528,7 @@ class OrchState:
         obj.tasks = {k: TaskState.from_dict(v) for k, v in d.get("tasks", {}).items()}
         obj.phases = {k: PhaseState.from_dict(v) for k, v in d.get("phases", {}).items()}
         obj.failure_timestamps = list(d.get("failure_timestamps", []))
+        obj.anomalies = list(d.get("anomalies", []))
         return obj
 
     def tasks_by_status(self, status: str) -> list["TaskState"]:
@@ -1630,6 +1695,19 @@ def _handle_task_claimed(state: OrchState, event: Event) -> None:
     if task_id is None or task_id not in state.tasks:
         return
     task = state.tasks[task_id]
+    # C2: Idempotency — a duplicate claim of an already-RUNNING task by the same
+    # worker_id is residue from a concurrent orchestrator dispatching the same
+    # batch (double-dispatch race). The log is append-only, so raising here would
+    # make every future replay fail — the duplicate must be an audited no-op, not
+    # a fatal transition. Recorded in state.anomalies (fail loud, not fail dead).
+    if task.status == TaskStatus.RUNNING and task.worker_id == event.data.get("worker_id"):
+        state.anomalies.append({
+            "seq": event.seq,
+            "event_type": EventType.TASK_CLAIMED.value,
+            "task_id": task_id,
+            "reason": "duplicate_claim_same_worker",
+        })
+        return
     if task.status != TaskStatus.READY:
         raise IllegalTransition(
             f"task_claimed: task {task_id!r} is {task.status!r}, expected ready"
@@ -2230,6 +2308,14 @@ def default_config() -> dict[str, Any]:
             },
             "overrides_by_task_type": {},
         },
+        # Allowlist for the clean-tree gates (check_qa_on_integrated_main,
+        # check_all_branches_integrated). fnmatch patterns matched against each
+        # dirty entry's repo-relative path AND basename. Default [] = every
+        # dirty entry blocks (behavior unchanged unless the operator opts in).
+        # Gates MUST surface what they ignored in evidence — nothing silent.
+        "clean_tree_gates": {
+            "ignore_patterns": [],
+        },
         "circuit_breaker": {
             # A4: window-based breaker only. It relaxes as failures age out of the
             # rolling window, or via a manual reset (scripts/circuit_breaker.py). There
@@ -2327,6 +2413,44 @@ def load_config(config_path: Path | None = None) -> dict[str, Any]:
     # silently dropped the writer-protective stale defaults (F-02 regression).
     _deep_merge(cfg, loaded)
     return cfg
+
+
+def split_porcelain_by_allowlist(
+    porcelain: str,
+    patterns: list[str],
+) -> tuple[list[str], list[str]]:
+    """Partitions `git status --porcelain` output into (dirty, ignored) lines.
+
+    The clean-tree gates block on ANY dirty entry, which lets pre-existing
+    operator tooling unrelated to the workflow (dev.sh, tmux.conf) hard-block a
+    phase transition. `clean_tree_gates.ignore_patterns` (.orch/config.json)
+    declares fnmatch patterns for such entries: a line is ignored when its
+    repo-relative path OR its basename matches any pattern (renames match on
+    either side of `->`). With no patterns (the default) every dirty line
+    blocks — exactly the pre-allowlist behavior.
+
+    Transparency contract: callers MUST surface the returned `ignored` list in
+    the gate's evidence — an allowlisted entry is visible, never silent.
+    """
+    dirty: list[str] = []
+    ignored: list[str] = []
+    for line in porcelain.splitlines():
+        if not line.strip():
+            continue
+        path_part = line[3:] if len(line) > 3 else line
+        names: set[str] = set()
+        for cand in path_part.split(" -> "):
+            cand = cand.strip().strip('"')
+            if cand:
+                names.add(cand)
+                names.add(cand.rsplit("/", 1)[-1])
+        if patterns and any(
+            fnmatch.fnmatch(name, pat) for name in names for pat in patterns
+        ):
+            ignored.append(line)
+        else:
+            dirty.append(line)
+    return dirty, ignored
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -3003,6 +3127,8 @@ __all__ = [
     "load_blob_data",
     # Log I/O
     "append_event",
+    "claim_task",
+    "split_porcelain_by_allowlist",
     "read_events",
     "last_event",
     "read_events_filtered",
@@ -3661,12 +3787,29 @@ class SddStateMachine(StateMachine):
             )
         if state == "exit_criteria_failed" and action.name == "dispatch_repair_pipeline":
             cycles = int(inputs.get("repair_cycles", 0))
+            domains = list(inputs.get("invalid_domains", []))
+            # Stage-granular repair (conservative). defect_origins maps each
+            # INVALID domain to the pipeline stage its blocking issues point at
+            # (derived from validation-result.yaml `responsible` fields by
+            # identify_invalid_domains.py). Only the unambiguous back-only case
+            # gets a reduced pipeline — earlier-stage artifacts were approved
+            # and are reused as inputs, not regenerated. ANY other origin
+            # (writer, front, mixed, missing, unparseable) falls back to the
+            # full pipeline: mis-attribution must degrade to redundant work,
+            # never to an under-repair loop.
+            origins = inputs.get("defect_origins") or {}
+            full = ["spec-writer", "spec-reviewer", "spec-back", "spec-validator"]
+            reduced = {"back": ["spec-back", "spec-validator"]}
+            pipelines = {
+                d: reduced.get(origins.get(d), full) for d in domains
+            }
             return Action(
                 "dispatch_repair_pipeline",
                 {
                     "repair_cycle_n": cycles + 1,
-                    "domains": list(inputs.get("invalid_domains", [])),
-                    "pipeline": ["spec-writer", "spec-reviewer", "spec-back", "spec-validator"],
+                    "domains": domains,
+                    "pipeline": full,
+                    "pipelines": pipelines,
                 },
             )
         if state == "exit_criteria_failed" and action.name == "escalate_e08":

@@ -181,6 +181,32 @@ Output schema:
 
 ---
 
+## scripts/identify_invalid_domains.py
+
+Utility (repair loop Step R2): lists domains whose validation report in
+`{SPECS_DIR}/_validation/` is INVALID and derives each one's defect origin from
+the machine-readable `{domain}-validation-result.yaml` (`blocking_issues[].responsible`).
+Feeds the SM's stage-granular repair (S16): origin `"back"` (all blocking issues
+belong to `u-spec-back`) routes a reduced `["spec-back", "spec-validator"]` repair
+pipeline; any other origin (mixed, front, writer, missing or unparseable companion)
+returns `null` and keeps the full pipeline — mis-attribution degrades to redundant
+work, never to under-repair.
+
+### Usage
+
+```bash
+ORCH_PROJECT_DIR=<path> SPECS_DIR=<specs> python3 .claude/skills/phase-sdd-rules/scripts/identify_invalid_domains.py
+```
+
+### Output (exit 0)
+
+```json
+{
+  "invalid_domains": ["chat", "ingestion"],
+  "defect_origins": {"chat": "back", "ingestion": null}
+}
+```
+
 ## scripts/check_structural_diff.py
 
 Utility (not an exit criterion): determines whether a spec change requires dispatching a domain

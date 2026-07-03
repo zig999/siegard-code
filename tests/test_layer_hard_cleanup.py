@@ -36,7 +36,7 @@ class TestGlobalAcceptance:
         allowed = re.compile(
             r"(__future__|sys|json|os|re|hashlib|fcntl|uuid|random|time|dataclasses|datetime|"
             r"enum|pathlib|typing|collections|argparse|subprocess|shutil|importlib|io|curses|"
-            r"textwrap|signal|platform|tempfile|math|itertools|functools)\b")
+            r"textwrap|signal|platform|tempfile|math|itertools|functools|fnmatch)\b")
         local = {"orch_core", "minimal_yaml", "gc_orphan_blobs"}
         bad = []
         for line in out.splitlines():

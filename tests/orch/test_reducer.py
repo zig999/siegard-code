@@ -170,6 +170,83 @@ class TestTaskClaimed:
 
 
 # ---------------------------------------------------------------------------
+# Duplicate task_claimed (double-dispatch race): audited no-op, not fatal
+# ---------------------------------------------------------------------------
+
+class TestDuplicateClaim:
+    """Regression for the eternal double-dispatch incident (log seq 786): a
+    second concurrent orchestrator re-claimed a RUNNING task with the same
+    worker_id. The log is append-only, so a fatal IllegalTransition here makes
+    every future replay fail — the duplicate must be an audited no-op."""
+
+    def _running_task(self):
+        state = fresh()
+        apply_event(state, _evt(EventType.TASK_CREATED, task_id="review_tc_004",
+                                data=_task_data(task_type="qa", deps=[])))
+        apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="review_tc_004",
+                                data={"phase": "dev", "worker_type": "qa",
+                                      "worker_id": "u-be-qa-review_tc_004"}))
+        return state
+
+    def test_duplicate_claim_same_worker_is_noop(self):
+        state = self._running_task()
+        apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="review_tc_004",
+                                data={"phase": "dev", "worker_type": "qa",
+                                      "worker_id": "u-be-qa-review_tc_004"}))
+        task = state.tasks["review_tc_004"]
+        assert task.status == TaskStatus.RUNNING
+        assert task.worker_id == "u-be-qa-review_tc_004"
+
+    def test_duplicate_claim_recorded_as_anomaly(self):
+        """Fail loud, not fail dead: the absorbed duplicate is visible in
+        state.anomalies (and therefore in reduce.py output via to_dict)."""
+        state = self._running_task()
+        dup = _evt(EventType.TASK_CLAIMED, task_id="review_tc_004", seq=786,
+                   data={"phase": "dev", "worker_type": "qa",
+                         "worker_id": "u-be-qa-review_tc_004"})
+        apply_event(state, dup)
+        assert state.anomalies == [{
+            "seq": 786,
+            "event_type": EventType.TASK_CLAIMED.value,
+            "task_id": "review_tc_004",
+            "reason": "duplicate_claim_same_worker",
+        }]
+        assert state.to_dict()["anomalies"] == state.anomalies
+
+    def test_duplicate_claim_different_worker_still_raises(self):
+        """A different worker claiming a RUNNING task is a genuine contradiction
+        (not double-dispatch residue) — IllegalTransition is preserved."""
+        state = self._running_task()
+        with pytest.raises(IllegalTransition):
+            apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="review_tc_004",
+                                    data={"phase": "dev", "worker_type": "qa",
+                                          "worker_id": "u-be-qa-other"}))
+
+    def test_replay_with_duplicate_claim_reaches_terminal(self):
+        """Full incident shape: create → claim → duplicate claim → completed ×2.
+        The replay must not raise and the task must end COMPLETED."""
+        state = self._running_task()
+        apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="review_tc_004",
+                                data={"phase": "dev", "worker_type": "qa",
+                                      "worker_id": "u-be-qa-review_tc_004"}))
+        apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="review_tc_004",
+                                data={"phase": "dev", "artifacts": [], "summary": "approved"}))
+        # Second worker's terminal (C2: first terminal wins → no-op).
+        apply_event(state, _evt(EventType.TASK_COMPLETED, task_id="review_tc_004",
+                                data={"phase": "dev", "artifacts": [], "summary": "rejected"}))
+        assert state.tasks["review_tc_004"].status == TaskStatus.COMPLETED
+        assert len(state.anomalies) == 1
+
+    def test_anomalies_roundtrip_from_dict(self):
+        state = self._running_task()
+        apply_event(state, _evt(EventType.TASK_CLAIMED, task_id="review_tc_004",
+                                data={"phase": "dev", "worker_type": "qa",
+                                      "worker_id": "u-be-qa-review_tc_004"}))
+        restored = OrchState.from_dict(state.to_dict())
+        assert restored.anomalies == state.anomalies
+
+
+# ---------------------------------------------------------------------------
 # Scenario 3.6: illegal transition pending → running
 # ---------------------------------------------------------------------------
 
