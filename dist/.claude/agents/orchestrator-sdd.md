@@ -397,8 +397,10 @@ python3 .claude/skills/orch-state/scripts/current_phase.py
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type escalation \
-  --data '{"code":"E12_state_reduction_failed","severity":"critical","reason":"reduce.py failed — log may be corrupt or orch_core.py version mismatch. Workflow cannot proceed until log integrity is restored.","evidence":[],"suggested_actions":["run: python3 .claude/scripts/recover_retry_sequence.py --dry-run","run: python3 .claude/skills/orch-log/scripts/verify.py","inspect tail of .orch/log.jsonl for malformed events","ensure deployed .claude/lib/orch_core.py matches dist version"]}'
+  --data '{"code":"E12_state_reduction_failed","severity":"critical","reason":"reduce.py failed — log may be corrupt or orch_core.py version mismatch. Workflow cannot proceed until log integrity is restored.","evidence":[],"suggested_actions":["run: python3 .claude/scripts/recover_retry_sequence.py --dry-run","run: python3 .claude/skills/orch-log/scripts/verify.py","inspect tail of .orch/log.jsonl for malformed events","ensure deployed .claude/lib/orch_core.py matches dist version","after applying any fix under .claude/** commit it in the same step (fix(orch): <summary>) — a dirty framework file blocks the downstream clean-tree gates"]}'
 ```
+
+> **Framework self-modification protocol (recovery):** if resolving this escalation involves editing anything under `.claude/**` (e.g. applying an `orch_core.py` fix suggested above), the SAME step that applies the edit MUST commit it (`git commit -m "fix(orch): <summary>"`) before the workflow resumes. A framework fix left uncommitted in the working tree blocks the downstream clean-tree gates (dev exit `all_branches_integrated_to_main`, review entry `qa_runs_on_integrated_main`) — the engine must never trip over its own recovery.
 
 Output `{"status": "escalated", "last_seq": 0, "summary": "reduce_failed — see E12 escalation in log"}` and stop.
 
