@@ -36,7 +36,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 try:
-    from orch_core import TaskStatus, reduce_all, now_iso
+    from orch_core import TaskStatus, reduce_all, now_iso, scoped_phase_tasks
     from read_qa_verdict import extract_verdict
 except ImportError as exc:
     print(json.dumps({
@@ -64,10 +64,11 @@ _QA_TASK_TYPE = "qa"
 
 
 def _collect_completed_tasks(state) -> list:
+    # 5-a: scoped to ORCH_WORKFLOW_ID when set — another workflow's QA verdicts
+    # must not satisfy (or block) this workflow's approval gate.
     return [
-        task for task in state.tasks.values()
-        if task.phase == PHASE_NAME
-        and task.status == TaskStatus.COMPLETED
+        task for task in scoped_phase_tasks(state, PHASE_NAME)
+        if task.status == TaskStatus.COMPLETED
         and task.task_type == _QA_TASK_TYPE
     ]
 

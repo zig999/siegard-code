@@ -237,13 +237,14 @@ def _safe_parse_iso(ts: str) -> datetime | None:
         return None
 
 
-_WORKFLOW_ID_RE = re.compile(r"[A-Za-z0-9._-]+")
+# 5-a: no '_' — underscore is the task-ID namespace delimiter (see slugify_workflow_id).
+_WORKFLOW_ID_RE = re.compile(r"[A-Za-z0-9.-]+")
 
 
 def slugify_workflow_id(raw: str | None) -> str | None:
     """Returns a sanitized human-readable workflow_id, or None if unusable (F-04).
 
-    A usable id is a non-empty string of [A-Za-z0-9._-] with no path separators
+    A usable id is a non-empty string of [A-Za-z0-9.-] with no path separators
     (a workflow_id keys a session directory `.orch/sessions/<id>/`, so it must be a
     single safe path segment). The id is lowercased: targets run on a Windows
     case-insensitive filesystem, so 'Chat-UI' and 'chat-ui' would otherwise be two
@@ -252,10 +253,17 @@ def slugify_workflow_id(raw: str | None) -> str | None:
     project's domain-slug convention. UUIDs pass this filter — they are valid ids —
     but the engine should only MINT a UUID-like opaque id when nothing readable was
     requested; see resolve_workflow_id.
+
+    5-a: '_' is mapped to '-' — underscore is the component delimiter inside
+    namespaced task IDs (sdd_{wf}_{domain}_{stage}), so a workflow id containing
+    '_' would make the namespace non-injective: workflow 'pay_v2' + domain 'auth'
+    and workflow 'pay' + domain 'v2_auth' would mint the SAME task id, and every
+    startswith('dev_pay_') prefix filter would leak into 'pay_v2'. Mapping (not
+    rejecting) keeps operator-requested ids usable.
     """
     if not isinstance(raw, str):
         return None
-    raw = raw.strip().lower()
+    raw = raw.strip().lower().replace("_", "-")
     if not raw or "/" in raw or "\\" in raw or raw in (".", ".."):
         return None
     if not _WORKFLOW_ID_RE.fullmatch(raw):
@@ -1367,6 +1375,10 @@ class TaskState:
     max_attempts: int = 3
     worker_id: str | None = None
     stack: str | None = None
+    # 5-a: explicit workflow binding from task_created data.workflow_id (None on
+    # legacy events). Lets orchestrators and exit gates scope task queries per
+    # workflow by FIELD instead of parsing/prefix-matching the task ID.
+    workflow_id: str | None = None
     artifacts: list[str] = field(default_factory=list)
     last_error: str | None = None
     last_failure_reason: str | None = None
@@ -1390,6 +1402,7 @@ class TaskState:
             "max_attempts": self.max_attempts,
             "worker_id": self.worker_id,
             "stack": self.stack,
+            "workflow_id": self.workflow_id,
             "artifacts": self.artifacts,
             "last_error": self.last_error,
             "last_failure_reason": self.last_failure_reason,
@@ -1422,6 +1435,7 @@ class TaskState:
             max_attempts=d.get("max_attempts", 3),
             worker_id=d.get("worker_id"),
             stack=d.get("stack"),
+            workflow_id=d.get("workflow_id"),
             artifacts=d.get("artifacts", []),
             last_error=d.get("last_error"),
             last_failure_reason=d.get("last_failure_reason"),
@@ -1682,6 +1696,7 @@ def _handle_task_created(state: OrchState, event: Event) -> None:
         task_type=data.get("type", ""),
         spec=data.get("spec", ""),
         stack=data.get("stack"),
+        workflow_id=data.get("workflow_id"),
         max_attempts=Tier(data.get("tier", Tier.STANDARD.value)).default_max_attempts,
         last_event_at=event.ts,
     )
@@ -2060,23 +2075,43 @@ def reduce_workflow(workflow_id: str) -> OrchState:
             declared = data.get("workflow_id")
             if declared:
                 current_wf = declared
-        event_wf = (
-            data.get("workflow_id")
-            or (task_wf.get(event.task_id) if event.task_id else None)
-            or current_wf
-        )
-        # Bind the task to its resolved workflow at creation time so later
-        # events for it (claimed/progress/terminal) attribute correctly even
-        # when another workflow's phase_declared interleaves in between.
-        if (
-            event.event_type == EventType.TASK_CREATED.value
-            and event.task_id
-            and event_wf
-        ):
-            task_wf[event.task_id] = event_wf
+        if event.event_type == EventType.TASK_CREATED.value:
+            # A task_created is a (re-)incarnation: attribute it by explicit id or
+            # the positional boundary — NEVER by the binding map, or the first
+            # creation would own the id forever and a legacy workflow's legitimate
+            # reuse of a bare id (pre-5-a logs) would misattribute every later
+            # event to the earlier workflow. The new creation REBINDS the id.
+            event_wf = data.get("workflow_id") or current_wf
+            if event.task_id and event_wf:
+                task_wf[event.task_id] = event_wf
+        else:
+            event_wf = (
+                data.get("workflow_id")
+                or (task_wf.get(event.task_id) if event.task_id else None)
+                or current_wf
+            )
         if event_wf == workflow_id:
             apply_event(state, event)
     return state
+
+
+def scoped_phase_tasks(state: "OrchState", phase: str) -> list["TaskState"]:
+    """Tasks of `phase`, scoped to ORCH_WORKFLOW_ID when set (5-a gate scoping).
+
+    Exit gates used to read the GLOBAL state: another workflow's non-terminal
+    task in the shared log could block (or wrongly satisfy) the current
+    workflow's phase exit forever. When ORCH_WORKFLOW_ID is set, a task is in
+    scope when its TaskState.workflow_id (stamped from task_created data)
+    matches — or when it has NO binding (legacy pre-5-a task): a workflow
+    upgraded mid-flight must keep seeing its own un-namespaced tasks, and the
+    residual overlap with other legacy workflows is exactly the pre-5-a status
+    quo, never worse. With ORCH_WORKFLOW_ID unset behavior is unchanged (global).
+    """
+    wf = os.environ.get("ORCH_WORKFLOW_ID")
+    tasks = [t for t in state.tasks.values() if t.phase == phase]
+    if not wf:
+        return tasks
+    return [t for t in tasks if t.workflow_id == wf or t.workflow_id is None]
 
 
 def detect_stale_orchestrator(
@@ -3149,6 +3184,7 @@ __all__ = [
     "append_event",
     "claim_task",
     "split_porcelain_by_allowlist",
+    "scoped_phase_tasks",
     "read_events",
     "last_event",
     "read_events_filtered",

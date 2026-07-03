@@ -17,8 +17,12 @@ class TestSlugify:
     def test_plain_name_is_kept(self):
         assert orch_core.slugify_workflow_id("chat-ui") == "chat-ui"
 
-    def test_dotted_and_underscored_ok(self):
-        assert orch_core.slugify_workflow_id("spec_2026.06") == "spec_2026.06"
+    def test_dotted_ok_underscore_mapped_to_hyphen(self):
+        # 5-a: '_' is the namespace delimiter inside task IDs (dev_{wf}_tc_{n});
+        # a workflow id containing '_' would make the namespace non-injective
+        # ('pay_v2'+'auth' vs 'pay'+'v2_auth'), so slugify maps '_' -> '-'.
+        assert orch_core.slugify_workflow_id("spec_2026.06") == "spec-2026.06"
+        assert orch_core.slugify_workflow_id("pay_v2") == "pay-v2"
 
     def test_path_separator_rejected(self):
         assert orch_core.slugify_workflow_id("a/b") is None
@@ -40,7 +44,7 @@ class TestSlugify:
         # Targets run on a case-insensitive FS; 'Chat-UI' and 'chat-ui' must not
         # become two log ids resolving to the same session dir (P1 violation).
         assert orch_core.slugify_workflow_id("Chat-UI") == "chat-ui"
-        assert orch_core.slugify_workflow_id("CHAT_UI") == "chat_ui"
+        assert orch_core.slugify_workflow_id("CHAT_UI") == "chat-ui"  # '_' -> '-' (5-a)
 
 
 class TestResolveWorkflowId:

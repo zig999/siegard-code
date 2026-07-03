@@ -56,9 +56,10 @@ def evaluate() -> dict:
             return False
         if wf:
             return task_id.startswith(f"sdd_{wf}_improve_")
-        return task_id.startswith("sdd_improve_") or (
-            task_id.startswith("sdd_") and "_improve_" in task_id
-        )
+        # No workflow given: accept ONLY true legacy un-namespaced IDs. A broad
+        # contains-match would swallow every workflow's namespaced reviewers and
+        # reintroduce the cross-workflow contamination this scoping removes.
+        return task_id.startswith("sdd_improve_")
 
     reviewers = [
         t for t in state.tasks.values()

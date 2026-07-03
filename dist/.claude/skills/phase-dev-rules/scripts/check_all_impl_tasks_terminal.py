@@ -32,7 +32,7 @@ _LIB = _CLAUDE_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
 try:
-    from orch_core import TaskStatus, reduce_all
+    from orch_core import TaskStatus, reduce_all, scoped_phase_tasks
 except ImportError as exc:
     print(json.dumps({
         "status": "error",
@@ -50,7 +50,9 @@ DLQ_STATES = {TaskStatus.DLQ}
 def evaluate() -> dict:
     state = reduce_all()
 
-    dev_tasks = [t for t in state.tasks.values() if t.phase == PHASE_NAME]
+    # 5-a: scoped to ORCH_WORKFLOW_ID when set — another workflow's non-terminal
+    # task in the shared log must not block this workflow's exit.
+    dev_tasks = scoped_phase_tasks(state, PHASE_NAME)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     if not dev_tasks:

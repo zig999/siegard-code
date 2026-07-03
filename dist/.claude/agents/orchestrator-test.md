@@ -65,7 +65,7 @@ You return exactly one JSON envelope when done (see §Return contract).
 |---------|---------|---------|
 | Test execution task | `test_{dev_task_id}` | `test_dev_etax-unify_tc_001` |
 
-Dev task IDs are workflow-namespaced (5-a: `dev_{workflow_id}_tc_{n}`), so `test_{dev_task_id}` inherits uniqueness across workflows in the shared log. The authoritative test↔dev correspondence is the `dev_task_id` field in the test task's `task_created` data — never parse it from the task ID.
+Dev task IDs are workflow-namespaced (5-a: `dev_<workflow_id>_tc_{n}`), so `test_{dev_task_id}` inherits uniqueness across workflows in the shared log. The authoritative test↔dev correspondence is the `dev_task_id` field in the test task's `task_created` data — never parse it from the task ID.
 
 ---
 
@@ -198,16 +198,16 @@ Store `stack` for worker routing in Step 4.
 For each `dev_completed_task` in `dev_completed_tasks`:
 - Skip if the dev task has no delivery artifacts
 - Skip if none of the dev task's delivery artifact paths contain `.orch/sessions/<workflow_id>/` — the task belongs to an earlier workflow in the shared log, not to this one
-- **Session-linkage guard (legacy logs):** if a `test_{dev_task_id}` task already exists in `test_tasks`, do NOT skip on existence alone — skip only when its `spec` contains `.orch/sessions/<workflow_id>/` (same workflow → legitimate reuse). Otherwise the existing task belongs to an EARLIER workflow that used the same TC number; create the task as `test_{workflow_id}_{dev_task_id}` instead. (With namespaced dev IDs this cannot happen; the guard protects logs that predate 5-a.)
+- **Session-linkage guard (legacy logs):** if a `test_{dev_task_id}` task already exists in `test_tasks`, do NOT skip on existence alone — skip only when its `spec` contains `.orch/sessions/<workflow_id>/` (same workflow → legitimate reuse). Otherwise the existing task belongs to an EARLIER workflow that used the same TC number; create the task as `test_<workflow_id>_{dev_task_id}` instead. (With namespaced dev IDs this cannot happen; the guard protects logs that predate 5-a.)
 
 For each new task to create, extract `delivery_path` from `dev_completed_task.artifacts`
-(first artifact whose name contains "delivery"):
+(first artifact whose name contains "delivery"). Resolve `<test_task_id>` per the guard above: `test_{dev_task_id}` normally, `test_<workflow_id>_{dev_task_id}` on cross-workflow collision — then emit with the RESOLVED id:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-test \
   --event-type task_created \
-  --task-id test_{dev_task_id} \
+  --task-id <test_task_id> \
   --data '{"phase":"test","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"test-run","spec":"<delivery_path>","stack":"<stack>","dev_task_id":"<dev_task_id>"}'
 ```
 
@@ -432,9 +432,9 @@ Return to 4.0.
 ### Step 5 — Exit criteria evaluation
 
 ```bash
-python3 .claude/skills/phase-test-rules/scripts/check_all_test_tasks_terminal.py
-python3 .claude/skills/phase-test-rules/scripts/check_all_tests_passed.py
-python3 .claude/skills/phase-test-rules/scripts/check_no_critical_failures.py
+ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-test-rules/scripts/check_all_test_tasks_terminal.py
+ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-test-rules/scripts/check_all_tests_passed.py
+ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-test-rules/scripts/check_no_critical_failures.py
 ```
 
 **All criteria met** — no human gate required (tests are deterministic):

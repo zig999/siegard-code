@@ -39,7 +39,7 @@ _LIB = _CLAUDE_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
 try:
-    from orch_core import TaskStatus, reduce_all
+    from orch_core import TaskStatus, reduce_all, scoped_phase_tasks
 except ImportError as exc:
     print(json.dumps({
         "status": "error",
@@ -59,11 +59,12 @@ _QA_NOT_READY_RE = re.compile(r"^\s*qa_ready\s*:\s*false\s*$", re.MULTILINE | re
 
 
 def _collect_delivery_paths(state) -> list[str]:
-    """Returns artifact paths from completed dev-phase tasks."""
+    """Returns artifact paths from completed dev-phase tasks.
+
+    5-a: scoped to ORCH_WORKFLOW_ID when set — deliveries from another workflow
+    in the shared log must not enter (or block) this workflow's gate."""
     paths: list[str] = []
-    for task in state.tasks.values():
-        if task.phase != PHASE_NAME:
-            continue
+    for task in scoped_phase_tasks(state, PHASE_NAME):
         if task.status != TaskStatus.COMPLETED:
             continue
         for artifact in task.artifacts:

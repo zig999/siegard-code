@@ -65,9 +65,9 @@ You return exactly one JSON envelope when done (see §Return contract).
 | Purpose | Pattern | Example |
 |---------|---------|---------|
 | QA review task | `review_{dev_task_id}` | `review_dev_etax-unify_tc_001` |
-| QA review task (cross-workflow ID collision — legacy logs) | `review_{workflow_id}_{dev_task_id}` | `review_etax-unify_dev_tc_001` |
+| QA review task (cross-workflow ID collision — legacy logs) | `review_<workflow_id>_{dev_task_id}` | `review_etax-unify_dev_tc_001` |
 
-Dev task IDs are workflow-namespaced (5-a: `dev_{workflow_id}_tc_{n}`), so `review_{dev_task_id}` inherits uniqueness across workflows by construction. The collision fallback remains for logs that predate 5-a, where a bare `review_dev_tc_*` from an earlier workflow can collide with the current one. The Step 3 session-linkage guard detects the collision and falls back to the namespaced pattern. The authoritative dev↔review correspondence is the `dev_task_id` field in the review task's `task_created` data — never parse it from the task ID.
+Dev task IDs are workflow-namespaced (5-a: `dev_<workflow_id>_tc_{n}`), so `review_{dev_task_id}` inherits uniqueness across workflows by construction. The collision fallback remains for logs that predate 5-a, where a bare `review_dev_tc_*` from an earlier workflow can collide with the current one. The Step 3 session-linkage guard detects the collision and falls back to the namespaced pattern. The authoritative dev↔review correspondence is the `dev_task_id` field in the review task's `task_created` data — never parse it from the task ID.
 
 ---
 
@@ -252,7 +252,7 @@ For each `dev_completed_task` in `dev_completed_tasks`:
 - Skip if none of the dev task's delivery artifact paths contain `.orch/sessions/<workflow_id>/` — the task belongs to an earlier workflow in the shared log, not to this one
 - **Session-linkage guard (cross-workflow ID collision):** if a `review_{dev_task_id}` task already exists in `review_tasks`, do NOT skip on existence alone. Check its `spec`:
   - `spec` contains `.orch/sessions/<workflow_id>/` → same workflow → legitimate reuse → skip
-  - otherwise → the existing task belongs to an EARLIER workflow that used the same TC number. Treating it as done would leave the current deliverables unreviewed (silent QA suppression). Create a new task using the namespaced ID `review_{workflow_id}_{dev_task_id}` instead — and apply the same guard to that ID before creating it
+  - otherwise → the existing task belongs to an EARLIER workflow that used the same TC number. Treating it as done would leave the current deliverables unreviewed (silent QA suppression). Create a new task using the namespaced ID `review_<workflow_id>_{dev_task_id}` instead — and apply the same guard to that ID before creating it
 
 For each new task to create:
 
@@ -290,7 +290,7 @@ WARN_EMITTED=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys
 
 When the classifier script fails (exit 1), the SM returns `qa_mode="standard"`, `concurrency_hint=3`, and `warn_emitted=true` with `code=E19_qa_mode_classifier_failed` — emit that warning escalation but do NOT abort the phase. Otherwise the SM populates `concurrency_hint` from the qa_mode (`micro=5, standard=3, full=2`).
 
-Then emit `task_created` (task ID per the Step 3 session-linkage guard: `review_{dev_task_id}`, or `review_{workflow_id}_{dev_task_id}` on cross-workflow collision):
+Then emit `task_created` (task ID per the Step 3 session-linkage guard: `review_{dev_task_id}`, or `review_<workflow_id>_{dev_task_id}` on cross-workflow collision):
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -835,7 +835,7 @@ Emit progress panel to the user (structured text):
 ```
 Review Phase — QA Verdict Summary
 ===================================
-Workflow: {workflow_id}
+Workflow: <workflow_id>
 Tasks reviewed: {total}
 
 Verdicts:
@@ -955,7 +955,7 @@ Stop. Do NOT evaluate criterion scripts.
 **If no DLQ entries:**
 
 ```bash
-python3 .claude/skills/phase-review-rules/scripts/check_all_qa_verdicts_approved.py
+ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-review-rules/scripts/check_all_qa_verdicts_approved.py
 python3 .claude/skills/phase-review-rules/scripts/check_no_open_critical_findings.py
 python3 .claude/skills/phase-review-rules/scripts/check_documentation_verified.py
 python3 .claude/skills/phase-review-rules/scripts/check_no_orphan_placeholders.py

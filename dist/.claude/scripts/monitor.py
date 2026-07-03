@@ -299,9 +299,14 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
     """
     Re-scan the log and group events by workflow_id.
 
-    workflow_id is set by `phase_declared.data.workflow_id`. Every event
-    between one phase_declared and the next is attributed to that workflow.
-    Events emitted before any phase_declared land in UNKNOWN_WORKFLOW.
+    Attribution mirrors orch_core.reduce_workflow (parity is load-bearing —
+    the monitor must agree with the engine's derived state):
+    1. explicit `data.workflow_id` on the event;
+    2. task→workflow binding from the task's `task_created` (5-a: orchestrators
+       stamp workflow_id there) — task_created itself attributes explicit→
+       positional and REBINDS the id (legacy reuse);
+    3. positional: every event between one phase_declared and the next belongs
+       to that workflow. Events before any phase_declared land in UNKNOWN_WORKFLOW.
 
     Returns (workflows, error). On hard error returns ({}, error_msg).
     """
@@ -317,6 +322,8 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
     # Per workflow: per (task_id, attempt) the most recent state record.
     task_state: dict[str, dict[tuple[str, int], dict]] = {}
     current_wf: str | None = None
+    # 5-a parity with reduce_workflow: task_id → workflow binding from task_created.
+    task_wf: dict[str, str] = {}
 
     try:
         events = list(read_events_filtered())
@@ -354,8 +361,18 @@ def _collect_workflow_index(project_dir: Path) -> tuple[dict[str, dict], str | N
                             "approved_at": None, "criteria_met": [],
                         })
 
-        # Prefer workflow_id embedded in event data (new events) over tracked current_wf (legacy).
-        wf = data.get("workflow_id") or current_wf or UNKNOWN_WORKFLOW
+        # Attribution parity with orch_core.reduce_workflow (see docstring).
+        if et == "task_created":
+            wf = data.get("workflow_id") or current_wf or UNKNOWN_WORKFLOW
+            if event.task_id and wf != UNKNOWN_WORKFLOW:
+                task_wf[event.task_id] = wf
+        else:
+            wf = (
+                data.get("workflow_id")
+                or (task_wf.get(event.task_id) if event.task_id else None)
+                or current_wf
+                or UNKNOWN_WORKFLOW
+            )
         w = workflows.setdefault(wf, _new_workflow_record())
         if w["first_seq"] is None:
             w["first_seq"] = event.seq

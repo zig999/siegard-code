@@ -60,8 +60,8 @@ You return exactly one JSON envelope when done (see §Return contract).
 
 | Purpose | Pattern | Example |
 |---------|---------|---------|
-| Planning task | `dev_{workflow_id}_planning` (`_be`/`_fe` suffix for fullstack) | `dev_etax-unify_planning` |
-| Implementation task | `dev_{workflow_id}_tc_{n}` | `dev_etax-unify_tc_001` |
+| Planning task | `dev_<workflow_id>_planning` (`_be`/`_fe` suffix for fullstack) | `dev_etax-unify_planning` |
+| Implementation task | `dev_<workflow_id>_tc_{n}` | `dev_etax-unify_tc_001` |
 
 Task IDs are namespaced by `workflow_id` (5-a): the log is shared across workflows, and un-namespaced IDs from an earlier workflow collide with the current one (silent skip / state reset). Two rules:
 
@@ -182,6 +182,14 @@ Hold the full `OrchState` in memory. Extract:
 - `planning_task`: the `dev_tasks` entry with `task_type == "planning"` for this workflow (ID `dev_<workflow_id>_planning`), else `null`
 - `impl_tasks`: all `dev_tasks` where `task.task_type == "impl"` and the ID starts with `dev_<workflow_id>_` — filter by FIELDS plus the workflow prefix, never by the bare `dev_tc_` prefix (a shared log contains other workflows' impl tasks)
 - `last_seq`: highest seq in state
+
+**Legacy adoption (pre-5-a in-flight workflow):** if the namespaced filter yields ZERO planning/impl tasks, run the workflow-scoped reduction before concluding the phase is fresh:
+
+```bash
+python3 .claude/skills/orch-state/scripts/reduce.py --workflow <workflow_id>
+```
+
+If it contains un-namespaced dev tasks (`dev_planning*`, `dev_tc_*`), this workflow started before 5-a — ADOPT them: use them as `planning_task`/`impl_tasks` and keep their legacy IDs for the rest of the workflow (claims, retries, revisions). NEVER create namespaced duplicates for adopted tasks: Step 4's "create them all" rule applies only when NEITHER namespaced NOR adoptable legacy tasks exist. Skipping this check re-implements already-merged work on conflicting branches.
 
 ---
 
@@ -376,7 +384,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type task_skipped \
   --task-id dev_<workflow_id>_planning \
-  --data '{"phase":"dev","reason":"implementation_only_no_spec_change","detail":"planner_required=false in triage.json; backlog synthesized from triage.json"}'
+  --data '{"phase":"dev","workflow_id":"<workflow_id>","reason":"implementation_only_no_spec_change","detail":"planner_required=false in triage.json; backlog synthesized from triage.json"}'
 ```
 
 Then synthesize the backlog:
@@ -1008,8 +1016,8 @@ The end state (HEAD on `main`, clean tree, no unmerged `feat/TC-*` branch, no le
 ### Step 6 — Exit criteria evaluation
 
 ```bash
-python3 .claude/skills/phase-dev-rules/scripts/check_all_impl_tasks_terminal.py
-python3 .claude/skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py
+ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-dev-rules/scripts/check_all_impl_tasks_terminal.py
+ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py
 python3 .claude/skills/phase-dev-rules/scripts/check_no_open_prohibitions.py
 python3 .claude/skills/phase-dev-rules/scripts/check_all_branches_integrated.py
 python3 .claude/skills/phase-dev-rules/scripts/check_acceptance_criteria_covered.py

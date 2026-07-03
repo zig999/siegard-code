@@ -31,7 +31,7 @@ _LIB = _CLAUDE_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
 try:
-    from orch_core import TaskStatus, reduce_all, now_iso
+    from orch_core import TaskStatus, reduce_all, now_iso, scoped_phase_tasks
 except ImportError as exc:
     print(json.dumps({
         "status": "error",
@@ -50,9 +50,10 @@ _PASSED_VALUE = "passed"
 
 def evaluate() -> dict:
     state = reduce_all()
+    # 5-a: scoped to ORCH_WORKFLOW_ID when set (shared-log isolation).
     all_completed = [
-        t for t in state.tasks.values()
-        if t.phase == PHASE_NAME and t.status == TaskStatus.COMPLETED
+        t for t in scoped_phase_tasks(state, PHASE_NAME)
+        if t.status == TaskStatus.COMPLETED
     ]
 
     if not all_completed:

@@ -48,13 +48,24 @@ class TestNamespacedIdConventions:
     def test_sdd_ids_are_namespaced(self):
         src = _src("orchestrator-sdd.md")
         assert "sdd_<workflow_id>_triage" in src
-        assert "sdd_{workflow_id}_{domain}_spec-writer" in src
-        assert "sdd_{workflow_id}_front" in src
-        assert "sdd_{workflow_id}_compliance" in src
+        assert "sdd_<workflow_id>_{domain}_spec-writer" in src
+        assert "sdd_<workflow_id>_front" in src
+        assert "sdd_<workflow_id>_compliance" in src
         # No un-namespaced emission survives: every `--task-id sdd_...` carries the workflow.
         for line in src.splitlines():
             if "--task-id sdd_" in line:
                 assert "workflow_id" in line, f"un-namespaced sdd task-id: {line.strip()}"
+
+    def test_workflow_id_placeholder_notation_is_uniform(self):
+        """Controlled vocabulary (LLM-executed spec): ONE notation per
+        substitution. Mixed {workflow_id}/<workflow_id> risks the dispatcher
+        treating one form as literal text — deps then reference task IDs that
+        were never created and the loop stalls at the 30-iteration cap."""
+        for name in ORCHESTRATORS:
+            src = _src(name)
+            assert "{workflow_id}" not in src, (
+                f"{name}: stray {{workflow_id}} — canonical notation is <workflow_id>"
+            )
 
     def test_dev_ids_are_namespaced(self):
         src = _src("orchestrator-dev.md")
@@ -115,3 +126,46 @@ class TestCrossWorkflowScoping:
     def test_test_return_to_dev_uses_explicit_field(self):
         src = _src("orchestrator-test.md")
         assert "`dev_task_id` field in the test task's `task_created` data" in src
+
+
+class TestReviewFixesV221:
+    """Protocol-side assertions for the v2.2.1 review-fix round."""
+
+    def test_exit_gates_invoked_with_workflow_scope(self):
+        expected = {
+            "orchestrator-dev.md": [
+                "check_all_impl_tasks_terminal.py",
+                "check_all_deliveries_qa_ready.py",
+            ],
+            "orchestrator-test.md": [
+                "check_all_test_tasks_terminal.py",
+                "check_all_tests_passed.py",
+                "check_no_critical_failures.py",
+            ],
+            "orchestrator-review.md": ["check_all_qa_verdicts_approved.py"],
+        }
+        for name, gates in expected.items():
+            src = _src(name)
+            for gate in gates:
+                for line in src.splitlines():
+                    if gate in line and line.strip().startswith(("python3", "ORCH_WORKFLOW_ID")):
+                        assert line.strip().startswith("ORCH_WORKFLOW_ID=<workflow_id>"), (
+                            f"{name}: {gate} invoked without workflow scope: {line.strip()}"
+                        )
+
+    def test_sdd_extraction_is_workflow_scoped(self):
+        src = _src("orchestrator-sdd.md")
+        assert "workflow-scoped `sdd_tasks` set" in src
+        assert "an earlier workflow's completed pipeline for the same domain does NOT count" in src.replace("**", "")
+
+    def test_legacy_adoption_rule_present(self):
+        for name in ("orchestrator-dev.md", "orchestrator-sdd.md"):
+            src = _src(name)
+            assert "Legacy adoption (pre-5-a in-flight workflow)" in src, name
+            assert "NEVER create namespaced duplicates" in src, name
+            assert "reduce.py --workflow <workflow_id>" in src, name
+
+    def test_test_emit_template_uses_resolved_id(self):
+        src = _src("orchestrator-test.md")
+        assert "--task-id <test_task_id>" in src
+        assert "--task-id test_{dev_task_id}" not in src

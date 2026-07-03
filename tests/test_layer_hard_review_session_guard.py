@@ -6,7 +6,7 @@ satisfies the naive "skip if exists" check and silently suppresses QA for the
 current one (eternal audit: seqs 155-160 vs 750-756 — E21). The fix is the
 Step 3 session-linkage guard: existence alone never skips; the existing task's
 spec must belong to .orch/sessions/<workflow_id>/, otherwise a namespaced ID
-(review_{workflow_id}_{dev_task_id}) is used. The dev↔review link is the
+(review_<workflow_id>_{dev_task_id}) is used. The dev↔review link is the
 explicit dev_task_id field in task_created data, never parsed from the ID.
 """
 from pathlib import Path
@@ -28,7 +28,7 @@ class TestSessionLinkageGuard:
 
     def test_collision_falls_back_to_namespaced_id(self):
         src = _src()
-        assert "review_{workflow_id}_{dev_task_id}" in src
+        assert "review_<workflow_id>_{dev_task_id}" in src
 
     def test_stale_dev_tasks_are_skipped(self):
         """dev_completed_tasks comes from GLOBAL state — deliverables from an
@@ -45,4 +45,4 @@ class TestSessionLinkageGuard:
     def test_id_convention_documents_collision_variant(self):
         src = _src()
         convention = src.split("## Task ID convention")[1].split("\n## ")[0]
-        assert "review_{workflow_id}_{dev_task_id}" in convention
+        assert "review_<workflow_id>_{dev_task_id}" in convention

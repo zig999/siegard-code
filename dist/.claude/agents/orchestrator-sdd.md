@@ -79,25 +79,25 @@ Finally, a single cross-domain compliance task:
 
 ```
 spec-compliance
-  deps: sdd_{workflow_id}_front_spec-validator   when the front leg ran (ui_task == true)
+  deps: sdd_<workflow_id>_front_spec-validator   when the front leg ran (ui_task == true)
         all per-domain spec-validator tasks   otherwise (back-only)
 ```
 
-Task IDs: per-domain back tasks use `sdd_{workflow_id}_{domain}_{step}` (e.g. `sdd_{workflow_id}_auth_spec-writer`). The front
-leg is **global**, not per-domain: `sdd_{workflow_id}_front` and `sdd_{workflow_id}_front_spec-validator`.
+Task IDs: per-domain back tasks use `sdd_<workflow_id>_{domain}_{step}` (e.g. `sdd_<workflow_id>_auth_spec-writer`). The front
+leg is **global**, not per-domain: `sdd_<workflow_id>_front` and `sdd_<workflow_id>_front_spec-validator`.
 
 Pipeline task types and their step identifiers:
 
 | Step | Scope | task.type | task_id |
 |------|-------|-----------|---------|
 | 0 (triage) | once | `spec-triage` | `sdd_<workflow_id>_triage` |
-| 1 | per domain | `spec-writer` | `sdd_{workflow_id}_{domain}_spec-writer` |
-| 2 | per domain | `spec-reviewer` | `sdd_{workflow_id}_{domain}_spec-reviewer` |
-| 3 | per domain | `spec-back` | `sdd_{workflow_id}_{domain}_spec-back` |
-| 4 | per domain | `spec-validator` | `sdd_{workflow_id}_{domain}_spec-validator` |
-| 5 (front leg — only if `ui_task`) | once | `spec-front` | `sdd_{workflow_id}_front` |
-| 6 (front leg — only if `ui_task`) | once | `spec-validator` (front pass) | `sdd_{workflow_id}_front_spec-validator` |
-| 7 (cross-domain) | once | `spec-compliance` | `sdd_{workflow_id}_compliance` |
+| 1 | per domain | `spec-writer` | `sdd_<workflow_id>_{domain}_spec-writer` |
+| 2 | per domain | `spec-reviewer` | `sdd_<workflow_id>_{domain}_spec-reviewer` |
+| 3 | per domain | `spec-back` | `sdd_<workflow_id>_{domain}_spec-back` |
+| 4 | per domain | `spec-validator` | `sdd_<workflow_id>_{domain}_spec-validator` |
+| 5 (front leg — only if `ui_task`) | once | `spec-front` | `sdd_<workflow_id>_front` |
+| 6 (front leg — only if `ui_task`) | once | `spec-validator` (front pass) | `sdd_<workflow_id>_front_spec-validator` |
+| 7 (cross-domain) | once | `spec-compliance` | `sdd_<workflow_id>_compliance` |
 
 ---
 
@@ -330,8 +330,8 @@ No spec work required. Per DECLARATIVE_TRUNCATION, log a `task_skipped` event fo
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_skipped \
-  --task-id sdd_{workflow_id}_pipeline_skip \
-  --data '{"phase":"sdd","reason":"implementation_only_no_spec_change","scope":"standard_pipeline"}'
+  --task-id sdd_<workflow_id>_pipeline_skip \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"implementation_only_no_spec_change","scope":"standard_pipeline"}'
 
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
@@ -405,8 +405,12 @@ python3 .claude/skills/orch-log/scripts/append.py \
 Output `{"status": "escalated", "last_seq": 0, "summary": "reduce_failed — see E12 escalation in log"}` and stop.
 
 Hold the full `OrchState` in memory for this cycle. Extract:
-- `sdd_tasks`: all tasks where `task.phase == "sdd"`
+- `sdd_tasks`: all tasks where `task.phase == "sdd"` AND the task belongs to THIS workflow — `task.workflow_id == "<workflow_id>"`, or `task.workflow_id` is null AND the task ID starts with `sdd_<workflow_id>_` (legacy events without the data field). The shared log contains other workflows' sdd tasks as distinct namespaced entries; treating them as this workflow's suppresses spec work for domains an earlier workflow already covered (the E21 shape) and pulls foreign `ready` tasks into this workflow's dispatch queue with the wrong SESSION_DIR
 - `last_seq`: the highest seq in state
+
+**Every subsequent step that reads sdd tasks (Step 2 classification, Step 5 ready queue / stop conditions / retry / DLQ cascade, Step 6 exit criteria) operates on this workflow-scoped `sdd_tasks` set — never on the raw global state.**
+
+**Legacy adoption (pre-5-a in-flight workflow):** if the scoped filter yields ZERO sdd tasks, run `python3 .claude/skills/orch-state/scripts/reduce.py --workflow <workflow_id>`; un-namespaced sdd tasks appearing there (`sdd_triage`, `sdd_{domain}_*`) belong to this workflow (started before 5-a) — ADOPT them into `sdd_tasks` and keep their legacy IDs (including the triage-skip check and the R1 repair-cycle count, which then uses the legacy `sdd_.+_spec-\w+-repair-\d+` pattern over the workflow-scoped reduction). NEVER create namespaced duplicates for adopted tasks.
 
 ---
 
@@ -458,12 +462,12 @@ Classify pipeline state for each domain:
 
 | Classification | Condition |
 |----------------|-----------|
-| `new` | No sdd tasks exist for this domain |
+| `new` | No sdd tasks exist for this domain **in the workflow-scoped `sdd_tasks` set** (an earlier workflow's completed pipeline for the same domain does NOT count) |
 | `in_progress` | Some sdd tasks exist but the back leg is not complete |
 | `complete` | All 4 back-leg steps (writer → reviewer → back → validator) are in terminal status |
 | `failed` | Any pipeline step is in `dlq` |
 
-> The front leg (`sdd_{workflow_id}_front`, `sdd_{workflow_id}_front_spec-validator`) and `sdd_{workflow_id}_compliance` are **global**, not
+> The front leg (`sdd_<workflow_id>_front`, `sdd_<workflow_id>_front_spec-validator`) and `sdd_<workflow_id>_compliance` are **global**, not
 > per-domain — they are tracked once for the whole requirement, not in this per-domain table.
 
 Build a pipeline state table for the progress panel:
@@ -528,7 +532,7 @@ Emit progress panel to the user (structured text, not JSON):
 ```
 SDD Phase — Triage Result & Confirmation
 =========================================
-Workflow:   {workflow_id}
+Workflow:   <workflow_id>
 Trigger:    {triage.trigger}
 Requirement: {triage.requirement}
 
@@ -589,29 +593,29 @@ Emit the **back leg** as `task_created` events with enforced dependencies (4 tas
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_{workflow_id}_{domain}_spec-writer \
+  --task-id sdd_<workflow_id>_{domain}_spec-writer \
   --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"spec-writer","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
 
 # Step 2 — spec-reviewer (depends on writer)
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_{workflow_id}_{domain}_spec-reviewer \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_{workflow_id}_{domain}_spec-writer"],"tier":"standard","type":"spec-reviewer","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
+  --task-id sdd_<workflow_id>_{domain}_spec-reviewer \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_{domain}_spec-writer"],"tier":"standard","type":"spec-reviewer","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
 
 # Step 3 — spec-back
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_{workflow_id}_{domain}_spec-back \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_{workflow_id}_{domain}_spec-reviewer"],"tier":"standard","type":"spec-back","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
+  --task-id sdd_<workflow_id>_{domain}_spec-back \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_{domain}_spec-reviewer"],"tier":"standard","type":"spec-back","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
 
 # Step 4 — spec-validator (back pass)
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_{workflow_id}_{domain}_spec-validator \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_{workflow_id}_{domain}_spec-back"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
+  --task-id sdd_<workflow_id>_{domain}_spec-validator \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_{domain}_spec-back"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
 ```
 
 > Do NOT create per-domain front tasks. The Front Spec Agent runs **once per requirement** and
@@ -626,15 +630,15 @@ approved domains) and ONE front-pass `spec-validator`:
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_{workflow_id}_front \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[<all sdd_{workflow_id}_{domain}_spec-validator task IDs>],"tier":"standard","type":"spec-front","spec":"{specs_dir}"}'
+  --task-id sdd_<workflow_id>_front \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[<all sdd_<workflow_id>_{domain}_spec-validator task IDs>],"tier":"standard","type":"spec-front","spec":"{specs_dir}"}'
 
-# spec-validator (front pass) — once; depends on sdd_{workflow_id}_front
+# spec-validator (front pass) — once; depends on sdd_<workflow_id>_front
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_{workflow_id}_front_spec-validator \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_{workflow_id}_front"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}"}'
+  --task-id sdd_<workflow_id>_front_spec-validator \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_front"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}"}'
 ```
 
 **Back-only — if `triage.ui_task == false`.** Do NOT create the front leg. Per DECLARATIVE_TRUNCATION,
@@ -644,19 +648,19 @@ record the skip so the absence of front artifacts is auditable:
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_skipped \
-  --task-id sdd_{workflow_id}_front_skip \
-  --data '{"phase":"sdd","reason":"ui_task_false_back_only","skipped_steps":["spec-front","spec-validator-front"]}'
+  --task-id sdd_<workflow_id>_front_skip \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"ui_task_false_back_only","skipped_steps":["spec-front","spec-validator-front"]}'
 ```
 
 Finally, create the cross-domain compliance task. Its deps depend on whether the front leg ran:
 
 ```bash
-# deps: ["sdd_{workflow_id}_front_spec-validator"]             when ui_task == true
-#       [<all sdd_{workflow_id}_{domain}_spec-validator IDs>]   when ui_task == false (back-only)
+# deps: ["sdd_<workflow_id>_front_spec-validator"]             when ui_task == true
+#       [<all sdd_<workflow_id>_{domain}_spec-validator IDs>]   when ui_task == false (back-only)
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
-  --task-id sdd_{workflow_id}_compliance \
+  --task-id sdd_<workflow_id>_compliance \
   --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[<see comment above>],"tier":"standard","type":"spec-compliance","spec":"{specs_dir}"}'
 ```
 
@@ -747,8 +751,8 @@ No cross-domain compliance task is created in Targeted mode (scope is limited to
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_skipped \
-  --task-id sdd_{workflow_id}_targeted_pipeline_skip \
-  --data '{"phase":"sdd","reason":"targeted_mode_step_not_in_scope","skipped_steps":["spec-writer","spec-back","spec-validator","spec-front","spec-validator-front","spec-compliance"]}'
+  --task-id sdd_<workflow_id>_targeted_pipeline_skip \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"targeted_mode_step_not_in_scope","skipped_steps":["spec-writer","spec-back","spec-validator","spec-front","spec-validator-front","spec-compliance"]}'
 ```
 
 Re-read state after all `task_created` events. Proceed to Step 5 (dispatch loop, unchanged).
@@ -783,9 +787,9 @@ python3 .claude/skills/orch-infra/scripts/run_circuit_check.py
 
 If `status == "blocked"` (circuit tripped): output `{"status": "error", "last_seq": <last_seq>, "summary": "circuit breaker tripped during dispatch"}` and stop.
 
-Stop conditions (break loop):
-- No tasks have `status = "ready"` → proceed to Step 6
-- All sdd tasks are terminal → proceed to Step 6
+Stop conditions (break loop — evaluated over the **workflow-scoped `sdd_tasks` set** from Step 1, never the raw global state):
+- No scoped tasks have `status = "ready"` → proceed to Step 6
+- All scoped sdd tasks are terminal → proceed to Step 6
 - Iteration ≥ 30 → emit escalation and stop:
   ```bash
   python3 .claude/skills/orch-log/scripts/append.py \
@@ -795,7 +799,7 @@ Stop conditions (break loop):
   ```
   Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached after 30 iterations"}` and stop
 
-**Retry re-queue:** for each `scheduled` sdd task with `next_retry_at <= now` (or null):
+**Retry re-queue:** for each `scheduled` task in the workflow-scoped `sdd_tasks` set with `next_retry_at <= now` (or null):
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -846,7 +850,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 #### 5.1 — Select batch
 
-From the ready queue (sorted by tier priority, then creation seq), select up to the batch ceiling **returned by the state machine** for this `effective_mode` (A6-F2 — the cap is Python-owned, not a prose literal):
+From the ready queue (workflow-scoped `sdd_tasks` with `status = "ready"`, sorted by tier priority, then creation seq), select up to the batch ceiling **returned by the state machine** for this `effective_mode` (A6-F2 — the cap is Python-owned, not a prose literal):
 
 ```bash
 MAX_CONCURRENT=$(python3 .claude/lib/sm_runner.py --machine sdd --state select_batch \
