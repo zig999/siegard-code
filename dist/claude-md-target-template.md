@@ -243,11 +243,14 @@ design_system:
 
 ### Entry points
 
-| Command      | When to use                                              |
-|--------------|----------------------------------------------------------|
-| `/u-spec`    | New feature or domain — runs full SDD → Dev → Review     |
-| `/u-dev`     | Skip spec phase — goes directly to Dev → Review          |
-| `/u-improve` | Incremental change to an existing spec or behavior       |
+| Command          | When to use                                                        |
+|------------------|--------------------------------------------------------------------|
+| `/u-spec`        | New feature or domain — runs full SDD → Dev → Review → Test         |
+| `/u-dev`         | Skip spec phase — goes directly to Dev → Review → Test              |
+| `/u-improve`     | Incremental change to an existing spec or behavior                 |
+| `/u-reverse-spec`| Generate specs from existing code (reverse engineering)            |
+
+**Utility commands (ad-hoc, not phase entry points):** `/u-fe-validate` (frontend spec-gate check), `/u-doc-cleanup` (strip historical noise from docs), `/u-cleanup` (runtime `.orch/` cleanup), `/u-orchestrator` (inspect derived phase/task state from the log).
 
 ### Retry policy (`.orch/config.json`)
 
@@ -278,20 +281,22 @@ Trips when failure rate exceeds threshold within the rolling window. Defaults:
     "enabled": true,
     "window_minutes": 10,
     "failure_threshold": 50,
-    "scope": "workflow",
-    "cooldown_minutes": 30,
-    "reset_on_success_count": 5
+    "scope": "workflow"
   }
 }
 ```
+
+> These four fields are the entire contract. The engine has **no cooldown or success-reset logic** — do NOT add `cooldown_minutes` or `reset_on_success_count`: they are not implemented (`evaluate_circuit_state`) and would be silently ignored. A tripped breaker is cleared by the rolling window elapsing or a manual reset (`scripts/circuit_breaker.py`).
 
 ### Phase override (`.orch/workflow.json`)
 
 Override the default phase sequence before first `/u-spec` invocation. Once the log exists, phase sequence is derived from events — `workflow.json` is ignored.
 
+The default workflow is `dev-cycle` — **four** phases (`sdd` → `dev` → `review` → `test`). Omitting `workflow.json` runs all four; the block below only needs to change if you want a different sequence.
+
 ```json
 {
-  "phases": ["sdd", "dev", "review"]
+  "phases": ["sdd", "dev", "review", "test"]
 }
 ```
 
@@ -303,7 +308,7 @@ Orchestrators refuse to spawn if `nesting_depth >= 3`. If this error appears, th
 
 1. Read `.orch/metrics/current.json` — written by `on_stop` hook after each session.
 2. Check `.orch/last_error.json` — written when an orphaned phase or stuck improve workflow is detected.
-3. Run `/orch-state` to derive the current phase and pending task list from the log.
+3. Run `/u-orchestrator` to derive the current phase and pending task list from the log (or run `.claude/skills/orch-state/scripts/summary.py` directly). `orch-state` is an internal skill, not a slash command.
 
 ---
 
