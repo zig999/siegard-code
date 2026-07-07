@@ -105,6 +105,32 @@ def _matches(text: str, patterns: list[tuple[str, re.Pattern[str]]]) -> list[str
     return found
 
 
+def _confidence(stack: str, ui: list[str], backend: list[str]) -> tuple[str, str]:
+    """Confidence in the classification — advisory only, NEVER changes `stack`
+    (fix F5). The decision stays deliberately conservative (P0-1: never silently
+    drop the front leg); confidence exists so the E99 gate can steer a fast human
+    override instead of treating every fullstack as an equal impasse.
+
+    low when the fullstack decision rests on weak evidence:
+      - no signals at all (pure conservative default), or
+      - a lone minority signal on one side amid a dominant other side
+        (e.g. one incidental UI word in a backend-heavy requirement — the exact
+        false 'fullstack' the report hit). high otherwise.
+    """
+    if stack in ("fe", "be"):
+        return "high", "single-sided signals -> clear classification"
+    # stack == "fullstack"
+    if not ui and not backend:
+        return "low", "no signals -> defaulted to fullstack; confirm the real stack at the gate"
+    if len(ui) == 1 and len(backend) >= 2:
+        return "low", ("backend-dominant with a single UI signal "
+                       f"({ui[0]!r}) -> likely backend-only; consider force_backend_only")
+    if len(backend) == 1 and len(ui) >= 2:
+        return "low", ("ui-dominant with a single backend signal "
+                       f"({backend[0]!r}) -> confirm the backend leg is really needed")
+    return "high", "ui+backend both clearly present -> fullstack"
+
+
 def classify(requirement: str) -> dict:
     """Pure function: requirement text -> stack decision envelope."""
     text = requirement or ""
@@ -120,12 +146,16 @@ def classify(requirement: str) -> dict:
     else:
         stack, rationale = "fullstack", "no signals -> fullstack (conservative default)"
 
+    confidence, confidence_hint = _confidence(stack, ui, backend)
+
     return {
         "stack": stack,
         "ui_task": stack in ("fe", "fullstack"),
         "ui_signals": ui,
         "backend_signals": backend,
         "rationale": rationale,
+        "confidence": confidence,
+        "confidence_hint": confidence_hint,
     }
 
 

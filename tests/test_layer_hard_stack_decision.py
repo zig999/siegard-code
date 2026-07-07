@@ -149,6 +149,39 @@ class TestStackClassifier:
         assert r["backend_signals"].count("webhook") == 1
 
 
+class TestStackConfidence:
+    """Confidence is advisory (fix F5) — it NEVER changes `stack`, it only steers
+    a faster human override at the E99 gate."""
+
+    def test_backend_dominant_single_ui_is_low_confidence_fullstack(self):
+        # The reported false 'fullstack': one incidental UI word in a backend-heavy
+        # requirement. Still classified fullstack (P0-1 safety), but flagged low.
+        r = _classify("Nightly cron that writes a report page to the database and calls the billing service")
+        assert r["stack"] == "fullstack"          # decision unchanged
+        assert r["confidence"] == "low"
+        assert "force_backend_only" in r["confidence_hint"]
+
+    def test_clear_copresence_is_high_confidence(self):
+        r = _classify("A dashboard screen with forms that consume the auth API and the billing service")
+        assert r["stack"] == "fullstack"
+        assert r["confidence"] == "high"
+
+    def test_balanced_one_and_one_is_high_confidence(self):
+        # The canonical checkout case (1 UI + 1 backend) is a genuine fullstack.
+        r = _classify("Build a checkout page that consumes the payment API")
+        assert r["stack"] == "fullstack"
+        assert r["confidence"] == "high"
+
+    def test_no_signals_default_is_low_confidence(self):
+        r = _classify("Rapid processing of records")
+        assert r["stack"] == "fullstack"
+        assert r["confidence"] == "low"
+
+    def test_single_sided_is_high_confidence(self):
+        assert _classify("A settings screen with a sidebar")["confidence"] == "high"
+        assert _classify("Nightly cron writing to the database")["confidence"] == "high"
+
+
 # --------------------------------------------------------------------------- #
 # Handoff guard — fail closed on declared-front / missing-front mismatch       #
 # --------------------------------------------------------------------------- #

@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-07T14:21:35Z",
+  "generated_at": "2026-07-07T14:28:33Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "ca7e5c198057313701da1b8700b2a03f068adcd9af4c42d0ee1afd0d82c9c9bd"
+      "sha256": "65cc6aa06454c3e9999bda6a0c361b651cd34ee4374d1e5c7c0c0f06d0ed98e8"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -845,11 +845,11 @@
     },
     {
       "path": "skills/u-spec-triage-rules/SKILL.md",
-      "sha256": "ddb060af4bafd3ce0917c95dc7778261d272d92acec437d8fb0dcf01ce3fa774"
+      "sha256": "9f06e4c60a029f8e6f452411fa5ddb922d7e35d42f426726b23dc472d6e5be5f"
     },
     {
       "path": "skills/u-spec-triage-rules/scripts/classify_stack.py",
-      "sha256": "3f7626d14e45cf289e7ca8c284d969b761f97bb7cd1f0c1121765a70f7f41ef4"
+      "sha256": "d23438375bb04558f9ee894704ab04c1e80b8951e46f1c0f39445986a0a92fde"
     },
     {
       "path": "skills/u-spec-validation/SKILL.md",

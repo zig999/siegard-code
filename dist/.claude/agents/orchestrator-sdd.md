@@ -563,6 +563,7 @@ mode_hint:   {triage.mode_hint}
 greenfield:  {triage.greenfield}
 stack:       {triage.stack}  →  front leg: {"will run" if ui_task else "SKIPPED (back-only)"}
 ui_task:     {triage.ui_task}  (derived from stack)
+stack_confidence: {triage.stack_confidence}{"  ⚠ " + triage.stack_confidence_hint if triage.stack_confidence == "low" else ""}
 domains:     {triage.domains or "derived from existing specs"}
 affected_specs:
 {for each spec in triage.affected_specs}
@@ -588,7 +589,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{
     "code": "E99_human_confirmation_required",
     "severity": "info",
-    "reason": "SDD confirmation before first dispatch. trigger={trigger}; stack={triage.stack}; domains={triage.domains}; front leg: {will run | SKIPPED (back-only)}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}. If the stack is wrong, correct it here: force_fullstack (add the front leg) or force_backend_only (drop it) — no need to abort.",
+    "reason": "SDD confirmation before first dispatch. trigger={trigger}; stack={triage.stack} (confidence={triage.stack_confidence}); domains={triage.domains}; front leg: {will run | SKIPPED (back-only)}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}.{ When stack_confidence==low, append: ' ⚠ low-confidence stack: ' + triage.stack_confidence_hint} If the stack is wrong, correct it here: force_fullstack (add the front leg) or force_backend_only (drop it) — no need to abort.",
     "options": ["confirm_proceed", "force_fullstack", "force_backend_only", "abort"],
     "evidence": [],
     "suggested_actions": ["confirm_proceed — start spec worker dispatch with stack={triage.stack}", "force_fullstack — override to fullstack and run the front leg", "force_backend_only — override to back-only and skip the front leg", "abort — stop the workflow"]
