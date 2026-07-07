@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-07T13:59:45Z",
+  "generated_at": "2026-07-07T14:13:33Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "1edded58ca0fb8bf0c292a0574710a4968f1a61ff6cfa1e3f513d27e1c54d9e9"
+      "sha256": "46fb9fb0a0834435cb1e8694bd4a30c13ef7d0d3f95af04a15e7f3fd17998d65"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -417,7 +417,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/SKILL.md",
-      "sha256": "67b6b7f0deccb63a14dfd4365335ba86c62cbac41152d1bda435551638e3e789"
+      "sha256": "9d99e1f33901ac5f58a525435d7de2d10a5cfe42741e35ee3264c04949d01509"
     },
     {
       "path": "skills/phase-sdd-rules/exit-criteria.json",
@@ -425,7 +425,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_all_domains_validated.py",
-      "sha256": "af9f997a42d7b50ad6cacf3ebe0afd4386ca6306e9439ba98830c50e88c37238"
+      "sha256": "63f595bbbe364d3d58f6160f879c62fbf650cd1a7fba8311ee4da2ab65258506"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_all_improve_reviewers_completed.py",
@@ -449,11 +449,15 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/generate_handoff_manifest.py",
-      "sha256": "1df04d4379255a147b1c50e0975791fad5ea54e35998258ad26d0bd877f64569"
+      "sha256": "eb3df4e1e1cea2e8404391703dae358787853642075ac04cd6b008d1e653acce"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/identify_invalid_domains.py",
       "sha256": "b8ae71b7b8c395be55cd13ce28ae9cbee3435e26b5fcf84d9b589c4919da02c5"
+    },
+    {
+      "path": "skills/phase-sdd-rules/scripts/scope.py",
+      "sha256": "53e11cc4e2b8927342a48dcd8c2f0f6541d1847c13c0960838327c7f84b361b9"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/select_worker.py",

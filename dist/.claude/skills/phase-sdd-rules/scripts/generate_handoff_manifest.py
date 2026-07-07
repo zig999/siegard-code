@@ -41,6 +41,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from scope import affected_domains, domain_of_validation_file  # noqa: E402
+
 CHECK_ID = "handoff_manifest_generated"
 
 _SEMVER_RE = re.compile(r"([0-9]+\.[0-9]+\.[0-9]+)")
@@ -185,18 +188,36 @@ def _change_summary(triage: dict, htype: str) -> dict:
     }
 
 
-def _approval_blocked(validation_dir: Path) -> list[str]:
-    """Fail-closed scan for explicit block signals from validation/compliance."""
+def _in_scope(filename: str, scope: set[str] | None) -> bool:
+    """A file is in scope when scope is None (global), the file has no domain
+    prefix, or its domain is in the change scope (fix F1/F3)."""
+    if scope is None:
+        return True
+    dom = domain_of_validation_file(filename)
+    return dom is None or dom in scope
+
+
+def _approval_blocked(validation_dir: Path, scope: set[str] | None = None) -> list[str]:
+    """Fail-closed scan for explicit block signals from validation/compliance.
+
+    Scoped (fix F1/F3): on an `/u-improve`, only the domains the change touches
+    can block the handoff. A stale handoff_allowed:false or a non_compliant
+    verdict left in an untouched domain no longer blocks an unrelated change.
+    """
     reasons: list[str] = []
     if not validation_dir.exists():
         return reasons
     for f in sorted(validation_dir.glob("*-validation-result.yaml")):
+        if not _in_scope(f.name, scope):
+            continue
         try:
             if _HANDOFF_ALLOWED_FALSE_RE.search(f.read_text(encoding="utf-8")):
                 reasons.append(f"{f.name}: handoff_allowed=false")
         except OSError:
             continue
     for f in sorted(validation_dir.glob("*-compliance.yaml")):
+        if not _in_scope(f.name, scope):
+            continue
         try:
             if _COMPLIANCE_BLOCK_RE.search(f.read_text(encoding="utf-8")):
                 reasons.append(f"{f.name}: compliance block_handoff/non_compliant")
@@ -277,7 +298,8 @@ def generate(project_dir: Path, specs_dir: Path, workflow_id: str) -> dict:
     if not domain_dirs:
         return _blocked("no_domains_found", manifest_path=None)
 
-    block_reasons = _approval_blocked(specs_dir / "_validation")
+    scope = affected_domains(project_dir, workflow_id)
+    block_reasons = _approval_blocked(specs_dir / "_validation", scope)
     if block_reasons:
         return _blocked("approval_blocked", detail=block_reasons, manifest_path=None)
 

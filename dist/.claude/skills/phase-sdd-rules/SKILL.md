@@ -90,7 +90,7 @@ Evaluated by `orchestrator-sdd.md` at the end of each cycle.
 | Criterion | Script | Description |
 |-----------|--------|-------------|
 | `handoff_manifest_approved` | `scripts/check_handoff_manifest_approved.py` | `handoff-manifest.yaml` exists and `Status: approved` |
-| `all_domains_validated` | `scripts/check_all_domains_validated.py` | No `INVALID` status in `_validation/` |
+| `all_domains_validated` | `scripts/check_all_domains_validated.py` | No `INVALID` status in `_validation/` (scoped to the change's domains on `/u-improve` via `--workflow-id`) |
 | `error_codes_synced` | `scripts/check_error_codes_synced.py` | All `error.code` values in specs are in `error-codes.md` |
 
 See `exit-criteria.json` for the machine-readable declaration.
@@ -129,11 +129,18 @@ Output schema:
 
 ## scripts/check_all_domains_validated.py
 
-Criterion: no `INVALID` status in any `.yaml` or `.md` file under `SPECS_DIR/_validation/`.
+Criterion: no `INVALID` status in any in-scope `.yaml` or `.md` file under `SPECS_DIR/_validation/`.
 
 ```bash
-python3 .claude/skills/phase-sdd-rules/scripts/check_all_domains_validated.py
+python3 .claude/skills/phase-sdd-rules/scripts/check_all_domains_validated.py [--workflow-id <wid>]
 ```
+
+Scope (fix F1): with `--workflow-id`, an `/u-improve` gates only the domains the
+change touched (`scope.py`). Untouched domains inherit their last verdict, so a
+stale `INVALID` in an unrelated domain does not block the change — it is reported
+under `out_of_scope_invalid` for audit. For u-spec / greenfield / un-derivable
+scope the check stays global (every domain must be VALID). Without `--workflow-id`
+it is global (prior behavior).
 
 Output schema:
 ```json
@@ -145,12 +152,34 @@ Output schema:
     "exists": true,
     "total": 5,
     "passing": 5,
-    "failing": []
+    "failing": [],
+    "out_of_scope_invalid": [],
+    "scoped": false,
+    "scope_domains": null
   }
 }
 ```
 
-`met` is `false` if the `_validation/` directory does not exist or contains no files.
+`met` is `false` if the `_validation/` directory does not exist or contains no in-scope files.
+
+---
+
+## scripts/scope.py
+
+Derives the set of domains a change actually touches, so the gate, the handoff
+scan, and the orchestrator dispatch can restrict work to them (fix F1). Reads
+`triage.json`.
+
+```bash
+python3 .claude/skills/phase-sdd-rules/scripts/scope.py --workflow-id <wid>
+# → {"scoped": true,  "domains": ["<affected>", ...]}   /u-improve
+# → {"scoped": false, "domains": null}                  u-spec / greenfield / un-derivable
+```
+
+`scoped: false` (domains `null`) always means "no scoping — evaluate every
+domain" (never "empty scope"), keeping greenfield and legacy triage on prior
+behavior. Also exposes `domain_of_validation_file(filename)` used by the gate and
+the handoff scan to map a `_validation/` artifact back to its domain.
 
 ---
 

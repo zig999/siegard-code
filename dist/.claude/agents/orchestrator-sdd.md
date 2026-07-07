@@ -458,7 +458,29 @@ print(json.dumps({'domains': domains, 'specs_dir': str(specs_dir)}))
 "
 ```
 
-Classify pipeline state for each domain:
+**Scope the pipeline to the affected domains (fix F1 — no cascade).** A breaking
+`/u-improve` is legitimately `full`/`standard`, but it must NOT re-run the
+writer→reviewer→back→validator pipeline for domains it never touched. Intersect
+the scanned domains with the change scope derived from triage `affected_specs`:
+
+```bash
+python3 .claude/skills/phase-sdd-rules/scripts/scope.py --workflow-id <workflow_id>
+# → {"scoped": true, "domains": ["<affected>", ...]}  for /u-improve
+# → {"scoped": false, "domains": null}                for u-spec / greenfield / un-derivable
+```
+
+- `scoped == true`  → dispatch the pipeline ONLY for domains in the intersection
+  of the scanned list and `domains`. Untouched domains are left as-is (they keep
+  their last validation-result and are NOT re-dispatched, re-validated, or
+  re-gated — the Step-6 gate is scoped to the same set). Record the skipped
+  domains with a `task_skipped` event (`reason: unaffected_domain_out_of_change_scope`).
+- `scoped == false` → dispatch for ALL scanned domains (prior behavior; u-spec /
+  greenfield must build every domain).
+
+The front leg and compliance deps below use this **scoped** domain set — never
+the full filesystem list.
+
+Classify pipeline state for each (in-scope) domain:
 
 | Classification | Condition |
 |----------------|-----------|
@@ -1083,10 +1105,15 @@ Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "DLQ blocks e
 
 ```bash
 # 1. Spec-side criteria first — the manifest must only be generated over VALID specs.
-python3 .claude/skills/phase-sdd-rules/scripts/check_all_domains_validated.py
+#    Pass --workflow-id so an /u-improve gates ONLY the domains it touched (fix F1):
+#    scope.py derives the affected domains from triage; untouched domains inherit their
+#    last verdict and a stale INVALID there does not block this change. For u-spec /
+#    greenfield the scope is None and the check stays global (every domain must be VALID).
+python3 .claude/skills/phase-sdd-rules/scripts/check_all_domains_validated.py --workflow-id <workflow_id>
 python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py
 
 # 2. Generate the handoff manifest (deterministic; reached only when both checks above are ok).
+#    generate_handoff_manifest.py applies the same scope to its handoff_allowed/compliance scan.
 python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
 
 # 3. Validate the just-generated manifest (13 rules + sha256).
