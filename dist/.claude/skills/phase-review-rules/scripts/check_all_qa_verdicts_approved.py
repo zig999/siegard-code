@@ -22,6 +22,7 @@ Output (exit 1):
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -73,15 +74,53 @@ def _collect_completed_tasks(state) -> list:
     ]
 
 
+# fix F7: a QA task ID is `review_{dev_task_id}`, and a dev revision appends
+# `_r{n}` (orchestrator-review Step "return_to_dev"), so a re-reviewed target
+# yields `review_<base>` then `review_<base>_r1`. Both complete, so the gate used
+# to still read the OLD (pre-revision, often rejected) verdict and block with a
+# spurious E08. Group by the base target and keep only the latest revision — the
+# earlier revision's delivery was replaced and no longer gates handoff.
+_REV_SUFFIX_RE = re.compile(r"_r(\d+)$")
+_ALL_REV_SUFFIXES_RE = re.compile(r"(?:_r\d+)+$")
+
+
+def _target_and_revision(task_id: str) -> tuple[str, int]:
+    """(base target, revision number). rev 0 when there is no `_r{n}` suffix.
+    Nested suffixes (`_r1_r2`) collapse to the base; revision is the last number."""
+    m = _REV_SUFFIX_RE.search(task_id)
+    if not m:
+        return task_id, 0
+    base = _ALL_REV_SUFFIXES_RE.sub("", task_id)
+    return base, int(m.group(1))
+
+
+def _drop_superseded(tasks: list) -> tuple[list, list]:
+    """Return (kept, superseded_ids). Within each base target, keep only the tasks
+    at the highest revision; older revisions are superseded (not gating)."""
+    max_rev: dict[str, int] = {}
+    parsed = []
+    for t in tasks:
+        base, rev = _target_and_revision(t.task_id)
+        parsed.append((t, base, rev))
+        if rev > max_rev.get(base, -1):
+            max_rev[base] = rev
+    kept, superseded = [], []
+    for t, base, rev in parsed:
+        (kept if rev == max_rev[base] else superseded).append(t if rev == max_rev[base] else t.task_id)
+    return kept, superseded
+
+
 def evaluate() -> dict:
     state = reduce_all()
-    completed_tasks = _collect_completed_tasks(state)
+    all_completed = _collect_completed_tasks(state)
+    completed_tasks, superseded_ids = _drop_superseded(all_completed)
 
     if not completed_tasks:
         return {
             "criterion": CRITERION_ID,
             "met": False,
-            "evidence": {"total": 0, "approved": 0, "not_approved": []},
+            "evidence": {"total": 0, "approved": 0, "not_approved": [],
+                         "superseded": superseded_ids},
         }
 
     # Tasks that completed without registering any artifact are blocking:
@@ -98,6 +137,7 @@ def evaluate() -> dict:
                     {"artifact": tid, "reason": "no_artifacts_registered"}
                     for tid in no_artifacts
                 ],
+                "superseded": superseded_ids,
             },
         }
 
@@ -136,6 +176,7 @@ def evaluate() -> dict:
             "total": len(artifact_paths),
             "approved": approved_count,
             "not_approved": not_approved,
+            "superseded": superseded_ids,
         },
     }
 

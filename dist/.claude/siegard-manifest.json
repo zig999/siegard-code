@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-07T14:28:33Z",
+  "generated_at": "2026-07-07T14:36:17Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -357,7 +357,7 @@
     },
     {
       "path": "skills/phase-review-rules/SKILL.md",
-      "sha256": "7627f6fde415e2b586bcba797ecaa589b8610640d1d534b4e612bd9015f0c7f1"
+      "sha256": "68e53d1831d20c8cae61e0f7237a12b388e7a1bffc0c6b6742779543f07943ae"
     },
     {
       "path": "skills/phase-review-rules/exit-criteria.json",
@@ -369,7 +369,7 @@
     },
     {
       "path": "skills/phase-review-rules/scripts/check_all_qa_verdicts_approved.py",
-      "sha256": "6d39210b47332164f53198b0733cbb815cf7a3a419eef8b0b3206b5d4638c8ab"
+      "sha256": "e9cd9077e7fa78d8acf355dbf23b4a088bac98e653b1248921e7dbfee9d5bf8c"
     },
     {
       "path": "skills/phase-review-rules/scripts/check_documentation_verified.py",

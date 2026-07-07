@@ -448,3 +448,60 @@ class TestNoOrphanPlaceholders:
         result = run_check(REVIEW_SCRIPTS["check_placeholders"], phase_env)
         assert result["met"] is True
         assert result["evidence"]["scanned"] == 0
+
+
+# ---------------------------------------------------------------------------
+# check_all_qa_verdicts_approved.py — superseded revisions (fix F7)
+# ---------------------------------------------------------------------------
+
+class TestSupersededVerdicts:
+    """A re-reviewed target yields review_<base> then review_<base>_r1; only the
+    latest revision gates. The earlier delivery was replaced (return_to_dev)."""
+
+    def test_rejected_base_superseded_by_approved_revision_is_met(self, phase_env):
+        _review_phase()
+        _review_task("review_dev_tc_001")
+        _complete_review("review_dev_tc_001", phase_env, verdict="rejected")
+        _review_task("review_dev_tc_001_r1")
+        _complete_review("review_dev_tc_001_r1", phase_env, verdict="approved")
+        result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
+        assert result["met"] is True
+        assert "review_dev_tc_001" in result["evidence"]["superseded"]
+        # only the latest revision was gated
+        assert result["evidence"]["total"] == 1
+        assert result["evidence"]["approved"] == 1
+
+    def test_rejected_latest_revision_still_blocks(self, phase_env):
+        _review_phase()
+        _review_task("review_dev_tc_001")
+        _complete_review("review_dev_tc_001", phase_env, verdict="approved")
+        _review_task("review_dev_tc_001_r1")
+        _complete_review("review_dev_tc_001_r1", phase_env, verdict="rejected")
+        result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
+        assert result["met"] is False  # the current delivery is rejected
+        assert "review_dev_tc_001" in result["evidence"]["superseded"]
+
+    def test_second_revision_supersedes_first(self, phase_env):
+        _review_phase()
+        for tid, v in (("review_dev_tc_001", "rejected"),
+                       ("review_dev_tc_001_r1", "rejected"),
+                       ("review_dev_tc_001_r2", "approved")):
+            _review_task(tid)
+            _complete_review(tid, phase_env, verdict=v)
+        result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
+        assert result["met"] is True
+        assert set(result["evidence"]["superseded"]) == {
+            "review_dev_tc_001", "review_dev_tc_001_r1"}
+        assert result["evidence"]["total"] == 1
+
+    def test_independent_targets_are_not_cross_superseded(self, phase_env):
+        _review_phase()
+        _review_task("review_dev_tc_001")
+        _complete_review("review_dev_tc_001", phase_env, verdict="approved")
+        _review_task("review_dev_tc_002")
+        _complete_review("review_dev_tc_002", phase_env, verdict="rejected")
+        result = run_check(REVIEW_SCRIPTS["check_verdicts"], phase_env)
+        # different base targets — neither supersedes the other; tc_002 still blocks
+        assert result["met"] is False
+        assert result["evidence"]["superseded"] == []
+        assert result["evidence"]["total"] == 2

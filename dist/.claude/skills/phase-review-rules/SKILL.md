@@ -92,9 +92,16 @@ See `exit-criteria.json` for the machine-readable declaration.
 
 ## scripts/check_all_qa_verdicts_approved.py
 
-Criterion: every QA verdict artifact from completed review-phase tasks contains
-`verdict: approved`.
-Not met if no verdict artifacts are found or any artifact has `verdict: rejected`.
+Criterion: every QA verdict artifact from the **latest revision** of each completed
+review-phase target contains `verdict: approved`.
+Not met if no verdict artifacts are found or any latest-revision artifact has
+`verdict: rejected`.
+
+Superseded revisions (fix F7): a re-reviewed target produces `review_<base>` then
+`review_<base>_r1` (dev revision appends `_r{n}`). Only the highest revision per base
+target gates; earlier revisions — whose delivery was replaced by `return_to_dev` — are
+listed under `evidence.superseded` and do not block. This removes the spurious E08 where
+an old rejected verdict blocked handoff after the revision was approved.
 
 ```bash
 python3 .claude/skills/phase-review-rules/scripts/check_all_qa_verdicts_approved.py
@@ -108,7 +115,8 @@ Output schema:
   "evidence": {
     "total": 4,
     "approved": 4,
-    "not_approved": []
+    "not_approved": [],
+    "superseded": ["review_dev_tc_001"]
   }
 }
 ```
