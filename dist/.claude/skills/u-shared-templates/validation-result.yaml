@@ -4,7 +4,10 @@
 # Schema: .claude/skills/u-shared-templates/validation-result.schema.yaml
 # Layer: permanent — stored at {SPECS_DIR}/_validation/{domain}-validation-result.yaml
 # Rules:
-#   - handoff_allowed: true only when status: VALID and blocking_count: 0
+#   - handoff_allowed = (status: VALID and blocking_count: 0 and mode != incremental_back)
+#       * incremental_back → always false (front leg still pending — not terminal)
+#       * final_complete / final_front → follows the verdict (back-only terminal hands off on VALID+0)
+#   - mode comes from the Orchestrator (validation_mode in task data); do not infer from on-disk artifacts
 #   - responsible must be an exact agent name — Orchestrator uses this to route corrections
 #   - Generate after every validation run (incremental and final); overwrite previous result
 

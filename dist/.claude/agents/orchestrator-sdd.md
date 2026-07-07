@@ -615,8 +615,20 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
   --task-id sdd_<workflow_id>_{domain}_spec-validator \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_{domain}_spec-back"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}/domains/{domain}/openapi.yaml"}'
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_{domain}_spec-back"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}/domains/{domain}/openapi.yaml","validation_mode":"<incremental_back if triage.ui_task else final_complete>"}'
 ```
+
+> **`validation_mode` (fix F2 — handoff derived from the verdict, not the flow shape).** The back-pass
+> validator's terminal-ness depends on whether a front leg follows:
+> - `triage.ui_task == true` (fullstack) → `incremental_back`: the back spec is validated but a front leg
+>   is still pending, so handoff MUST stay deferred (`handoff_allowed: false`). The final verdict comes
+>   from the front-pass validator (Step 6, `final_complete`).
+> - `triage.ui_task == false` (back-only) → `final_complete`: no front leg will ever run, so this IS the
+>   terminal validation. The validator derives `handoff_allowed = (status == VALID and blocking_count == 0)`.
+>
+> This removes the old E08 trap where a back-only flow's terminal result stayed `incremental_back` (schema
+> forces `handoff_allowed: false`), blocking `generate_handoff_manifest.py` and forcing a human to hand-edit
+> `_validation/*.yaml` to `true`.
 
 > Do NOT create per-domain front tasks. The Front Spec Agent runs **once per requirement** and
 > composes all domains, so a single global front leg is created after every `new` domain's back leg.
@@ -638,7 +650,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
   --task-id sdd_<workflow_id>_front_spec-validator \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_front"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}"}'
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_front"],"tier":"standard","type":"spec-validator","spec":"{specs_dir}","validation_mode":"final_complete"}'
 ```
 
 **Back-only — if `triage.ui_task == false`.** Do NOT create the front leg. Per DECLARATIVE_TRUNCATION,
@@ -1323,8 +1335,12 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_created \
   --task-id sdd_<workflow_id>_<domain>_spec-validator-repair-<repair_n> \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_<domain>_spec-back-repair-<repair_n>"],"tier":"standard","type":"spec-validator","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>}'
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_<domain>_spec-back-repair-<repair_n>"],"tier":"standard","type":"spec-validator","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","repair_cycle":<repair_n>,"validation_mode":"<incremental_back if triage.ui_task else final_complete>"}'
 ```
+
+> Carry `validation_mode` on every repair-cycle `spec-validator` too (same rule as Step 4): a back-only
+> repair must reach `final_complete` so the repaired domain hands off without an E08 (fix F2). A fullstack
+> repair stays `incremental_back` — the front-pass validator remains the terminal verdict.
 
 Example — full pipeline (any other origin): same shape with the four stages `spec-writer → spec-reviewer → spec-back → spec-validator` chained by `deps`, `repair_context` on `spec-writer`.
 

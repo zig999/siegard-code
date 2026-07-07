@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-03T17:36:32Z",
+  "generated_at": "2026-07-07T13:59:45Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "1e83c08cabecdbfe2eef8041fc07927fb365ce5d76a5c7d37867255eda0efe62"
+      "sha256": "1edded58ca0fb8bf0c292a0574710a4968f1a61ff6cfa1e3f513d27e1c54d9e9"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -109,7 +109,7 @@
     },
     {
       "path": "agents/spec/u-spec-validator.md",
-      "sha256": "17260f790542b942eebf75969ae7adfb5265ec002bd7160fa273393a85c0d937"
+      "sha256": "535f483ab57266f8aed68a401c291d1513496212b4676d53fad68078e16a60a3"
     },
     {
       "path": "agents/spec/u-spec-writer.md",
@@ -749,11 +749,11 @@
     },
     {
       "path": "skills/u-shared-templates/validation-result.schema.yaml",
-      "sha256": "3fc705c01e35544d1f32a509a2c1d7fbe78be5d2ef877fdbd88f65696ea9100d"
+      "sha256": "431c62de9c1246105616548ed9680320956f6c1eed5c53496a9a030180747b20"
     },
     {
       "path": "skills/u-shared-templates/validation-result.yaml",
-      "sha256": "ed5f02442af4eabdc6b6ed7c0897cfedfc7c4462f561b655f70bf7aee4f68e18"
+      "sha256": "607bcbed9c94f893e7cc9a0fe854936fd86bf4a80c7bbba0a5757024045143db"
     },
     {
       "path": "skills/u-spec-back-writing/SKILL.md",

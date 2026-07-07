@@ -143,7 +143,28 @@ After every validation run (incremental and final), generate a YAML companion fi
 - Overwrite on every run — always reflects the most recent state
 - The Orchestrator reads this file to make handoff decisions; never replace it with the Markdown report
 
-Set `handoff_allowed: true` only when `status: VALID` and `blocking_count: 0`.
+**Mode (`validation.mode`) — take it from the Orchestrator's activation context.** The Orchestrator
+passes `validation_mode` in the task data. Write it verbatim to `validation.mode`; never infer it from
+which artifacts happen to be on disk:
+
+- `incremental_back` — back spec validated but a front leg is still pending (fullstack flow). NOT terminal.
+- `final_complete` — terminal validation. Either the front-pass ran and everything is composed, OR the flow
+  is back-only (`triage.ui_task == false`) so the back validation IS the complete picture (no front artifacts
+  will ever exist). Run the Mode 2 checks that apply to the artifacts present.
+- `final_front` — legacy front-phase terminal validation (kept for back-compat).
+- If `validation_mode` is absent (legacy activation), default to `incremental_back` on the back pass and
+  `final_complete` on the front pass.
+
+**`handoff_allowed` (fix F2 — derive from the verdict, gated only by whether a front leg is still pending):**
+
+```
+handoff_allowed = (status == VALID and blocking_count == 0 and validation.mode != "incremental_back")
+```
+
+`incremental_back` always yields `handoff_allowed: false` (the front leg has not been validated yet). In
+every final mode (`final_complete` / `final_front`) `handoff_allowed` follows the verdict directly — a
+back-only flow whose terminal mode is `final_complete` hands off on `VALID` + `blocking_count: 0` without
+any human edit.
 
 ---
 

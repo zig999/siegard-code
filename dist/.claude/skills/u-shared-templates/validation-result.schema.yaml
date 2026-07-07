@@ -49,7 +49,7 @@ properties:
     minimum: 0
   handoff_allowed:
     type: boolean
-    description: "true only when status=VALID and blocking_count=0 and mode!=incremental_back"
+    description: "handoff_allowed = (status=VALID and blocking_count=0 and mode!=incremental_back). incremental_back always false (front leg still pending); in a final mode (final_complete/final_front) it follows the verdict — a back-only flow's terminal final_complete hands off on VALID+0 with no human edit (fix F2)."
   blocking_issues:
     type: array
     items:
