@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-07T14:13:33Z",
+  "generated_at": "2026-07-07T14:21:35Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "46fb9fb0a0834435cb1e8694bd4a30c13ef7d0d3f95af04a15e7f3fd17998d65"
+      "sha256": "ca7e5c198057313701da1b8700b2a03f068adcd9af4c42d0ee1afd0d82c9c9bd"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -145,7 +145,7 @@
     },
     {
       "path": "commands/u-spec.md",
-      "sha256": "c7e5f9169893445671af02efcb10bbf4a8bd2d0c1c6af89e0067443bf08adef8"
+      "sha256": "c222143f98932b8604186dbef74a029e44130be4398a274eac7f1dff71297ee4"
     },
     {
       "path": "hooks/on_stop.py",

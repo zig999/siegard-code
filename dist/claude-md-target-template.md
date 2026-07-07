@@ -136,6 +136,10 @@ pagination:
 # --- Orchestration concurrency (orchestrator-dev worker dispatch) ---
 # Controls how many workers run in parallel per phase. Lower values reduce token burn.
 # Missing = orchestrator decides (typically 2 for fullstack, 1 for single-domain).
+# The effective runtime knob is `dispatch_policy.dev.max_concurrent` in .orch/config.json
+# (default 2). Raise it ONLY after validating against your runtime's real subagent cap —
+# the default is deliberately conservative and applies to every project (do not raise it
+# globally in the framework without measurement).
 max_parallel_workers: {e.g. 2}
 
 # --- Frontend config (u-fe-developer, u-fe-qa) ---

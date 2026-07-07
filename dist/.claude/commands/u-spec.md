@@ -69,13 +69,13 @@ Before initializing, present an estimate to the human based on detected mode:
 Mode: {detected mode}
 Domains: {N} (list domains found in specs/ or provided in the requirement)
 
-| Stage | Agents | Estimated Tokens | Estimated Time |
-|-------|--------|-----------------|----------------|
+| Stage | Agents | Per-worker context | Estimated Time |
+|-------|--------|--------------------|----------------|
 | Writer | 1 | ~5K per domain | 2-3 min |
 | Reviewer | 1 | ~3K per domain | 1-2 min |
 | Back+Front | 2 (parallel) | ~8K per domain | 3-5 min |
 | Validator | 1 | ~3K per domain | 1-2 min |
-| **Total** | **5** | **~{N}K** | **~{N} min** |
+| **Per-domain context** | **5** | **~{N}K** | **~{N} min** |
 
 Note: Fast-track skips Back+Front (~40% reduction).
 Note: Reverse-eng review skips Writer (~20% reduction).
@@ -83,10 +83,18 @@ Note: Reverse-eng review skips Writer (~20% reduction).
 Proceed? [Y / N]
 ```
 
-**Simplified calculation:**
+**Simplified per-worker context estimate (planning proxy, NOT billed token spend):**
 - New/major mode: `{domains} × 19K tokens` (~7-12 min per domain)
 - Fast-track mode: `{domains} × 11K tokens` (~4-7 min per domain)
 - Review mode: `{domains} × 14K tokens` (~5-8 min per domain)
+
+> **These figures are per-worker context-window sizes, used only to size each spawn.**
+> Cumulative *billed* tokens for the whole workflow are materially higher — often
+> several times these numbers — because each worker re-sends its context every turn
+> and the pipeline runs many workers (× turns × any retries) plus orchestrator
+> overhead. Do NOT read the per-domain figure as total spend. The authoritative
+> per-spawn budget check is the orchestrator's `context_budget_evaluated` event
+> (§5.2.5); this table is only a pre-flight sizing hint.
 
 If `INVOCATION_SOURCE = u-improve`: suppress the `[Y/N]` prompt — confirmation already happened at the `/u-improve` gate. Emit estimate as informational only and proceed.
 

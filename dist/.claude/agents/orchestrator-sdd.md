@@ -937,9 +937,11 @@ import sys, os, pathlib; sys.path.insert(0,'.claude/lib')
 from orch_core import register_worker
 # S1 (instrumentation): record spawn context size so a spec-worker that exits
 # without a terminal event carries spawn_context_chars (on_subagent_stop._infer_cause
-# / classify_run_status). Estimate = spec file size + ~30000 chars fixed overhead.
+# / classify_run_status). Estimate = spec file size + ~90000 chars fixed overhead
+# (base prompt + capability skill + templates + globals loaded by the sub-agent;
+# fix F6 — was ~30000, which counted only a single skill and understated the spawn).
 _s = pathlib.Path(os.environ.get('ORCH_PROJECT_DIR','.')) / '<task.spec>'
-_est = (_s.stat().st_size if _s.exists() else 0) + 30000
+_est = (_s.stat().st_size if _s.exists() else 0) + 90000
 register_worker('<worker_id>', '<task_id>', <attempt>, phase='sdd', spawn_context_chars=_est)
 "
 ```
@@ -951,9 +953,15 @@ Before spawning each worker, estimate context size and emit `context_budget_eval
 - Base prompt (orchestrator spawn template): ~1500 tokens
 - Task spec + Requirement (`triage.requirement`): ~estimate by `len(triage.requirement) // 4`
 - Spec file at `<task.spec>` if path resolves to a file: `~estimate by file size // 4` (use `wc -c` divided by 4); skip if path is `triage.json` (already counted)
-- Worker skill content (loaded by sub-agent): treat as fixed `~6000` tokens
+- Worker skill content loaded by the sub-agent: treat as fixed `~18000` tokens. A spec
+  worker does not load one skill — it pulls its capability SKILL.md **plus** the templates
+  it reads by path (`u-spec-templates`) **plus** the globals (`u-spec-globals`: conventions,
+  error-codes, glossary). The old `~6000` figure counted a single skill and understated a
+  real spawn ~3× (fix F6 — honest sizing, not a raised gate).
 
-Sum all four into `estimated_tokens`. Apply policy:
+Sum all four into `estimated_tokens`. Apply policy (thresholds unchanged — per the
+project rule, a budget ceiling is raised only when backed by actual measurement, so the
+more honest estimate simply moves borderline tasks into `monitor`, which still proceeds):
 
 | Condition | Action |
 |-----------|--------|
