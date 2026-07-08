@@ -180,3 +180,154 @@ class TestScopedHandoff:
         assert r.returncode != 0
         assert json.loads(r.stdout)["reason"] == "approval_blocked"
         assert not (specs / "handoff-manifest.yaml").exists()
+
+
+# --------------------------------------------------------------------------- #
+# check_error_codes_synced.py — scoped error-code gate (L1)                    #
+# --------------------------------------------------------------------------- #
+def _write_code(specs: Path, domain: str, code: str):
+    (specs / "domains" / domain / "openapi.yaml").write_text(
+        f"openapi: 3.0.3\ninfo:\n  title: {domain}\n  version: 1.0.0\n"
+        f"paths: {{}}\nx-errors:\n  - code: {code}\n")
+
+
+class TestScopedErrorCodes:
+    def test_untouched_domain_orphan_code_does_not_block_improve(self, tmp_path):
+        # legacy (untouched) references E4102, never registered — pre-existing
+        # defect of an untouched domain must not block this change (L1 / F3).
+        specs = _build(tmp_path, {
+            "billing": {"status": "VALID"},
+            "legacy": {"status": "VALID"},
+        }, trigger="u-improve", affected=["billing"])
+        _write_code(specs, "legacy", "E4102")
+        r = _run("check_error_codes_synced.py", tmp_path, "--workflow-id", WID)
+        assert r.returncode == 0, r.stdout
+        out = json.loads(r.stdout)
+        assert out["met"] is True
+        assert out["evidence"]["scoped"] is True
+        assert out["evidence"]["missing_codes"] == []
+        assert out["evidence"]["out_of_scope_missing"] == ["E4102"]
+
+    def test_touched_domain_orphan_code_blocks(self, tmp_path):
+        specs = _build(tmp_path, {
+            "billing": {"status": "VALID"},
+            "legacy": {"status": "VALID"},
+        }, trigger="u-improve", affected=["billing"])
+        _write_code(specs, "billing", "E4103")
+        r = _run("check_error_codes_synced.py", tmp_path, "--workflow-id", WID)
+        assert r.returncode == 1
+        out = json.loads(r.stdout)
+        assert out["met"] is False
+        assert out["evidence"]["missing_codes"] == ["E4103"]
+
+    def test_code_shared_between_scopes_blocks(self, tmp_path):
+        # A code referenced by an in-scope AND an out-of-scope file is gated.
+        specs = _build(tmp_path, {
+            "billing": {"status": "VALID"},
+            "legacy": {"status": "VALID"},
+        }, trigger="u-improve", affected=["billing"])
+        _write_code(specs, "billing", "E4104")
+        _write_code(specs, "legacy", "E4104")
+        r = _run("check_error_codes_synced.py", tmp_path, "--workflow-id", WID)
+        assert r.returncode == 1
+        out = json.loads(r.stdout)
+        assert out["evidence"]["missing_codes"] == ["E4104"]
+        assert out["evidence"]["out_of_scope_missing"] == []
+
+    def test_non_domain_file_code_always_blocks(self, tmp_path):
+        # A code in a file outside domains/<slug>/ cannot be attributed — conservative.
+        specs = _build(tmp_path, {
+            "billing": {"status": "VALID"},
+        }, trigger="u-improve", affected=["billing"])
+        (specs / "flows").mkdir()
+        (specs / "flows" / "checkout.md").write_text("error_code: E4105\n")
+        r = _run("check_error_codes_synced.py", tmp_path, "--workflow-id", WID)
+        assert r.returncode == 1
+        assert json.loads(r.stdout)["evidence"]["missing_codes"] == ["E4105"]
+
+    def test_registered_code_in_untouched_domain_stays_ok(self, tmp_path):
+        specs = _build(tmp_path, {
+            "billing": {"status": "VALID"},
+            "legacy": {"status": "VALID"},
+        }, trigger="u-improve", affected=["billing"])
+        _write_code(specs, "legacy", "E4106")
+        (specs / "error-codes.md").write_text("# Error Codes\n\n- E4106 — legacy error\n")
+        r = _run("check_error_codes_synced.py", tmp_path, "--workflow-id", WID)
+        assert r.returncode == 0, r.stdout
+        out = json.loads(r.stdout)
+        assert out["evidence"]["out_of_scope_missing"] == []
+
+    def test_uspec_stays_global(self, tmp_path):
+        specs = _build(tmp_path, {
+            "auth": {"status": "VALID"},
+            "billing": {"status": "VALID"},
+        }, trigger="u-spec", affected=[])
+        _write_code(specs, "billing", "E4107")
+        r = _run("check_error_codes_synced.py", tmp_path, "--workflow-id", WID)
+        assert r.returncode == 1
+        out = json.loads(r.stdout)
+        assert out["evidence"]["scoped"] is False
+        assert out["evidence"]["missing_codes"] == ["E4107"]
+
+    def test_no_workflow_id_is_global_backcompat(self, tmp_path):
+        specs = _build(tmp_path, {
+            "billing": {"status": "VALID"},
+            "legacy": {"status": "VALID"},
+        }, trigger="u-improve", affected=["billing"])
+        _write_code(specs, "legacy", "E4108")
+        r = _run("check_error_codes_synced.py", tmp_path)  # no --workflow-id
+        assert r.returncode == 1  # global: legacy orphan code blocks
+        assert json.loads(r.stdout)["evidence"]["scoped"] is False
+
+
+# --------------------------------------------------------------------------- #
+# identify_invalid_domains.py — scoped repair targets (L3)                     #
+# --------------------------------------------------------------------------- #
+def _validation_md(specs: Path, domain: str, status: str):
+    val = specs / "_validation"
+    val.mkdir(parents=True, exist_ok=True)
+    (val / f"{domain}-validation.md").write_text(
+        f"# Validation — {domain}\n\nstatus: {status}\n")
+
+
+class TestScopedRepairTargets:
+    def test_untouched_invalid_domain_not_a_repair_target(self, tmp_path):
+        # Stale INVALID in untouched domain must NOT enter this workflow's
+        # repair dispatch (L3): the scoped gate already ignores it.
+        specs = _build(tmp_path, {
+            "billing": {"status": "INVALID"},
+            "legacy": {"status": "INVALID"},
+        }, trigger="u-improve", affected=["billing"])
+        _validation_md(specs, "billing", "INVALID")
+        _validation_md(specs, "legacy", "INVALID")
+        r = _run("identify_invalid_domains.py", tmp_path, "--workflow-id", WID)
+        assert r.returncode == 0, r.stdout
+        out = json.loads(r.stdout)
+        assert out["invalid_domains"] == ["billing"]
+        assert out["out_of_scope_invalid"] == ["legacy"]
+        assert out["scoped"] is True
+        assert "legacy" not in out["defect_origins"]
+
+    def test_uspec_stays_global(self, tmp_path):
+        specs = _build(tmp_path, {
+            "auth": {"status": "VALID"},
+            "billing": {"status": "INVALID"},
+        }, trigger="u-spec", affected=[])
+        _validation_md(specs, "billing", "INVALID")
+        r = _run("identify_invalid_domains.py", tmp_path, "--workflow-id", WID)
+        out = json.loads(r.stdout)
+        assert out["invalid_domains"] == ["billing"]
+        assert out["out_of_scope_invalid"] == []
+        assert out["scoped"] is False
+
+    def test_no_workflow_id_is_global_backcompat(self, tmp_path):
+        specs = _build(tmp_path, {
+            "billing": {"status": "INVALID"},
+            "legacy": {"status": "INVALID"},
+        }, trigger="u-improve", affected=["billing"])
+        _validation_md(specs, "billing", "INVALID")
+        _validation_md(specs, "legacy", "INVALID")
+        r = _run("identify_invalid_domains.py", tmp_path)  # no --workflow-id
+        out = json.loads(r.stdout)
+        assert out["invalid_domains"] == ["billing", "legacy"]
+        assert out["scoped"] is False

@@ -1116,10 +1116,11 @@ Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "DLQ blocks e
 # 1. Spec-side criteria first — the manifest must only be generated over VALID specs.
 #    Pass --workflow-id so an /u-improve gates ONLY the domains it touched (fix F1):
 #    scope.py derives the affected domains from triage; untouched domains inherit their
-#    last verdict and a stale INVALID there does not block this change. For u-spec /
-#    greenfield the scope is None and the check stays global (every domain must be VALID).
+#    last verdict and a stale INVALID there does not block this change. Same for error
+#    codes: an unregistered code living only in untouched domains is non-blocking. For
+#    u-spec / greenfield the scope is None and both checks stay global.
 python3 .claude/skills/phase-sdd-rules/scripts/check_all_domains_validated.py --workflow-id <workflow_id>
-python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py
+python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py --workflow-id <workflow_id>
 
 # 2. Generate the handoff manifest (deterministic; reached only when both checks above are ok).
 #    generate_handoff_manifest.py applies the same scope to its handoff_allowed/compliance scan.
@@ -1158,9 +1159,10 @@ Set `criteria_met = ["handoff_manifest_approved", "all_domains_validated", "erro
 **IF `effective_mode == "targeted"`** (improve-targeted invocation):
 
 ```bash
-# 1. Reviewer + error-code criteria first.
+# 1. Reviewer + error-code criteria first. --workflow-id scopes the error-code check
+#    to the touched domains (fix F1) — unregistered codes in untouched domains do not block.
 ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-sdd-rules/scripts/check_all_improve_reviewers_completed.py
-python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py
+python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py --workflow-id <workflow_id>
 
 # 2. Generate the handoff manifest (reached only when both checks above are ok).
 python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
@@ -1324,10 +1326,12 @@ Store result as `repair_cycles`.
 **Step R2 — Identify INVALID domains and defect origins:**
 
 ```bash
-python3 .claude/skills/phase-sdd-rules/scripts/identify_invalid_domains.py
+python3 .claude/skills/phase-sdd-rules/scripts/identify_invalid_domains.py --workflow-id <workflow_id>
 ```
 
 Store `invalid_domains` and `defect_origins` from the output. `defect_origins` maps each INVALID domain to the pipeline stage its blocking issues point at, derived from the machine-readable `{domain}-validation-result.yaml` (`responsible` fields): `"back"` when ALL blocking issues belong to `u-spec-back`, `null` otherwise (mixed/front/writer/missing/unparseable).
+
+`--workflow-id` scopes the repair-target set (fix F1): on an `/u-improve`, a stale INVALID report in an untouched domain is returned under `out_of_scope_invalid` and NEVER enters `invalid_domains` — this workflow's repair loop must not dispatch workers for domains it did not touch. For u-spec / greenfield the scan stays global.
 
 **Step R2.5 — State machine routes repair vs escalate:**
 

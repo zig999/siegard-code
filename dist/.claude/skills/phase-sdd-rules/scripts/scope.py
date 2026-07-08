@@ -71,6 +71,16 @@ def affected_domains(project_dir: Path, workflow_id: str) -> set[str] | None:
     return domains or None  # empty → conservative global (do not narrow)
 
 
+def domain_of_spec_path(path: str) -> str | None:
+    """Extract the domain slug from a spec file path (`.../domains/<slug>/...`).
+
+    Returns None for paths outside a domain directory (front specs, flows,
+    globals) — callers treat those as always in scope (cannot narrow).
+    """
+    m = _DOMAIN_IN_PATH_RE.search(path)
+    return m.group(1) if m else None
+
+
 def domain_of_validation_file(filename: str) -> str | None:
     """Extract the domain slug from a `_validation/` artifact filename.
 

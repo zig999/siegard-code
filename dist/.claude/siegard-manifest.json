@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-07T14:36:17Z",
+  "generated_at": "2026-07-08T00:45:55Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "65cc6aa06454c3e9999bda6a0c361b651cd34ee4374d1e5c7c0c0f06d0ed98e8"
+      "sha256": "06eef3797cf9088df42f13632602e5e757cdf429cae2d777ad43c366963331ef"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -417,11 +417,11 @@
     },
     {
       "path": "skills/phase-sdd-rules/SKILL.md",
-      "sha256": "9d99e1f33901ac5f58a525435d7de2d10a5cfe42741e35ee3264c04949d01509"
+      "sha256": "d898fa883a19e7b31ee62926dbfcbab111485fb2aef00221c74716acd23a966c"
     },
     {
       "path": "skills/phase-sdd-rules/exit-criteria.json",
-      "sha256": "77e699d03381d290ed3aed48454ac3a71be6615d41d75b1012681e24e8f2e98e"
+      "sha256": "64af1345205cd58fdabb044068ae735e5283ae255a6d56345a84a08394beb91f"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_all_domains_validated.py",
@@ -433,7 +433,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_error_codes_synced.py",
-      "sha256": "9e54440c2eb926b0a5b1ddfb256dd94ecba9f3e7eb44d050baaf15c2134972ed"
+      "sha256": "cafd449fa3487766fc32b1a7d4fddb7007fc1b7411f7d00b77ca49745b771b52"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py",
@@ -453,11 +453,11 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/identify_invalid_domains.py",
-      "sha256": "b8ae71b7b8c395be55cd13ce28ae9cbee3435e26b5fcf84d9b589c4919da02c5"
+      "sha256": "480dcaffdf54f8bc96353201b7bbcb614f817b47d0ccd77b0b6b6a865104e89c"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/scope.py",
-      "sha256": "53e11cc4e2b8927342a48dcd8c2f0f6541d1847c13c0960838327c7f84b361b9"
+      "sha256": "2714a5f12457bf4f08e89731567e7d566873f7c3673ae73edeb513b68d247489"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/select_worker.py",

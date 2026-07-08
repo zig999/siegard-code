@@ -28,7 +28,7 @@
     },
     {
       "id": "error_codes_synced",
-      "description": "All error.code values found in spec files are registered in SPECS_DIR/error-codes.md",
+      "description": "All error.code values found in in-scope spec files are registered in SPECS_DIR/error-codes.md (scoped to touched domains on /u-improve via --workflow-id; global for u-spec/greenfield)",
       "script": "scripts/check_error_codes_synced.py",
       "required": true,
       "blocking": true,

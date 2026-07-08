@@ -55,13 +55,20 @@ def _write_result_yaml(val_dir: Path, domain: str, status: str, responsibles: li
 
 
 class TestIdentifyInvalidDomains:
+    EMPTY = {
+        "invalid_domains": [],
+        "defect_origins": {},
+        "out_of_scope_invalid": [],
+        "scoped": False,
+    }
+
     def test_no_validation_dir(self, tmp_path):
-        assert run(tmp_path) == {"invalid_domains": [], "defect_origins": {}}
+        assert run(tmp_path) == self.EMPTY
 
     def test_valid_domain_not_listed(self, tmp_path):
         val = tmp_path / "specs" / "_validation"
         _write_report(val, "chat", "VALID")
-        assert run(tmp_path) == {"invalid_domains": [], "defect_origins": {}}
+        assert run(tmp_path) == self.EMPTY
 
     def test_invalid_all_back_origin_back(self, tmp_path):
         val = tmp_path / "specs" / "_validation"
