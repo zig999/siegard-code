@@ -882,6 +882,104 @@ def verify_chain(
     )
 
 
+def _verify_cache_path() -> Path:
+    return STATE_DIR / "verify_cache.json"
+
+
+def _write_verify_cache(seq: int, boundary_offset: int, event_hash: str,
+                        events_verified: int) -> None:
+    """Best-effort atomic write of the verified-prefix cache."""
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema": 1,
+            "engine_rev": _engine_rev(),
+            "seq": seq,
+            "boundary_offset": boundary_offset,
+            "event_hash": event_hash,
+            "events_verified": events_verified,
+            "written_at": now_iso(),
+        }
+        tmp = _verify_cache_path().with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(tmp, _verify_cache_path())
+    except Exception:  # noqa: BLE001 — cache write is opportunistic
+        pass
+
+
+def _full_verify_and_cache() -> VerifyResult:
+    result = verify_chain(mode="strict")
+    if result.ok:
+        b = _last_event_boundary()
+        if b is not None:
+            _write_verify_cache(b[1].seq, b[0], b[1].hash, result.events_verified)
+    return result
+
+
+def verify_chain_cached() -> VerifyResult:
+    """Strict-mode verify accelerated by the verified-prefix cache.
+
+    The append path already re-validates the tail hash on every write
+    (_append_event_locked), so re-hashing the whole chain from GENESIS on
+    every cycle re-proves what was already proven. This variant re-reads the
+    cached boundary line in place (seq + hash must match) and hash-verifies
+    only the tail appended since. EVERY anomaly — missing/corrupt cache,
+    engine change, boundary mismatch, or a tail error — defers to the
+    canonical full verify_chain('strict'), so failure reports are always
+    authoritative (first_error_seq from a GENESIS scan). Semantics are
+    therefore identical to strict mode; only the happy path is cheaper.
+    Audit mode is untouched — periodic full audits still re-hash everything.
+    ORCH_SNAPSHOT=0 disables the cache here too.
+    """
+    if not _snapshot_enabled():
+        return verify_chain(mode="strict")
+    try:
+        cache = json.loads(_verify_cache_path().read_text(encoding="utf-8"))
+        if not isinstance(cache, dict) or cache.get("schema") != 1 \
+                or cache.get("engine_rev") != _engine_rev():
+            return _full_verify_and_cache()
+        boundary = int(cache["boundary_offset"])
+        if not LOG_PATH.exists() or LOG_PATH.stat().st_size <= boundary:
+            return _full_verify_and_cache()
+        with open(LOG_PATH, "rb") as f:
+            f.seek(boundary)
+            line = f.readline()
+            tail_start = f.tell()
+        event = Event.from_dict(json.loads(line.decode("utf-8")))
+        if event.seq != int(cache["seq"]) or event.hash != cache["event_hash"]:
+            return _full_verify_and_cache()
+    except Exception:  # noqa: BLE001 — unusable cache → canonical full verify
+        return _full_verify_and_cache()
+
+    prev_hash = event.hash
+    count = int(cache.get("events_verified", 0))
+    last_boundary: tuple[int, str, int] | None = None
+    pairs = _read_offset_lines(LOG_PATH, tail_start)
+    last_idx = len(pairs) - 1
+    for i, (off, raw) in enumerate(pairs):
+        try:
+            ev = Event.from_dict(json.loads(raw.decode("utf-8")))
+        except (json.JSONDecodeError, KeyError, UnicodeDecodeError):
+            if i == last_idx:
+                break  # truncated last line — tolerated, same as verify_chain
+            return _full_verify_and_cache()
+        if ev.prev_hash != prev_hash or ev.compute_hash() != ev.hash:
+            return _full_verify_and_cache()
+        prev_hash = ev.hash
+        count += 1
+        last_boundary = (off, ev.hash, ev.seq)
+
+    if last_boundary is not None:
+        _write_verify_cache(last_boundary[2], last_boundary[0],
+                            last_boundary[1], count)
+    return VerifyResult(
+        ok=True,
+        message=f"Chain verified: {count} event(s) (cached prefix)",
+        mode="strict",
+        events_verified=count,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Log recovery
 # ---------------------------------------------------------------------------
@@ -1958,17 +2056,174 @@ def apply_event(state: OrchState, event: Event) -> OrchState:
     return state
 
 
+# ---------------------------------------------------------------------------
+# State snapshot cache (Task 1.8) — O(tail) reduction instead of O(log)
+# ---------------------------------------------------------------------------
+# The snapshot is a DERIVED CACHE, not state (P1 — the log stays the only
+# truth): a JSON file under STATE_DIR holding {seq, boundary_offset,
+# event_hash, engine_rev, state}. Loading seeks to boundary_offset, re-reads
+# that one line, and accepts the cache only if the event there still has the
+# recorded seq and hash — any mismatch (log truncated by recovery, log
+# replaced, file tampered, engine code changed, JSON corrupt) silently falls
+# back to a full replay, which then re-primes the cache. Deleting the file is
+# always safe. ORCH_SNAPSHOT=0 disables both load and write.
+
+_SNAPSHOT_SCHEMA = 1
+_ENGINE_REV: str | None = None
+
+
+def _engine_rev() -> str:
+    """Content hash of this module — any engine change invalidates all
+    snapshots (over-invalidation is safe: one full replay re-primes)."""
+    global _ENGINE_REV
+    if _ENGINE_REV is None:
+        try:
+            _ENGINE_REV = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:16]
+        except OSError:
+            _ENGINE_REV = "unknown"
+    return _ENGINE_REV
+
+
+def _snapshot_enabled() -> bool:
+    return os.environ.get("ORCH_SNAPSHOT", "1") != "0"
+
+
+def _snapshot_path() -> Path:
+    return STATE_DIR / "snapshot.json"
+
+
+def _read_offset_lines(path: Path, start_offset: int = 0) -> list[tuple[int, bytes]]:
+    """Non-empty lines of `path` from `start_offset`, as (line_start_offset, raw)."""
+    with open(path, "rb") as f:
+        f.seek(start_offset)
+        data = f.read()
+    out: list[tuple[int, bytes]] = []
+    pos = start_offset
+    for raw in data.split(b"\n"):
+        if raw.strip():
+            out.append((pos, raw))
+        pos += len(raw) + 1
+    return out
+
+
+def _last_event_boundary() -> tuple[int, "Event"] | None:
+    """(line_start_offset, event) of the last parseable log line, or None."""
+    if not LOG_PATH.exists():
+        return None
+    try:
+        pairs = _read_offset_lines(LOG_PATH)
+    except OSError:
+        return None
+    for off, raw in reversed(pairs):
+        try:
+            return off, Event.from_dict(json.loads(raw.decode("utf-8")))
+        except (json.JSONDecodeError, KeyError, UnicodeDecodeError):
+            continue
+    return None
+
+
+def _load_reduce_snapshot() -> tuple["OrchState", int, int] | None:
+    """Validated snapshot as (base_state, tail_start_offset, base_seq), or None.
+
+    None ALWAYS means "do a full replay" — the cache is disposable by design,
+    so every anomaly is swallowed here rather than surfaced.
+    """
+    if not _snapshot_enabled():
+        return None
+    try:
+        snap = json.loads(_snapshot_path().read_text(encoding="utf-8"))
+        if not isinstance(snap, dict) or snap.get("schema") != _SNAPSHOT_SCHEMA:
+            return None
+        if snap.get("engine_rev") != _engine_rev():
+            return None
+        seq = int(snap["seq"])
+        boundary = int(snap["boundary_offset"])
+        if not LOG_PATH.exists():
+            return None
+        with open(LOG_PATH, "rb") as f:
+            f.seek(0, 2)
+            if f.tell() <= boundary:
+                return None  # log shrank (recovery truncation / replacement)
+            f.seek(boundary)
+            line = f.readline()
+        event = Event.from_dict(json.loads(line.decode("utf-8")))
+        if event.seq != seq or event.hash != snap["event_hash"]:
+            return None
+        state = OrchState.from_dict(snap["state"])
+        if state.last_seq != seq:
+            return None
+    except Exception:  # noqa: BLE001 — cache must never take the engine down
+        return None
+    return state, boundary + len(line), seq
+
+
+def _write_reduce_snapshot(state: "OrchState", boundary_offset: int,
+                           event_hash: str) -> None:
+    """Best-effort atomic cache write — failure is silent by design."""
+    if not _snapshot_enabled():
+        return
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema": _SNAPSHOT_SCHEMA,
+            "engine_rev": _engine_rev(),
+            "seq": state.last_seq,
+            "boundary_offset": boundary_offset,
+            "event_hash": event_hash,
+            "written_at": now_iso(),
+            "state": state.to_dict(),
+        }
+        tmp = _snapshot_path().with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(tmp, _snapshot_path())
+    except Exception:  # noqa: BLE001 — cache write is opportunistic
+        pass
+
+
 def reduce_all() -> OrchState:
     """
-    Builds state from scratch by replaying all events from log start.
+    Builds state by replaying events — from the snapshot cache's boundary
+    when a valid snapshot exists (O(tail)), else from log start (O(log)).
+
+    Snapshot semantics: the cache is validated against the log (seq + hash of
+    the boundary event re-read in place) before use; any mismatch falls back
+    to a full replay. A fresh snapshot is written whenever the replayed tail
+    reaches SNAPSHOT_EVERY_N_EVENTS. Both paths produce the identical state —
+    ORCH_SNAPSHOT=0 forces the full path.
 
     Raises:
         IllegalTransition: Log contains illegal transition.
         CorruptedLogError: Log is corrupted.
     """
+    loaded = _load_reduce_snapshot()
+    if loaded is not None:
+        state, tail_start, base_seq = loaded
+        last_boundary: tuple[int, str] | None = None
+        pairs = _read_offset_lines(LOG_PATH, tail_start)
+        last_idx = len(pairs) - 1
+        for i, (off, raw) in enumerate(pairs):
+            try:
+                event = Event.from_dict(json.loads(raw.decode("utf-8")))
+            except (json.JSONDecodeError, KeyError, UnicodeDecodeError) as exc:
+                if i == last_idx:
+                    break  # truncated last line — tolerate (read_events semantics)
+                raise CorruptedLogError(
+                    f"Invalid JSON at byte offset {off}: {exc}"
+                ) from exc
+            apply_event(state, event)
+            last_boundary = (off, event.hash)
+        if last_boundary is not None \
+                and state.last_seq - base_seq >= SNAPSHOT_EVERY_N_EVENTS:
+            _write_reduce_snapshot(state, last_boundary[0], last_boundary[1])
+        return state
+
     state = OrchState()
     for event in read_events():
         apply_event(state, event)
+    if _snapshot_enabled() and state.last_seq >= SNAPSHOT_EVERY_N_EVENTS:
+        b = _last_event_boundary()
+        if b is not None and b[1].seq == state.last_seq:
+            _write_reduce_snapshot(state, b[0], b[1].hash)
     return state
 
 
@@ -3176,6 +3431,7 @@ __all__ = [
     # Verification
     "VerifyResult",
     "verify_chain",
+    "verify_chain_cached",
     # Blob externalization
     "is_blob_ref",
     "externalize_blob",

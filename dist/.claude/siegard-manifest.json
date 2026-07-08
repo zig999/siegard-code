@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-08T01:37:57Z",
+  "generated_at": "2026-07-08T01:58:04Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -169,7 +169,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "df8f47b5b311e1e1f712672edb9c3dd4ebb180aa729c5868b260ae80d113e7a5"
+      "sha256": "7d3183293cb3c6b7e18a486477e61968fcc2c8e163dfc34429572f07a480e2ab"
     },
     {
       "path": "lib/sm_runner.py",
@@ -253,7 +253,7 @@
     },
     {
       "path": "skills/orch-infra/scripts/run_integrity.py",
-      "sha256": "5381419bc415c01ef71789b5e61aa33b78cd84e043c1aa35576e9a74956cf146"
+      "sha256": "aa88d9bd684c0617958d5cc3504d2df4098db6201ab13d5201f64264754dd5f5"
     },
     {
       "path": "skills/orch-infra/scripts/run_preflight.py",

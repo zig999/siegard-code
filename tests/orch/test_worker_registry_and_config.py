@@ -158,10 +158,16 @@ class TestLoadConfig:
         assert "circuit_breaker" in cfg
 
     def test_invalid_json_raises_config_error(self, tmp_orch):
-        """[CRIT] 12.3 Config inválido levanta ConfigError."""
+        """[CRIT] 12.3 Config inválido levanta ConfigError.
+
+        `orch_core.ConfigError` (attribute access, resolved at call time) —
+        NOT the module-import-time binding: the orch_dir fixture reloads
+        orch_core in place, so a directly-imported class captured at
+        collection time no longer matches the class the reloaded code raises
+        (order-dependent latent failure)."""
         orch_core.CONFIG_PATH.write_text("{ not valid json }", encoding="utf-8")
-        with pytest.raises(ConfigError) as exc_info:
-            load_config()
+        with pytest.raises(orch_core.ConfigError) as exc_info:
+            orch_core.load_config()
         assert str(orch_core.CONFIG_PATH) in str(exc_info.value)
 
     def test_partial_config_merged_with_defaults(self, tmp_orch):
@@ -185,8 +191,9 @@ class TestLoadConfig:
     def test_explicit_path_invalid_raises_config_error(self, tmp_path):
         bad = tmp_path / "bad.json"
         bad.write_text("oops", encoding="utf-8")
-        with pytest.raises(ConfigError):
-            load_config(config_path=bad)
+        # attribute access — reload-proof (see test_invalid_json docstring)
+        with pytest.raises(orch_core.ConfigError):
+            orch_core.load_config(config_path=bad)
 
 
 # ---------------------------------------------------------------------------

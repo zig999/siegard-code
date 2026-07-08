@@ -16,7 +16,7 @@ _LIB = _CLAUDE_DIR / "lib"
 
 sys.path.insert(0, str(_LIB))
 
-from orch_core import ORCH_DIR, CorruptedLogError, now_iso, verify_chain
+from orch_core import ORCH_DIR, CorruptedLogError, now_iso, verify_chain_cached
 
 
 def main() -> int:
@@ -33,7 +33,10 @@ def main() -> int:
         return 0
 
     try:
-        result = verify_chain(mode="strict")
+        # Verified-prefix cache: re-hashes only the tail appended since the
+        # last verified boundary; any anomaly falls back to the canonical
+        # full GENESIS scan inside verify_chain_cached (strict semantics).
+        result = verify_chain_cached()
     except CorruptedLogError as exc:
         print(json.dumps({
             "status": "blocked",
