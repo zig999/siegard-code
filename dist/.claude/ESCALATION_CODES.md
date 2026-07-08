@@ -25,6 +25,7 @@ Each code appears in the event log as `escalation.data.code`.
 | `E12_state_reduction_failed` | critical | orchestrator-sdd, orchestrator-dev, orchestrator-review, orchestrator-test | `reduce.py` exited with error — log may be corrupt or `orch_core.py` version mismatch | Run `python3 .claude/skills/orch-log/scripts/verify.py`; inspect tail of `.orch/log.jsonl` for malformed events; ensure deployed `orch_core.py` matches dist version |
 | `E13_subagent_invalid_response` | critical | orchestrator (meta) | Phase orchestrator returned non-JSON or empty output — possible context overflow or agent startup failure | Re-invoke the orchestrator (transient tool errors often self-resolve); if persistent: inspect agent definition; reduce context by checkpointing |
 | `E21_qa_not_on_integrated_main` | critical | orchestrator-review | Review entered but the repo is not on the integrated head — dev integration (SIEGARD-04) incomplete; QA would test an isolated/partial branch | Re-invoke orchestrator-dev to finish Step 5.6 (integrate qa_ready branches into `main`); verify `git status` clean and `git branch --no-merged main` empty; re-invoke review |
+| `E22_backlog_scope_violation` | critical | orchestrator-dev | Planner produced Task Contracts referencing only out-of-scope domains twice (after one revision) — an `/u-improve` must not be re-broadened past its change scope (L4, `check_backlog_scope.py`) | Inspect the rejected `tc-NNN.md` files; if the extra domains are genuinely required, re-run `/u-improve` with a broader improvement description so triage widens the scope; or edit the backlog manually and re-invoke |
 
 ---
 
@@ -90,8 +91,10 @@ python3 .claude/skills/orch-log/scripts/append.py \
 | E07–E09 | Phase orchestrators (dev, review) |
 | E10 | Meta-orchestrator |
 | E11–E13 | Phase orchestrators (extended) + meta-orchestrator |
-| E14–E17 | Reserved |
+| E14–E15 | u-improve flow (E14 improve-spec confirmation; E15 session overwrite guard) |
+| E16–E17 | orchestrator-review shared suite (E16 build failure; E17 parser degraded) |
 | E18–E19 | orchestrator-review (E18 auto-approval audit; E19 qa_mode classifier fallback) |
 | E20 | orchestrator-review/dev (manifest stack unresolved — fail-closed, A3-F7) |
 | E21 | orchestrator-review (QA not on integrated main — SIEGARD-06 entry guard) |
+| E22 | orchestrator-dev (backlog scope violation — L4 post-planner guard) |
 | E99 | Human confirmation / approval gates |

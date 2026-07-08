@@ -134,6 +134,22 @@ execution_contract:
 
 ---
 
+## Change scope rule (L4 — /u-improve only)
+
+The activation prompt carries a `Change scope:` line. When it lists domains
+(not `unrestricted`), those are the ONLY domains your Task Contracts may
+target — the handoff manifest enumerates every on-disk domain, but untouched
+domains are NOT in scope for this change.
+
+| Signal | Action |
+|---|---|
+| `Change scope: unrestricted` | No restriction — plan freely (u-spec / greenfield) |
+| A TC's spec inputs all live under `domains/<slug>/` outside the scope list | Prohibited — drop the TC or re-scope it. A deterministic gate (`check_backlog_scope.py`) rejects the whole backlog |
+| Work in an out-of-scope domain looks genuinely necessary | Do NOT plan it — record it in the backlog notes as a follow-up recommendation; widening scope is triage's decision (`/u-improve` re-run), never the planner's |
+| TC touches only front specs / infra / session-local files | Allowed — scope restricts domain-spec targets, not stack |
+
+---
+
 ## Persona coverage gate
 
 Before finalizing the backlog, verify:

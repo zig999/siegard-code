@@ -453,6 +453,14 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "improve flow planner skip: triage.json unusable"}` and stop.
 
+**Derive the change scope (L4 — passed to every planner prompt, enforced by the Step 4 guard):**
+
+```bash
+SCOPE_OUT=$(python3 .claude/skills/phase-sdd-rules/scripts/scope.py --workflow-id <workflow_id>)
+```
+
+Store `scope_domains` from the output: the sorted `domains` list when `scoped == true`, or the literal string `unrestricted` when `scoped == false` (u-spec / greenfield / underivable — no narrowing).
+
 **Stack-conditional planning dispatch (D8, via state machine):**
 
 ```bash
@@ -517,7 +525,7 @@ register_worker('u-fe-planner-dev_<workflow_id>_planning_fe', 'dev_<workflow_id>
 Spawn **both planners in a single response turn** (two parallel Agent tool calls):
 - BE: `subagent_type: "u-be-planner"`, `ORCH_TASK_ID=dev_<workflow_id>_planning_be`, write to `<session_dir>/backlog/backlog_be.json`
 - FE: `subagent_type: "u-fe-planner"`, `ORCH_TASK_ID=dev_<workflow_id>_planning_fe`, write to `<session_dir>/backlog/backlog_fe.json`
-- Each planner prompt must include: ORCH_TASK_ID, ORCH_ATTEMPT, ORCH_WORKER_ID, SPECS_DIR, ORCH_PROJECT_DIR, SESSION_DIR, nesting_depth, handoff_type, changed_files, dev_impact, the original requirement text (Rec A — verbatim `.requirement` from `<session_dir>/triage.json`, or `""` if absent), and explicit instruction to scope tasks to its own stack only (no cross-stack tasks)
+- Each planner prompt must include: ORCH_TASK_ID, ORCH_ATTEMPT, ORCH_WORKER_ID, SPECS_DIR, ORCH_PROJECT_DIR, SESSION_DIR, nesting_depth, handoff_type, changed_files, dev_impact, the original requirement text (Rec A — verbatim `.requirement` from `<session_dir>/triage.json`, or `""` if absent), the change-scope line (`Change scope: <scope_domains>` — same wording as the single-planner prompt below; L4), and explicit instruction to scope tasks to its own stack only (no cross-stack tasks)
 - Each planner must `Emit task_completed with artifacts: [<session_dir>/backlog/backlog_{be|fe}.json] when done`
 
 Wait for both planners to return. Re-read state.
@@ -618,6 +626,12 @@ Spawn via Agent tool:
      Cross-check that every clause of this requirement is decomposed into a TC; if a
      clause is intentionally out of scope, record it explicitly in the backlog. The
      spec_requirements_covered gate blocks dev exit on any UC/FEAT left uncovered.)
+  Change scope: <scope_domains>
+    (L4 — from scope.py. On an /u-improve this lists the ONLY domains your Task
+     Contracts may target: the manifest enumerates every on-disk domain, but
+     untouched domains are NOT in scope for this change. A deterministic gate
+     (check_backlog_scope.py) rejects the backlog if any TC references only
+     out-of-scope domains. "unrestricted" for u-spec/greenfield — plan freely.)
   Write backlog.json to: <session_dir>/backlog/backlog.json
   Write backlog.md  to: <session_dir>/backlog/backlog.md
   Write individual TC files to: <session_dir>/backlog/tc-NNN.md
@@ -646,6 +660,45 @@ If `planning_task` exists and `status == "running"`: planning is in progress. Ou
 ---
 
 ### Step 4 — Impl task creation
+
+#### 4.0 — Backlog scope guard (L4 — deterministic, BEFORE any impl task exists)
+
+```bash
+python3 .claude/skills/phase-dev-rules/scripts/check_backlog_scope.py \
+  --backlog <backlog_path> --workflow-id <workflow_id>
+```
+
+The guard derives the change scope from triage (same single source as the SDD
+gates — lib/spec_scope.py) and scans every Task Contract file for
+`domains/<slug>/` references. On u-spec / greenfield (`scoped: false`) it
+passes trivially.
+
+- **`status == "ok"`** → proceed to 4.1.
+- **`status == "blocked"` with `reason: backlog_unreadable`** → planner artifact defect: treat exactly as a planning failure (retry logic; exhausted → E07) — do NOT proceed.
+- **`status == "blocked"` with `violations`** → the planner re-broadened an `/u-improve` beyond its change scope:
+  - **If `dev_<workflow_id>_planning_scope_r1` does NOT exist:** create it (`type: planning`, `tier: critical`, `deps: []`), claim, register, and re-spawn the SAME planner worker(s) with the original prompt PLUS this block (verbatim, filling the placeholders):
+    ```
+    SCOPE VIOLATIONS — regenerate the backlog.
+    Change scope for this /u-improve: <scope_domains>.
+    Rejected Task Contracts (reference ONLY out-of-scope domains): <violations JSON>.
+    Remove them or re-scope them to the change scope. Do NOT plan work for
+    untouched domains. Overwrite <backlog_path> and the affected tc-NNN.md files.
+    ```
+    When the revision task completes, re-run the guard (this step).
+  - **If `dev_<workflow_id>_planning_scope_r1` exists and is `completed` and the guard is STILL blocked:** escalate and stop:
+    ```bash
+    python3 .claude/skills/orch-log/scripts/append.py \
+      --agent orchestrator-dev \
+      --event-type escalation \
+      --data '{"code":"E22_backlog_scope_violation","severity":"critical","reason":"planner produced Task Contracts referencing only out-of-scope domains twice — an /u-improve must not be re-broadened past its change scope (L4)","evidence":[<planning_task_seqs>],"violations":<violations JSON>,"scope_domains":<scope_domains JSON>,"suggested_actions":["inspect the rejected tc-NNN.md files","if the extra domains are genuinely required, re-run /u-improve with a broader improvement description so triage widens the scope","or edit the backlog manually and re-invoke"]}'
+    ```
+    Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "backlog scope violation after planner revision"}` and stop.
+
+> Never create impl tasks from a backlog the guard has not approved — an
+> out-of-scope TC that reaches `task_created` re-broadens every downstream
+> phase (dev → QA → test) against domains this change never touched.
+
+#### 4.1 — Create impl tasks
 
 Read the backlog from the artifact path:
 
@@ -1118,6 +1171,7 @@ Re-read state. Determine:
 | `E04_critical_task_dlq` | critical | Non-retryable impl task failure |
 | `E08_exit_criteria_not_met` | warning | All tasks terminal but delivery criteria not met |
 | `E13_improve_scope_unusable` | critical | improve flow with `planner_required=false` but `triage.json` missing — cannot synthesize backlog |
+| `E22_backlog_scope_violation` | critical | Planner produced TCs referencing only out-of-scope domains twice (post-revision) — `/u-improve` must not be re-broadened (L4) |
 
 ---
 

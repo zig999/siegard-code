@@ -18,6 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 SCRIPTS = ROOT / "dist/.claude/skills/phase-sdd-rules/scripts"
+DEV_SCRIPTS = ROOT / "dist/.claude/skills/phase-dev-rules/scripts"
 WID = "wf-test"
 
 
@@ -331,3 +332,123 @@ class TestScopedRepairTargets:
         out = json.loads(r.stdout)
         assert out["invalid_domains"] == ["billing", "legacy"]
         assert out["scoped"] is False
+
+
+# --------------------------------------------------------------------------- #
+# check_backlog_scope.py — post-planner scope guard (L4)                       #
+# --------------------------------------------------------------------------- #
+def _run_dev(script: str, project_dir: Path, *args: str):
+    env = {**os.environ, "ORCH_PROJECT_DIR": str(project_dir), "SPECS_DIR": "specs"}
+    return subprocess.run(
+        [sys.executable, str(DEV_SCRIPTS / script), *args],
+        capture_output=True, text=True, env=env,
+    )
+
+
+def _backlog(project_dir: Path, tcs: list[dict]) -> Path:
+    """Write backlog.json + a tc-NNN.md per entry (spec_refs in the body)."""
+    bdir = project_dir / ".orch" / "sessions" / WID / "backlog"
+    bdir.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for i, tc in enumerate(tcs, 1):
+        tc_file = bdir / f"tc-{i:03d}.md"
+        refs = "\n".join(f"- path: specs/domains/{d}/openapi.yaml"
+                         for d in tc.get("domains", []))
+        tc_file.write_text(
+            f"# TC-{i:03d} — {tc.get('title', 'task')}\n\n"
+            f"## Spec inputs\n{refs or '- path: specs/front/front.md'}\n")
+        entries.append({
+            "task_id": f"dev_tc_{i:03d}",
+            "spec": str(tc_file.relative_to(project_dir)),
+            "deps": [], "tier": "standard", "type": "impl",
+            "title": tc.get("title", "task"),
+        })
+    path = bdir / "backlog.json"
+    path.write_text(json.dumps(entries))
+    return path
+
+
+class TestBacklogScopeGuard:
+    def test_out_of_scope_tc_blocks_with_named_violation(self, tmp_path):
+        # L4 core case: improve scoped to billing; planner planned a legacy TC.
+        _triage(tmp_path, trigger="u-improve", affected=["billing"])
+        backlog = _backlog(tmp_path, [
+            {"title": "in scope", "domains": ["billing"]},
+            {"title": "re-broadened", "domains": ["legacy"]},
+        ])
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(backlog), "--workflow-id", WID)
+        assert r.returncode == 1
+        out = json.loads(r.stdout)
+        assert out["status"] == "blocked"
+        assert out["scope_domains"] == ["billing"]
+        assert len(out["violations"]) == 1
+        v = out["violations"][0]
+        assert v["task_id"] == "dev_tc_002"
+        assert v["out_of_scope_domains"] == ["legacy"]
+
+    def test_all_in_scope_passes(self, tmp_path):
+        _triage(tmp_path, trigger="u-improve", affected=["billing", "auth"])
+        backlog = _backlog(tmp_path, [
+            {"title": "a", "domains": ["billing"]},
+            {"title": "b", "domains": ["auth", "billing"]},
+        ])
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(backlog), "--workflow-id", WID)
+        assert r.returncode == 0, r.stdout
+        assert json.loads(r.stdout)["violations"] == []
+
+    def test_mixed_refs_with_one_in_scope_allowed(self, tmp_path):
+        # Out-of-scope mention alongside an in-scope target = context, not work.
+        _triage(tmp_path, trigger="u-improve", affected=["billing"])
+        backlog = _backlog(tmp_path, [
+            {"title": "integration note", "domains": ["billing", "legacy"]},
+        ])
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(backlog), "--workflow-id", WID)
+        assert r.returncode == 0, r.stdout
+
+    def test_tc_without_domain_refs_allowed(self, tmp_path):
+        # Front-only / infra TC — cannot attribute → never blocked.
+        _triage(tmp_path, trigger="u-improve", affected=["billing"])
+        backlog = _backlog(tmp_path, [{"title": "front-only", "domains": []}])
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(backlog), "--workflow-id", WID)
+        assert r.returncode == 0, r.stdout
+
+    def test_uspec_greenfield_trivially_ok(self, tmp_path):
+        _triage(tmp_path, trigger="u-spec", affected=[])
+        backlog = _backlog(tmp_path, [{"title": "anything", "domains": ["x", "y"]}])
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(backlog), "--workflow-id", WID)
+        assert r.returncode == 0
+        out = json.loads(r.stdout)
+        assert out["scoped"] is False
+        assert out["tcs_checked"] == 0
+
+    def test_missing_triage_trivially_ok(self, tmp_path):
+        backlog = _backlog(tmp_path, [{"title": "t", "domains": ["legacy"]}])
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(backlog), "--workflow-id", WID)
+        assert r.returncode == 0
+        assert json.loads(r.stdout)["scoped"] is False
+
+    def test_unreadable_backlog_blocks_as_planner_defect(self, tmp_path):
+        _triage(tmp_path, trigger="u-improve", affected=["billing"])
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(tmp_path / "nope.json"),
+                     "--workflow-id", WID)
+        assert r.returncode == 1
+        assert json.loads(r.stdout)["reason"] == "backlog_unreadable"
+
+    def test_unreadable_tc_file_allowed_but_surfaced(self, tmp_path):
+        _triage(tmp_path, trigger="u-improve", affected=["billing"])
+        backlog = _backlog(tmp_path, [{"title": "ok", "domains": ["billing"]}])
+        entries = json.loads(backlog.read_text())
+        entries.append({"task_id": "dev_tc_099", "spec": "backlog/gone.md",
+                        "deps": [], "tier": "standard", "type": "impl"})
+        backlog.write_text(json.dumps(entries))
+        r = _run_dev("check_backlog_scope.py", tmp_path,
+                     "--backlog", str(backlog), "--workflow-id", WID)
+        assert r.returncode == 0, r.stdout
+        assert json.loads(r.stdout)["unreadable"] == ["backlog/gone.md"]

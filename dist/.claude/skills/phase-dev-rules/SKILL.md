@@ -100,6 +100,33 @@ See `exit-criteria.json` for the machine-readable declaration.
 
 ---
 
+## scripts/check_backlog_scope.py
+
+Post-planner backlog scope guard (L4) — NOT an exit criterion: orchestrator-dev
+runs it in Step 4.0, after the planning task completes and BEFORE creating any
+impl task. Derives the change scope from triage (`lib/spec_scope.py`, the same
+single source as the SDD gates) and scans each Task Contract file for
+`domains/<slug>/` references. Blocks when any TC references ONLY out-of-scope
+domains — an `/u-improve` must not be re-broadened by planning. Conservative:
+scope `None` (u-spec/greenfield) passes trivially; a TC with no domain
+references is allowed (cannot attribute); ≥1 in-scope reference is allowed.
+
+```bash
+python3 .claude/skills/phase-dev-rules/scripts/check_backlog_scope.py \
+  --backlog <session_dir>/backlog/backlog.json --workflow-id <wid>
+```
+
+Output (exit 0 ok / exit 1 blocked):
+```json
+{"status": "ok", "check": "backlog_scope", "scoped": true,
+ "scope_domains": ["billing"], "tcs_checked": 4, "violations": [], "unreadable": []}
+```
+
+Blocked flow (orchestrator-dev Step 4.0): one planner revision with the
+violations injected into the prompt → still blocked → `E22_backlog_scope_violation`.
+
+---
+
 ## scripts/check_all_impl_tasks_terminal.py
 
 Criterion: every task in the `dev` phase has status `completed`. DLQ tasks block the criterion

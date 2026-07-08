@@ -16,6 +16,11 @@ change scope? Callers (the orchestrator dispatch, the gate, the manifest scan)
 restrict their work to that set. Untouched domains inherit their last recorded
 verdict — they are neither re-dispatched nor re-gated.
 
+CANONICAL LOGIC LIVES IN lib/spec_scope.py (single source — the dev-phase
+backlog scope guard consumes the same derivation, L4). This file re-exports it
+unchanged and keeps the CLI; every existing `from scope import ...` consumer
+is unaffected.
+
 Scope rules:
   - trigger != "u-improve"  → None  (u-spec / greenfield: EVERY domain is in
     scope; callers must NOT narrow — return None to signal "no scoping").
@@ -27,7 +32,7 @@ Scope rules:
 `None` ALWAYS means "no scoping / evaluate globally" — never "empty scope".
 This keeps greenfield and un-derivable cases on the exact prior behavior.
 
-Usage (CLI, consumed by orchestrator-sdd):
+Usage (CLI, consumed by orchestrator-sdd and orchestrator-dev):
     python3 .claude/skills/phase-sdd-rules/scripts/scope.py --workflow-id <wid>
     → {"scoped": bool, "domains": [...] | null, "reason": "..."}
 
@@ -37,61 +42,19 @@ Environment:
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
-# Matches the domain slug in a spec path, e.g. "specs/domains/ifs-integration/openapi.yaml".
-_DOMAIN_IN_PATH_RE = re.compile(r"(?:^|/)domains/([^/]+)/")
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+sys.path.insert(0, str(_LIB))
 
-
-def _read_triage(project_dir: Path, workflow_id: str) -> dict | None:
-    triage_path = project_dir / ".orch" / "sessions" / workflow_id / "triage.json"
-    if not triage_path.exists():
-        return None
-    try:
-        return json.loads(triage_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def affected_domains(project_dir: Path, workflow_id: str) -> set[str] | None:
-    """Domains in the change scope, or None to signal 'no scoping (evaluate all)'."""
-    triage = _read_triage(project_dir, workflow_id)
-    if triage is None:
-        return None
-    if triage.get("trigger") != "u-improve":
-        return None  # u-spec / greenfield — every domain is in scope
-    domains: set[str] = set()
-    for spec in triage.get("affected_specs", []):
-        path = spec.get("path") or ""
-        m = _DOMAIN_IN_PATH_RE.search(path)
-        if m:
-            domains.add(m.group(1))
-    return domains or None  # empty → conservative global (do not narrow)
-
-
-def domain_of_spec_path(path: str) -> str | None:
-    """Extract the domain slug from a spec file path (`.../domains/<slug>/...`).
-
-    Returns None for paths outside a domain directory (front specs, flows,
-    globals) — callers treat those as always in scope (cannot narrow).
-    """
-    m = _DOMAIN_IN_PATH_RE.search(path)
-    return m.group(1) if m else None
-
-
-def domain_of_validation_file(filename: str) -> str | None:
-    """Extract the domain slug from a `_validation/` artifact filename.
-
-    Recognized: `<domain>-validation-result.yaml`, `<domain>-validation.md`,
-    `<domain>-compliance.yaml`. Returns None for files with no domain prefix.
-    """
-    for suffix in ("-validation-result.yaml", "-validation.md", "-compliance.yaml"):
-        if filename.endswith(suffix):
-            stem = filename[: -len(suffix)]
-            return stem or None
-    return None
+from spec_scope import (  # noqa: E402,F401 — re-exported for existing consumers
+    _DOMAIN_IN_PATH_RE,
+    affected_domains,
+    domain_of_spec_path,
+    domain_of_validation_file,
+    domains_in_text,
+)
 
 
 def main() -> int:
