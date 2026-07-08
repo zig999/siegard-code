@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-08T00:45:55Z",
+  "generated_at": "2026-07-08T01:37:57Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -13,7 +13,7 @@
     },
     {
       "path": "agents/dev/u-architecture-reviewer.md",
-      "sha256": "5bce99f5145005f157de5e91a4b9441dfa0cfb40be114664cb9ad2e9846238cb"
+      "sha256": "316062e730f1019c0f4c9c22b4f57ea048ba55b23c5f47d37c2730183ad27059"
     },
     {
       "path": "agents/dev/u-be-developer.md",
@@ -49,7 +49,7 @@
     },
     {
       "path": "agents/dev/u-security-reviewer.md",
-      "sha256": "a6db86bb2129a721bddb7c8a7b700039092315835cd2a525223ffcac1047e8de"
+      "sha256": "720f92bb077159eeeef4a0b33698e7fac89a43b8e3ea3bb2addffd5e203efdc2"
     },
     {
       "path": "agents/dev/u-test-runner.md",
@@ -57,23 +57,23 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "56cd4e9acef389fda5910e0d5c9f098bc149761b076637ac0cbb238c07b619a3"
+      "sha256": "9b09f267b3c42a68765aa029d6f0ad752aa74d9279fbe5f01e1ccabaf8a9c5bb"
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "80057c18fc289392c70aa4003db5f6053a00e88b487d62a2cdc65611774f9d5b"
+      "sha256": "5b779af1151a112f73bfb9d4945680b3569c13682354a614e7bd3d756476ddef"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "06eef3797cf9088df42f13632602e5e757cdf429cae2d777ad43c366963331ef"
+      "sha256": "ed895fb5353eefb00ccd17a3bb89a2e34d28812f56687c12fd3b78550188e8f9"
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "e9ba69308996c7a70739adca9e5a6200aeb8140e22ad3bcc30dcd6f58685e839"
+      "sha256": "fe00757c0718c3bb431ca15e054cdff42b141243b5928028242ed4d3fa07e9cc"
     },
     {
       "path": "agents/orchestrator.md",
-      "sha256": "8c4df2cca61f8751659d7352b9dad9df868f6458d55b056ab8e7cdb6685aa26b"
+      "sha256": "610be00c79ebc4a685766a067582746f2ed98fa7f23175f66ade1693b5a8fd70"
     },
     {
       "path": "agents/reverse-spec/orchestrator-reverse-spec.md",
@@ -101,7 +101,7 @@
     },
     {
       "path": "agents/spec/u-spec-reviewer.md",
-      "sha256": "6d68a3c88626bcb7a0640bb44a20b6d2ce35d633e66be65e889e3a99ebca5bf8"
+      "sha256": "b0428c0ec2cb93cc8b7cf937882a3b89de1a9abf8ef29023c05ae54d90cad50b"
     },
     {
       "path": "agents/spec/u-spec-triage.md",
@@ -114,6 +114,10 @@
     {
       "path": "agents/spec/u-spec-writer.md",
       "sha256": "0d45ca1aa5d5164f8962fbee039f764141c4019488656afc07fcb4767ae8a49d"
+    },
+    {
+      "path": "claude-md-target-template.md",
+      "sha256": "f168032206471d54d3331089514b4e09b88f90203724bfb96290e22f2f102d35"
     },
     {
       "path": "commands/u-cleanup.md",
@@ -209,7 +213,7 @@
     },
     {
       "path": "scripts/preflight.py",
-      "sha256": "5c096f0acdcb29b1abcd5a7d6ce9990b37db9f062b1fe1afbf87b29010b4474f"
+      "sha256": "5ca5bece2f103ab1710570a40b442c5757f6161722648b291f71ef3e24de7ed0"
     },
     {
       "path": "scripts/purge.py",
@@ -233,7 +237,7 @@
     },
     {
       "path": "settings.json",
-      "sha256": "4cc69f33bd8f07fb5cd7de335123bdf708ef8b4f6d4a503c5a596fcb2bd346d8"
+      "sha256": "a8a7551a18a519e54e8f9c926475cba90cad0de8d0f8c0f18dbed7ae21c8c52e"
     },
     {
       "path": "skills/orch-cleanup/SKILL.md",
@@ -289,7 +293,7 @@
     },
     {
       "path": "skills/orch-state/scripts/current_phase.py",
-      "sha256": "554780b47f92e11d7af7fd8f3f829a72830041972cc487c2fff41043e253aa65"
+      "sha256": "fecd24e4895ad6d2ad501eb028988e3cfe3e1ff3334c1e0450d92ee7ae05573e"
     },
     {
       "path": "skills/orch-state/scripts/detect_mode.py",
@@ -321,7 +325,7 @@
     },
     {
       "path": "skills/phase-dev-rules/SKILL.md",
-      "sha256": "4b9b338009a9f3f18585a0de23e354fd0da5f4be2903c9ec524d3af5eedd7db2"
+      "sha256": "7a714345ad8dc1ccb2a431468ac267b0a88e1ff3790a3c521fd328c65ba6ecc6"
     },
     {
       "path": "skills/phase-dev-rules/exit-criteria.json",
@@ -357,7 +361,7 @@
     },
     {
       "path": "skills/phase-review-rules/SKILL.md",
-      "sha256": "68e53d1831d20c8cae61e0f7237a12b388e7a1bffc0c6b6742779543f07943ae"
+      "sha256": "1814e62bbe8dd90558e297545bd82a3845b467cb5cf005bc68de48aa8c2aa275"
     },
     {
       "path": "skills/phase-review-rules/exit-criteria.json",
@@ -417,7 +421,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/SKILL.md",
-      "sha256": "d898fa883a19e7b31ee62926dbfcbab111485fb2aef00221c74716acd23a966c"
+      "sha256": "b1d31089c56f7fe11c37d755f838db54879d88ae1353c27cd2e162928a208a13"
     },
     {
       "path": "skills/phase-sdd-rules/exit-criteria.json",
@@ -465,7 +469,7 @@
     },
     {
       "path": "skills/phase-test-rules/SKILL.md",
-      "sha256": "5bd54b054515777193a8be85dc377567920cb900e726022bb29393ed70bda535"
+      "sha256": "e493b80132f7443ef57ed8d9e696c706c29f1257a94088c1e34aba28dac29df1"
     },
     {
       "path": "skills/phase-test-rules/exit-criteria.json",
@@ -845,7 +849,7 @@
     },
     {
       "path": "skills/u-spec-triage-rules/SKILL.md",
-      "sha256": "9f06e4c60a029f8e6f452411fa5ddb922d7e35d42f426726b23dc472d6e5be5f"
+      "sha256": "cd43f5159ceb2c93bee0fdde54ddbc044ebc6b43d01cafca435abca6bda93645"
     },
     {
       "path": "skills/u-spec-triage-rules/scripts/classify_stack.py",

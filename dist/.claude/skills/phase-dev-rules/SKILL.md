@@ -2,6 +2,7 @@
 name: phase-dev-rules
 description: Exit criteria checkers and worker routing table for the dev (implementation) phase. Consumed by orchestrator-dev.md to dispatch workers via select_worker.py and evaluate phase transition gates (check_all_impl_tasks_terminal, check_all_deliveries_qa_ready, check_no_open_prohibitions). Not user-invocable — orchestrators call scripts directly.
 user-invocable: false
+allowed-tools: Bash(python3 *), Read
 ---
 
 # phase-dev-rules

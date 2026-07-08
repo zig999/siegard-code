@@ -34,6 +34,9 @@ class TestPreflight:
 
     def test_quick_mode_exits_0_on_healthy_project(self, orch_dir, make_event):
         make_event("orchestrator_heartbeat", data={})
+        # "Healthy" includes a configured target CLAUDE.md (claude_md_config).
+        (orch_dir / "CLAUDE.md").write_text(
+            "# Target\n\nspecs_dir: specs\ndomain: billing\n", encoding="utf-8")
         result = _run(_PREFLIGHT, ["--quick"], {"ORCH_PROJECT_DIR": str(orch_dir)})
         # Exit code 0 means all checks passed
         assert result.returncode == 0, f"stderr: {result.stderr}"

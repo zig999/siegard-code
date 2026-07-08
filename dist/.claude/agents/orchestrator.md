@@ -156,7 +156,9 @@ Stop.
 
 ```bash
 REDUCE_OUT=$(python3 .claude/skills/orch-state/scripts/reduce.py)
-CP_OUT=$(python3 .claude/skills/orch-state/scripts/current_phase.py)
+# --from-stdin derives the phase from the state already reduced above —
+# never re-reduce the log for fields reduce.py already returned.
+CP_OUT=$(echo "$REDUCE_OUT" | python3 .claude/skills/orch-state/scripts/current_phase.py --from-stdin)
 REDUCE_STATUS=$(echo "$REDUCE_OUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','ok'))")
 CP_STATUS=$(echo "$CP_OUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','ok'))")
 ```

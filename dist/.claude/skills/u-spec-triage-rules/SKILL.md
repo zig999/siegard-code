@@ -2,6 +2,7 @@
 name: u-spec-triage-rules
 description: Triage skill for the SDD phase. Always runs at SDD phase start via dedicated worker. Detects trigger type (standard /u-spec vs improve /u-improve), classifies the requirement or improvement, identifies affected specs and domains, determines mode_hint and execution_policy, and writes triage.json to the session directory. Orchestrator-sdd reads triage.json to derive effective_mode and dispatch workers. Not user-invocable.
 user-invocable: false
+allowed-tools: Bash(python3 *), Read
 ---
 
 # SKILL: Spec Triage

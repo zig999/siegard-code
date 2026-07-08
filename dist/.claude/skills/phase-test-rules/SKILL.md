@@ -2,6 +2,7 @@
 name: phase-test-rules
 description: Exit criteria checkers and worker routing table for the test (automated testing) phase. Consumed by orchestrator-test.md to dispatch test workers via select_worker.py and evaluate phase transition gates (check_all_test_tasks_terminal, check_all_tests_passed, check_no_critical_failures). DLQ tasks block transition. Not user-invocable — orchestrators call scripts directly.
 user-invocable: false
+allowed-tools: Bash(python3 *), Read
 ---
 
 # phase-test-rules

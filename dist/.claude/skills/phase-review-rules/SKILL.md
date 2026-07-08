@@ -2,6 +2,7 @@
 name: phase-review-rules
 description: Exit criteria checkers and worker routing table for the review (QA) phase. Consumed by orchestrator-review.md to dispatch QA workers via select_worker.py and evaluate phase transition gates (check_all_qa_verdicts_approved, check_no_open_critical_findings, check_documentation_verified). Includes read_qa_verdict.py helper for verdict extraction. Not user-invocable — orchestrators call scripts directly.
 user-invocable: false
+allowed-tools: Bash(python3 *), Read
 ---
 
 # phase-review-rules
@@ -264,7 +265,7 @@ python3 .claude/skills/phase-review-rules/scripts/check_micro_unanimous_clean.py
 
 ## scripts/run_suite.py · scripts/parse_test_output.py · scripts/attribute_failures.py · scripts/check_suite_freshness.py
 
-Shared suite-run protocol consumed by `orchestrator-review.md` Step 3.5 (gated by `SHARED_SUITE_RUN=1`). Together they execute build + tests once per round, parse vitest/jest JSON, and produce per-TC attribution slices that QA workers consume in shared mode (`Suite run mode: shared` in the activation prompt). See Step 3.5 of orchestrator-review.md for the call sequence and §"Embedded skills" / Phase 1 §1.S of the QA worker agents (`u-be-qa.md`, `u-fe-qa.md`) for the worker contract.
+Shared suite-run protocol consumed by `orchestrator-review.md` Step 3.5 (default-on; disable with `SHARED_SUITE_RUN=0`). Together they execute build + tests once per round, parse vitest/jest JSON, and produce per-TC attribution slices that QA workers consume in shared mode (`Suite run mode: shared` in the activation prompt). See Step 3.5 of orchestrator-review.md for the call sequence and §"Embedded skills" / Phase 1 §1.S of the QA worker agents (`u-be-qa.md`, `u-fe-qa.md`) for the worker contract.
 
 ---
 

@@ -133,8 +133,9 @@ If `log_seq_at_spawn` is a positive integer (`> 0`): skip infra script calls.
 ### Step 1 — State derivation
 
 ```bash
-python3 .claude/skills/orch-state/scripts/reduce.py
-python3 .claude/skills/orch-state/scripts/current_phase.py
+REDUCE_OUT=$(python3 .claude/skills/orch-state/scripts/reduce.py)
+# --from-stdin: derive the phase from the state above — no second full-log reduction.
+echo "$REDUCE_OUT" | python3 .claude/skills/orch-state/scripts/current_phase.py --from-stdin
 ```
 
 **If `reduce.py` exits with code 1:** emit E12 and stop — do NOT proceed to Step 2.
@@ -314,16 +315,16 @@ Re-read state after all `task_created` events.
 
 ---
 
-### Step 3.5 — Shared suite run (opt-in: `SHARED_SUITE_RUN=1`)
+### Step 3.5 — Shared suite run (default-on; opt-out: `SHARED_SUITE_RUN=0`)
 
-> Activated only when env `SHARED_SUITE_RUN=1` is exported. Otherwise this entire step is skipped — workers run build + tests locally (legacy Phase 1 in `u-be-qa.md` / `u-fe-qa.md`).
+> Active by DEFAULT. Export `SHARED_SUITE_RUN=0` to disable — then this entire step is skipped and workers run build + tests locally (legacy Phase 1 in `u-be-qa.md` / `u-fe-qa.md`). Default-on because the legacy path re-runs the full project suite once PER QA WORKER per round — with N parallel QA tasks that is N identical suite executions; the shared run executes it once and attributes failures per TC.
 
-> The shared suite run executes the project's build and test commands ONCE per round and writes a structured manifest with per-TC failure attribution. QA workers consume the attribution slice instead of re-running the suite. Project's `CLAUDE.md` must declare a test command that emits JSON (e.g., `npx vitest run --reporter=json`, `npx jest --json`) for attribution to work; otherwise the parser falls back to degraded mode and workers must fall back to legacy.
+> The shared suite run executes the project's build and test commands ONCE per round and writes a structured manifest with per-TC failure attribution. QA workers consume the attribution slice instead of re-running the suite. Project's `CLAUDE.md` must declare a test command that emits JSON (e.g., `npx vitest run --reporter=json`, `npx jest --json`) for attribution to work; otherwise the parser falls back to degraded mode and workers must fall back to legacy (the degraded fallback is automatic — a project without JSON reporters loses nothing relative to legacy).
 
 #### 3.5.1 — Gate
 
 ```bash
-if [ "${SHARED_SUITE_RUN:-0}" != "1" ]; then
+if [ "${SHARED_SUITE_RUN:-1}" != "1" ]; then
   : "shared suite run disabled — proceed to Step 4 (legacy local test-gate)"
 fi
 ```

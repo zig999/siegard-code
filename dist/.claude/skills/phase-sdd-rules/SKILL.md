@@ -2,6 +2,7 @@
 name: phase-sdd-rules
 description: Exit criteria checkers and worker routing table for the sdd (Specification-Driven Development) phase. Consumed by orchestrator-sdd.md to dispatch spec workers via select_worker.py and evaluate phase transition gates (check_handoff_manifest_approved, check_all_domains_validated, check_error_codes_synced). Includes check_structural_diff.py to determine if spec changes require domain worker dispatch during improve flows. Not user-invocable — orchestrators call scripts directly.
 user-invocable: false
+allowed-tools: Bash(python3 *), Read
 ---
 
 # phase-sdd-rules

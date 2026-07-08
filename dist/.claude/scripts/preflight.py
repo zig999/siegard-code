@@ -224,6 +224,52 @@ def check_claude_code_version() -> CheckResult:
     return _timed(_run)
 
 
+def check_claude_md_config() -> CheckResult:
+    """Validates the target project's CLAUDE.md carries the pipeline config keys.
+
+    Every pipeline entry command (/u-spec, /u-dev, /u-improve) hard-requires
+    `specs_dir:` and `domain:` in the target CLAUDE.md. A fresh install that
+    skipped the configuration step used to surface only as a mid-command stop;
+    this check fails the infra gate up front with an actionable hint.
+
+    Matching is deliberately loose (case-insensitive, tolerates list/bold
+    markdown decoration) so existing working installs never false-positive:
+    the check fails ONLY when CLAUDE.md is absent or a required key appears
+    nowhere in the file.
+    """
+    def _run() -> CheckResult:
+        project_dir = ORCH_DIR.parent
+        claude_md = project_dir / "CLAUDE.md"
+        template_hint = ".claude/claude-md-target-template.md (shipped with the install)"
+        if not claude_md.is_file():
+            return CheckResult(
+                ok=False,
+                reason="CLAUDE.md not found in project root — pipeline commands require it",
+                detail={"expected": str(claude_md),
+                        "hint": f"create it from the template: {template_hint}"},
+            )
+        try:
+            content = claude_md.read_text(encoding="utf-8")
+        except OSError as exc:
+            return CheckResult(ok=False, reason=f"CLAUDE.md unreadable: {exc}",
+                               detail={"path": str(claude_md)})
+        missing = [
+            key for key in ("specs_dir", "domain")
+            if not re.search(rf"^[\s>*\-`]*\**{key}\**\s*[:=]", content,
+                             re.IGNORECASE | re.MULTILINE)
+        ]
+        if missing:
+            return CheckResult(
+                ok=False,
+                reason=f"CLAUDE.md missing required pipeline key(s): {', '.join(missing)}",
+                detail={"missing_keys": missing, "path": str(claude_md),
+                        "hint": f"declare them per the template: {template_hint}"},
+            )
+        return CheckResult(ok=True, reason="CLAUDE.md declares specs_dir and domain",
+                           detail={"path": str(claude_md)})
+    return _timed(_run)
+
+
 def check_agent_references() -> CheckResult:
     """Validates all worker names referenced in select_worker.py scripts exist as agent files."""
     def _run() -> CheckResult:
@@ -272,6 +318,7 @@ LOCAL_CHECKS: list[tuple[str, Callable[[], CheckResult]]] = [
     ("claude_code_installed", check_claude_code_installed),
     ("claude_code_version", check_claude_code_version),
     ("agent_references", check_agent_references),
+    ("claude_md_config", check_claude_md_config),
 ]
 
 

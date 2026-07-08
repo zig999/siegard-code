@@ -160,8 +160,9 @@ Store as `workflow_type`. This value drives the R4 guard and the planning skip i
 ### Step 1 — State derivation
 
 ```bash
-python3 .claude/skills/orch-state/scripts/reduce.py
-python3 .claude/skills/orch-state/scripts/current_phase.py
+REDUCE_OUT=$(python3 .claude/skills/orch-state/scripts/reduce.py)
+# --from-stdin: derive the phase from the state above — no second full-log reduction.
+echo "$REDUCE_OUT" | python3 .claude/skills/orch-state/scripts/current_phase.py --from-stdin
 ```
 
 **If `reduce.py` exits with code 1:** emit E12 and stop — do NOT proceed to Step 2.

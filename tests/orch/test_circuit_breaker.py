@@ -191,6 +191,7 @@ class TestEvaluateCircuitState:
 # evaluate_circuit_state — integration with real log
 # ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 class TestCircuitBreakerIntegration:
     def test_50_failures_trip_circuit(self, tmp_path):
         """Scenario 4.7: 50 failures in 10min trips the circuit."""

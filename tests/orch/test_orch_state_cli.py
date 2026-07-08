@@ -173,3 +173,50 @@ def test_current_phase_output_has_order(tmp_path):
     assert result["order"] == 1
 
 
+# ---------------------------------------------------------------------------
+# current_phase.py --from-stdin (derive from reduce.py output, no re-reduce)
+# ---------------------------------------------------------------------------
+
+def _run_stdin(script: Path, args: list[str], cwd: Path, stdin: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(script)] + args,
+        capture_output=True, text=True, cwd=str(cwd), input=stdin,
+    )
+
+
+def test_from_stdin_matches_standalone_output(tmp_path):
+    """Piping reduce.py output must yield the exact standalone result."""
+    _setup_with_tasks(tmp_path)
+    reduce_out = _run(REDUCE_SCRIPT, [], tmp_path).stdout
+    standalone = json.loads(_run(PHASE_SCRIPT, [], tmp_path).stdout)
+    piped_r = _run_stdin(PHASE_SCRIPT, ["--from-stdin"], tmp_path, reduce_out)
+    assert piped_r.returncode == 0, piped_r.stderr
+    assert json.loads(piped_r.stdout) == standalone
+
+
+def test_from_stdin_empty_state(tmp_path):
+    _setup_empty(tmp_path)
+    reduce_out = _run(REDUCE_SCRIPT, [], tmp_path).stdout
+    r = _run_stdin(PHASE_SCRIPT, ["--from-stdin"], tmp_path, reduce_out)
+    assert r.returncode == 0, r.stderr
+    result = json.loads(r.stdout)
+    assert result["current_phase"] is None
+    assert result["status"] is None
+
+
+def test_from_stdin_propagates_reduce_error(tmp_path):
+    """A reduce.py error object on stdin is passed through verbatim, exit 1."""
+    _setup_empty(tmp_path)
+    err = {"status": "error", "reason": "corrupted_log", "detail": "boom"}
+    r = _run_stdin(PHASE_SCRIPT, ["--from-stdin"], tmp_path, json.dumps(err))
+    assert r.returncode == 1
+    assert json.loads(r.stdout) == err
+
+
+def test_from_stdin_invalid_json_errors(tmp_path):
+    _setup_empty(tmp_path)
+    r = _run_stdin(PHASE_SCRIPT, ["--from-stdin"], tmp_path, "not json {")
+    assert r.returncode == 1
+    assert json.loads(r.stdout)["reason"] == "invalid_state_json"
+
+

@@ -135,9 +135,10 @@ If `log_seq_at_spawn` is a positive integer (`> 0`): skip infra script calls.
 ### Step 1 — State derivation
 
 ```bash
-python3 .claude/skills/orch-state/scripts/reduce.py
+REDUCE_OUT=$(python3 .claude/skills/orch-state/scripts/reduce.py)
 REDUCE_EXIT=$?
-python3 .claude/skills/orch-state/scripts/current_phase.py
+# --from-stdin: derive the phase from the state above — no second full-log reduction.
+echo "$REDUCE_OUT" | python3 .claude/skills/orch-state/scripts/current_phase.py --from-stdin
 ```
 
 **Reduce error gate (T2, via state machine):**

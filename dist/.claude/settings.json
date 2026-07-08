@@ -20,6 +20,19 @@
       "Bash(echo *)",
       "Bash(head *)",
       "Bash(tail *)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(su *)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(dd *)",
+      "Bash(mkfs*)",
+      "Bash(chmod -R 777 *)",
+      "Bash(shutdown *)",
+      "Bash(reboot *)"
     ]
   },
   "hooks": {

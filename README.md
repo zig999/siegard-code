@@ -146,6 +146,16 @@ python3 .claude/scripts/verify_install.py
 
 It compares every installed file against `.claude/siegard-manifest.json` (SHA-256 per file) and reports drift as a JSON envelope — exit code `0` means the installation is intact. Because no tooling runs at install time, every artifact is **self-describing**: provenance, version, and usage context travel inside the copied files.
 
+### Configure your project's CLAUDE.md (required)
+
+Every pipeline command (`/u-spec`, `/u-dev`, `/u-improve`) reads its configuration from your project's `CLAUDE.md` — at minimum `specs_dir:` and `domain:`. The install ships a complete template; create your `CLAUDE.md` from it:
+
+```bash
+# reference: .claude/claude-md-target-template.md (installed with the copy)
+```
+
+The preflight gate (`claude_md_config`) fails with an actionable message if these keys are missing — no workflow starts against an unconfigured project.
+
 ### Run a workflow
 
 ```bash

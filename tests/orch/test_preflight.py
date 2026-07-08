@@ -104,6 +104,50 @@ class TestCheckFilesystemWritable:
 
 
 # ---------------------------------------------------------------------------
+# check_claude_md_config
+# ---------------------------------------------------------------------------
+
+class TestCheckClaudeMdConfig:
+    def _check(self, tmp_path):
+        with patch.object(pf, "ORCH_DIR", tmp_path / ".orch"):
+            return pf.check_claude_md_config()
+
+    def test_missing_claude_md_fails_with_template_hint(self, tmp_path):
+        result = self._check(tmp_path)
+        assert result.ok is False
+        assert "CLAUDE.md not found" in result.reason
+        assert "claude-md-target-template.md" in result.detail["hint"]
+
+    def test_both_keys_present_passes(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text(
+            "# Project\n\nspecs_dir: specs\ndomain: billing\n")
+        result = self._check(tmp_path)
+        assert result.ok is True, result.reason
+
+    def test_decorated_keys_pass(self, tmp_path):
+        """Loose matching: list/bold markdown decoration must not false-positive."""
+        (tmp_path / "CLAUDE.md").write_text(
+            "# Project\n\n- **specs_dir**: specs\n> domain: billing\n")
+        result = self._check(tmp_path)
+        assert result.ok is True, result.reason
+
+    def test_missing_domain_fails_naming_the_key(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("specs_dir: specs\n")
+        result = self._check(tmp_path)
+        assert result.ok is False
+        assert result.detail["missing_keys"] == ["domain"]
+
+    def test_missing_both_keys_fails(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("# Just a readme-like CLAUDE.md\n")
+        result = self._check(tmp_path)
+        assert result.ok is False
+        assert result.detail["missing_keys"] == ["specs_dir", "domain"]
+
+    def test_registered_in_local_checks(self):
+        assert "claude_md_config" in dict(LOCAL_CHECKS)
+
+
+# ---------------------------------------------------------------------------
 # check_claude_code_installed
 # ---------------------------------------------------------------------------
 
