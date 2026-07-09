@@ -607,6 +607,18 @@ _VALID_SKIP_REASONS: frozenset[str] = frozenset({
     "phase_short_circuit",
 })
 
+# Failure reasons emitted ONLY by the framework when it synthesizes a terminal for
+# a worker it believes died: the stale reaper (reap_stale_tasks -> stale_timeout)
+# and the SubagentStop hook (worker_exited_without_terminal). A worker never emits
+# these — its own task_failed carries a worker-emitted reason (validation_failed,
+# internal_error, ...). This set is the key for the F2 false-positive reconciliation
+# in _handle_task_completed: a synthesized FAILED that is later contradicted by a
+# genuine task_completed from the same worker was a false positive, not corruption.
+_SYNTHESIZED_FAILURE_REASONS: frozenset[str] = frozenset({
+    "stale_timeout",
+    "worker_exited_without_terminal",
+})
+
 
 def _validate_event_data(event_type: str, data: dict[str, Any]) -> None:
     """Validates required fields in event data. Raises EventValidationError."""
@@ -1832,6 +1844,36 @@ def _handle_task_claimed(state: OrchState, event: Event) -> None:
     task.evidence.append(event.seq)
 
 
+def _handle_task_progress(state: OrchState, event: Event) -> None:
+    """Heartbeat: a live worker's progress checkpoint resets the staleness timer.
+
+    F1 (SIEGARD): the stale reaper (stale_tasks) and the SubagentStop liveness gate
+    (worker_liveness_expired) both measure silence as (now - task.last_event_at).
+    stale_tasks' own docstring promises task_progress updates last_event_at so
+    heartbeats reset the timer — but task_progress had NO reducer handler, so
+    last_event_at only advanced on state transitions (task_claimed, ...). A worker
+    emitting context_loaded -> analysis_complete -> draft_written without any
+    transition never reset the timer and was reaped while alive. This handler makes
+    the implementation match the contract.
+
+    Only a progress for the CURRENT attempt of a RUNNING task counts (mirrors the
+    straggler guards in _handle_task_completed/_handle_task_failed): progress on a
+    non-running task (e.g. one already reaped to FAILED) must not revive it, and an
+    older attempt's straggler progress must not reset a newer attempt's timer.
+    last_event_at is advanced but evidence is NOT appended — heartbeats are frequent
+    and would grow the evidence list unbounded.
+    """
+    task_id = event.task_id
+    if task_id is None or task_id not in state.tasks:
+        return
+    task = state.tasks[task_id]
+    if task.status != TaskStatus.RUNNING:
+        return
+    if event.attempt < (task.attempts or 1):
+        return
+    task.last_event_at = event.ts
+
+
 def _handle_task_completed(state: OrchState, event: Event) -> None:
     task_id = event.task_id
     if task_id is None or task_id not in state.tasks:
@@ -1848,7 +1890,29 @@ def _handle_task_completed(state: OrchState, event: Event) -> None:
     # path (attempts=0, event.attempt=1) evaluates `1 < 1` → False and proceeds.
     if event.attempt < (task.attempts or 1):
         return
-    if task.status != TaskStatus.RUNNING:
+    # F2 (SIEGARD): false-positive reconciliation. A SYNTHESIZED terminal — emitted
+    # by the stale reaper (stale_timeout) or the SubagentStop hook
+    # (worker_exited_without_terminal), never by the worker — marked a still-live
+    # worker as FAILED. Its late task_completed (same attempt, no retry advanced the
+    # attempt counter) proves the worker was alive and finished; the FAILED was the
+    # error, not this event. Accept FAILED->COMPLETED and record the anomaly (fail
+    # loud, not fail dead) so a single false positive no longer makes the whole log
+    # irreducible. This is deliberately NARROW: a completed over a WORKER-reported
+    # FAILED (validation_failed, internal_error, ...) or over a never-claimed task
+    # still raises below — the validator rejecting genuine corruption stays a feature.
+    reconciled_false_positive = (
+        task.status == TaskStatus.FAILED
+        and task.last_failure_reason in _SYNTHESIZED_FAILURE_REASONS
+    )
+    if reconciled_false_positive:
+        state.anomalies.append({
+            "seq": event.seq,
+            "event_type": EventType.TASK_COMPLETED.value,
+            "task_id": task_id,
+            "reason": "reconciled_false_positive_completion",
+            "prior_failure": task.last_failure_reason,
+        })
+    elif task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
             f"task_completed: task {task_id!r} is {task.status!r}, expected running"
         )
@@ -1992,6 +2056,7 @@ _HANDLERS: dict[str, Any] = {
     EventType.PHASE_RESUMED: _handle_phase_resumed,
     EventType.TASK_CREATED: _handle_task_created,
     EventType.TASK_CLAIMED: _handle_task_claimed,
+    EventType.TASK_PROGRESS: _handle_task_progress,
     EventType.TASK_COMPLETED: _handle_task_completed,
     EventType.TASK_SKIPPED: _handle_task_skipped,
     EventType.TASK_FAILED: _handle_task_failed,
@@ -2016,8 +2081,9 @@ def apply_event(state: OrchState, event: Event) -> OrchState:
     Mutates state in-place and returns it. deepcopy before calling if you
     need to preserve the original.
 
-    Known event types with no reducer effect (e.g. task_progress, snapshot)
-    are silently skipped — last_seq is still updated.
+    Known event types with no reducer effect (e.g. snapshot) are silently
+    skipped — last_seq is still updated. (task_progress DOES have an effect: it
+    advances last_event_at as a liveness heartbeat — see _handle_task_progress.)
 
     Raises:
         IllegalTransition: Event implies an illegal state transition.
@@ -2569,11 +2635,12 @@ def reap_stale_tasks(now: str | None = None) -> list[str]:
     from check_stale.py (orchestrator Step 5.0) and on_stop.py (session-end backstop).
     """
     now = now or now_iso()
+    cfg = load_config()
     state = reduce_all()
     reaped: list[str] = []
-    for task in stale_tasks(state, now):
+    for task in stale_tasks(state, now, cfg):
         try:
-            append_event(
+            failed = append_event(
                 agent="stale-monitor",
                 event_type=EventType.TASK_FAILED.value,
                 task_id=task.task_id,
@@ -2581,6 +2648,9 @@ def reap_stale_tasks(now: str | None = None) -> list[str]:
                 data={"phase": task.phase, "reason": "stale_timeout", "retryable": True},
             )
             reaped.append(task.task_id)
+            # F3/F4: schedule the retry atomically in this same Python call so the
+            # task never stalls in FAILED if the orchestrator turn ends before Step 5.5.
+            schedule_retry_if_due(task.task_id, failed.seq, now, cfg)
         except Exception:  # noqa: BLE001 — a reaper must never raise
             continue
     return reaped
@@ -2888,6 +2958,68 @@ def should_retry(task: TaskState, policy: RetryPolicy) -> bool:
     if task.attempts >= policy.max_attempts:
         return False
     return True
+
+
+def schedule_retry_if_due(
+    task_id: str,
+    previous_failure_seq: int,
+    now: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> str | None:
+    """Emit task_scheduled_retry for a just-failed task IN THE SAME PYTHON CALL as the
+    failure, when the failure is retryable (F3/F4 — SIEGARD BUG-4).
+
+    The stale reaper and the SubagentStop hook emit task_failed from Python, but the
+    matching task_scheduled_retry was emitted only later by the orchestrator LLM (Step
+    5.5). If the orchestrator turn ended between the two, the task stalled in FAILED
+    forever with nobody scheduling the retry. Emitting the retry here removes that
+    single point of failure: even if the turn dies immediately after, the task is
+    already SCHEDULED and the next orchestrator invocation resumes it via due_retries.
+
+    Contract:
+      - Re-derives state and acts ONLY when the task is currently FAILED. A concurrent
+        retry/DLQ that already advanced it is left untouched (no double-schedule; the
+        orchestrator's Step 5.5 iterates status==failed, so it won't re-schedule this).
+      - Non-retryable failures (should_retry False — max attempts, structural cap, or
+        retryable=False) are left FAILED for the orchestrator to route to DLQ.
+      - Never raises: a reaper/hook path must not crash. Returns next_retry_at when it
+        scheduled a retry, else None.
+    """
+    from datetime import timedelta
+
+    now = now or now_iso()
+    cfg = config if config is not None else load_config()
+    try:
+        state = reduce_all()
+    except Exception:  # noqa: BLE001 — never raise from a reaper/hook path
+        return None
+    task = state.tasks.get(task_id)
+    if task is None or task.status != TaskStatus.FAILED:
+        return None
+    policy = RetryPolicy.for_task(task.task_type or "", task.tier, cfg)
+    if not should_retry(task, policy):
+        return None
+    delay = backoff_seconds(task.attempts, policy.base_delay_s, policy.cap_s)
+    retry_dt = parse_iso(now) + timedelta(seconds=delay)
+    next_retry_at = (
+        retry_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{retry_dt.microsecond // 1000:03d}Z"
+    )
+    try:
+        append_event(
+            agent="stale-monitor",
+            event_type=EventType.TASK_SCHEDULED_RETRY.value,
+            task_id=task_id,
+            attempt=task.attempts,
+            data={
+                "phase": task.phase,
+                "next_retry_at": next_retry_at,
+                "backoff_seconds": round(delay, 3),
+                "previous_failure_seq": previous_failure_seq,
+            },
+        )
+    except Exception:  # noqa: BLE001 — never raise from a reaper/hook path
+        return None
+    return next_retry_at
 
 
 def parse_manifest_fields(content: str) -> dict[str, Any]:

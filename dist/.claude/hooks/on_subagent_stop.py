@@ -52,6 +52,7 @@ from orch_core import (
     load_config,
     now_iso,
     reduce_all,
+    schedule_retry_if_due,
     unregister_worker,
     worker_liveness_expired,
     ORCH_DIR,
@@ -178,7 +179,7 @@ def main() -> int:
         phase = entry.get("phase") or _get_task_phase(task_id, state)
 
         try:
-            append_event(
+            failed = append_event(
                 agent=worker_id,
                 event_type=EventType.TASK_FAILED.value,
                 task_id=task_id,
@@ -191,6 +192,10 @@ def main() -> int:
                     **_infer_cause(entry),  # SIEGARD-01: suspected_cause, elapsed_s, spawn_context_chars
                 },
             )
+            # F3/F4 (SIEGARD BUG-4): schedule the retry in this same Python call so a
+            # synthesized failure never leaves the task stalled in FAILED if the
+            # orchestrator turn ended. No-op when the failure is not retryable.
+            schedule_retry_if_due(task_id, failed.seq, now, config)
         except Exception as exc:  # noqa: BLE001
             # Log to stderr so the failure is visible in Claude Code hook output.
             # Do not crash — the hook must always exit cleanly.

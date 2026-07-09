@@ -103,12 +103,17 @@ def test_hook_synthesizes_failed_when_no_terminal(tmp_path):
     assert r.returncode == 0, r.stderr
 
     events = _read_all(tmp_path)
-    assert len(events) == before + 1
-    last = events[-1]
-    assert last["event_type"] == "task_failed"
-    assert last["task_id"] == "t_001"
-    assert last["attempt"] == 1
-    assert last["agent"] == "w_1"
+    # F3/F4 (SIEGARD BUG-4): the hook now synthesizes the terminal AND schedules the
+    # retry atomically, so a synthesized failure never stalls the task in FAILED.
+    assert len(events) == before + 2
+    failed = [e for e in events[before:] if e["event_type"] == "task_failed"]
+    assert len(failed) == 1
+    assert failed[0]["task_id"] == "t_001"
+    assert failed[0]["attempt"] == 1
+    assert failed[0]["agent"] == "w_1"
+    sched = [e for e in events[before:] if e["event_type"] == "task_scheduled_retry"]
+    assert len(sched) == 1
+    assert sched[0]["data"]["previous_failure_seq"] == failed[0]["seq"]
 
 
 def test_synthesized_failed_is_retryable(tmp_path):
@@ -117,10 +122,9 @@ def test_synthesized_failed_is_retryable(tmp_path):
     _register_worker(tmp_path, "w_1", "t_001", 1)
     _run_hook(tmp_path)
     events = _read_all(tmp_path)
-    last = events[-1]
-    assert last["event_type"] == "task_failed"
-    assert last["data"]["retryable"] is True
-    assert last["data"]["reason"] == "worker_exited_without_terminal"
+    failed = [e for e in events if e["event_type"] == "task_failed"][-1]
+    assert failed["data"]["retryable"] is True
+    assert failed["data"]["reason"] == "worker_exited_without_terminal"
 
 
 def test_synthesized_failed_has_correct_phase(tmp_path):
@@ -129,8 +133,8 @@ def test_synthesized_failed_has_correct_phase(tmp_path):
     _register_worker(tmp_path, "w_1", "t_001", 1)
     _run_hook(tmp_path)
     events = _read_all(tmp_path)
-    last = events[-1]
-    assert last["data"]["phase"] == "dev"
+    failed = [e for e in events if e["event_type"] == "task_failed"][-1]
+    assert failed["data"]["phase"] == "dev"
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +307,7 @@ def test_hook_ignores_stdin(tmp_path):
     r = _run_hook(tmp_path, stdin=stdin_payload)
     assert r.returncode == 0
     events = _read_all(tmp_path)
-    assert events[-1]["event_type"] == "task_failed"
+    assert any(e["event_type"] == "task_failed" for e in events)
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +353,8 @@ def test_sole_worker_synthesized_once_expired(tmp_path):
     r = _run_hook(tmp_path)
     assert r.returncode == 0
     events = _read_all(tmp_path)
-    assert len(events) == before + 1
-    assert events[-1]["event_type"] == "task_failed"
-    assert events[-1]["task_id"] == "t_001"
+    # F3/F4: terminal + atomic retry scheduling.
+    assert len(events) == before + 2
+    failed = [e for e in events[before:] if e["event_type"] == "task_failed"]
+    assert len(failed) == 1 and failed[0]["task_id"] == "t_001"
+    assert any(e["event_type"] == "task_scheduled_retry" for e in events[before:])

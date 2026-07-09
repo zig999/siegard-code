@@ -36,8 +36,13 @@ class TestReapStaleTasks:
         reaped = orch_core.reap_stale_tasks(_future(orch_core, 2000))  # > impl override 1200s (F-02)
         assert reaped == ["T1"]
         st = orch_core.reduce_all()
-        assert st.tasks["T1"].status == orch_core.TaskStatus.FAILED
+        # F3/F4 (SIEGARD BUG-4): reap emits stale_timeout AND schedules the retry in
+        # the same call, so a retryable stale task advances to SCHEDULED (it was left
+        # in FAILED before, which stalled if the orchestrator turn ended).
+        assert st.tasks["T1"].status == orch_core.TaskStatus.SCHEDULED
         assert st.tasks["T1"].last_failure_reason == "stale_timeout"
+        sched = orch_core.read_events_filtered(event_type="task_scheduled_retry")
+        assert len(sched) == 1 and sched[0].task_id == "T1"
 
     def test_no_reap_when_recent(self, orch_dir, make_event):
         import orch_core
@@ -49,7 +54,7 @@ class TestReapStaleTasks:
         _seed_running_task(make_event)
         future = _future(orch_core, 2000)
         assert orch_core.reap_stale_tasks(future) == ["T1"]
-        # second pass: T1 already FAILED (not RUNNING) -> nothing to reap
+        # second pass: T1 already SCHEDULED (F3/F4 retry) — not RUNNING -> nothing to reap
         assert orch_core.reap_stale_tasks(future) == []
 
 

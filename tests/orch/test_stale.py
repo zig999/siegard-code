@@ -69,8 +69,16 @@ def test_recent_progress_not_stale():
 def test_exactly_at_threshold_not_stale():
     """Task at exactly the threshold boundary is NOT stale (strictly >)."""
     state = OrchState()
-    state.tasks["t_001"] = _make_task("t_001", TaskStatus.RUNNING, "standard", _ts(-300))
-    result = stale_tasks(state, _now())
+    # Anchor both timestamps to ONE instant: two separate now() calls (one inside
+    # _ts(-300), one inside _now()) let wall-clock drift push elapsed just over 300s,
+    # making this zero-margin boundary flaky under full-suite load. stale_tasks and
+    # _elapsed_seconds are unchanged — this only removes the timing race in the test.
+    base = datetime.now(timezone.utc)
+    def _fmt(dt):
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+    state.tasks["t_001"] = _make_task(
+        "t_001", TaskStatus.RUNNING, "standard", _fmt(base - timedelta(seconds=300)))
+    result = stale_tasks(state, _fmt(base))
     assert result == []
 
 

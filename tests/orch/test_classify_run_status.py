@@ -69,15 +69,28 @@ def _worker_exited(task_id, chars=None):
 
 
 def _stale_reaped_then_completed(task_id):
-    """A worker reaped as stale (task_failed) whose live straggler then completes the
-    SAME attempt → FAILED→completed. Strict reduce_all raises IllegalTransition here;
-    tolerant reduction records it as a violation and keeps going."""
+    """A worker reaped as stale (task_failed reason=stale_timeout) whose live straggler
+    then completes the SAME attempt → FAILED→completed. Since F2 (SIEGARD) this is a
+    RECONCILED false positive, not a violation: the reaper's terminal was synthesized,
+    the worker was alive, so strict reduce_all accepts FAILED→COMPLETED and records an
+    anomaly (no illegal transition)."""
     append_event("orchestrator", "task_created", task_id=task_id, data={
         "phase": "dev", "tier": "standard", "type": "impl", "spec": "s", "deps": []})
     append_event("worker", "task_claimed", task_id=task_id, attempt=1, data={
         "phase": "dev", "worker_type": "impl", "worker_id": "w"})
     append_event("stale-monitor", "task_failed", task_id=task_id, attempt=1, data={
         "phase": "dev", "reason": "stale_timeout", "retryable": True})
+    append_event("worker", "task_completed", task_id=task_id, attempt=1, data={
+        "phase": "dev", "artifacts": []})
+
+
+def _completed_without_claim(task_id):
+    """A task_completed emitted for a READY task that was never claimed → a genuine
+    illegal transition (not a synthesized-failure false positive). Strict reduce_all
+    raises IllegalTransition; tolerant reduction records it as a violation and keeps
+    going. Replaces the stale-reaped case, which F2 now reconciles legally."""
+    append_event("orchestrator", "task_created", task_id=task_id, data={
+        "phase": "dev", "tier": "standard", "type": "impl", "spec": "s", "deps": []})
     append_event("worker", "task_completed", task_id=task_id, attempt=1, data={
         "phase": "dev", "artifacts": []})
 
@@ -99,7 +112,7 @@ class TestClassifyRunStatus:
         # Strict reduce_all would abort with internal_error here; tolerant reduction
         # keeps the report readable and lists the skipped transition.
         _phase()
-        _stale_reaped_then_completed("dev_tc_001")
+        _completed_without_claim("dev_tc_001")
         result = _run(tmp_orch)
         assert result["status"] == "ok"
         assert len(result["reduce_violations"]) == 1
@@ -107,6 +120,16 @@ class TestClassifyRunStatus:
         assert v["task_id"] == "dev_tc_001"
         assert v["event_type"] == "task_completed"
         assert "skipped during tolerant reduction" in result["summary"]
+
+    def test_stale_reaped_completion_reconciles_without_violation(self, tmp_orch):
+        # F2 (SIEGARD): a stale-reaped worker that actually finished is reconciled
+        # (FAILED->COMPLETED) by strict reduce_all — no illegal transition, so the
+        # tolerant classifier reports zero violations and the task reads as completed.
+        _phase()
+        _stale_reaped_then_completed("dev_tc_001")
+        result = _run(tmp_orch)
+        assert result["status"] == "ok"
+        assert result["reduce_violations"] == []
 
     def test_e99_gate_is_awaiting_human(self, tmp_orch):
         _phase()

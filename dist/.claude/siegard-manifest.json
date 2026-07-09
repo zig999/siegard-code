@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.11.0",
+  "version": "2.13.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-09T18:51:31Z",
+  "generated_at": "2026-07-09T23:08:28Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -157,7 +157,7 @@
     },
     {
       "path": "hooks/on_subagent_stop.py",
-      "sha256": "28489447e2a28132cf1c42d8b4112fe810f8e39c8146fe8baf17a7c5b0b18a34"
+      "sha256": "646c021e9be5d5bb9757df560ad99d6902399c43790c61c22827bb1a6cfc8ef8"
     },
     {
       "path": "lib/__init__.py",
@@ -169,7 +169,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "7d3183293cb3c6b7e18a486477e61968fcc2c8e163dfc34429572f07a480e2ab"
+      "sha256": "a6ec294780d1738fa24f75efb564deb6b58afeac60426725517ddf7da838c8de"
     },
     {
       "path": "lib/sm_runner.py",
