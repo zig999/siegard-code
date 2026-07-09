@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-08T02:12:24Z",
+  "generated_at": "2026-07-09T18:51:31Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -41,7 +41,7 @@
     },
     {
       "path": "agents/dev/u-fe-spec-writer.md",
-      "sha256": "e80a32eebeb897f71d28dc5a8fbcfc43e79888ecabc207c0f6d9724ac3ad0fbc"
+      "sha256": "91cd49b93b4409df99cdf1171ab37b19b8a58c469cf2ecf4baa903f1dce389f6"
     },
     {
       "path": "agents/dev/u-fe-ui.md",
@@ -85,7 +85,7 @@
     },
     {
       "path": "agents/reverse-spec/u-reverse-spec-writer.md",
-      "sha256": "4d05b5c01bb11ec72a1a674076fa6484ce858aac622b58ceb0b22b4c86820f83"
+      "sha256": "22d86b0b21e4a84d7638e5b6cdbad8e1083a41c6c3ff4e9932d5568fa6b57313"
     },
     {
       "path": "agents/spec/u-spec-back.md",
@@ -113,7 +113,7 @@
     },
     {
       "path": "agents/spec/u-spec-writer.md",
-      "sha256": "0d45ca1aa5d5164f8962fbee039f764141c4019488656afc07fcb4767ae8a49d"
+      "sha256": "d2259100a94d469c3083cd7de1e1feb771ea365a39c0238660937495150c29d7"
     },
     {
       "path": "claude-md-target-template.md",
