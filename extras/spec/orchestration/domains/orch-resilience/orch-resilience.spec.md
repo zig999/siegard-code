@@ -48,7 +48,7 @@
 
 ### UC-04 — Evaluate retry eligibility
 **Actor:** system
-**Post:** true/false per rules: `retryable=false` → false; structural reason (`stale_timeout`, `worker_exited_without_terminal`, `subagent_invalid_response`) with `attempts ≥ 2` → false; `attempts ≥ max_attempts` → false; else true.
+**Post:** true/false per rules: `retryable=false` → false; structural reason (`stale_timeout`, `worker_exited_without_terminal`) with `attempts ≥ 2` → false; `attempts ≥ max_attempts` → false; else true.
 **Related contract:** `should_retry` (`orch_core.py:2936`).
 
 ### UC-05 — Compute backoff
@@ -92,7 +92,7 @@ Staleness is measured as `now - last_event_at`, and `last_event_at` is advanced 
 The SubagentStop hook synthesizes a terminal ONLY once the worker is silent past the SAME threshold the reaper uses (`worker_liveness_expired`); it never reaps a worker whose last event is recent. Related UC: UC-02. (`orch_core.py:2571`)
 
 ### BR-04 — Structural-reason retry cap
-Structural failures (`stale_timeout`, `worker_exited_without_terminal`, `subagent_invalid_response`) are retried at most once (no retry at `attempts ≥ 2`); further occurrences go to DLQ. Related UC: UC-04. (`should_retry:2944`)
+Structural failures (`stale_timeout`, `worker_exited_without_terminal` — the synthesized worker/task reasons) are retried at most once (no retry at `attempts ≥ 2`); further occurrences go to DLQ. Related UC: UC-04. (`should_retry:2938`; CONF-02 removed the non-task `subagent_invalid_response` from this set)
 
 ### BR-05 — Atomic retry scheduling (F3/F4, enforces INV-07)
 The reaper and hook emit `task_scheduled_retry` in the same Python call as the failure when retryable; the task never stalls in FAILED because an LLM turn ended before Step 5.5. Non-retryable failures stay FAILED for DLQ. Related UC: UC-03. (`schedule_retry_if_due`)

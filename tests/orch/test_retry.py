@@ -237,17 +237,26 @@ class TestShouldRetry:
 
     def test_structural_reason_first_attempt_allows_retry(self):
         """First structural failure (attempts=1) still gets 1 retry."""
-        for reason in ("subagent_invalid_response", "worker_exited_without_terminal", "stale_timeout"):
+        for reason in ("worker_exited_without_terminal", "stale_timeout"):
             t = _task(attempts=1, retryable=True, failure_reason=reason)
             p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
             assert should_retry(t, p) is True, f"Expected True for reason={reason} attempts=1"
 
     def test_structural_reason_at_two_attempts_blocks_retry(self):
         """Second structural failure (attempts=2) is hard-stopped regardless of policy max."""
-        for reason in ("subagent_invalid_response", "worker_exited_without_terminal", "stale_timeout"):
+        for reason in ("worker_exited_without_terminal", "stale_timeout"):
             t = _task(attempts=2, retryable=True, failure_reason=reason)
             p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
             assert should_retry(t, p) is False, f"Expected False for reason={reason} attempts=2"
+
+    def test_subagent_invalid_response_is_not_a_structural_task_reason(self):
+        """CONF-02: subagent_invalid_response is a meta→phase-orchestrator concept
+        (escalation E13), not a worker task_failed reason. It is no longer in the
+        should_retry structural set, so at attempts=2 it follows the NORMAL policy
+        (retryable while attempts < max_attempts) rather than the 1-retry cap."""
+        t = _task(attempts=2, retryable=True, failure_reason="subagent_invalid_response")
+        p = RetryPolicy(max_attempts=5, base_delay_s=30.0, cap_s=600.0)
+        assert should_retry(t, p) is True
 
     def test_structural_reason_non_retryable_still_blocks(self):
         """retryable=False takes priority even for structural reasons."""

@@ -48,11 +48,13 @@ distinction keys the F2 false-positive reconciliation.
 Skip reasons (`_VALID_SKIP_REASONS`, `lib/orch_core.py:604`): `implementation_only_no_spec_change`,
 `targeted_mode_step_not_in_scope`, `phase_short_circuit`.
 
-> Conformance gap (CONF-02): `should_retry` treats `subagent_invalid_response` as a
-> structural failure reason (alongside ERR-10/ERR-11), but it is **absent from
-> `_VALID_FAILURE_REASONS`** — a `task_failed` carrying that reason would be rejected by
-> `_validate_event_data`. It exists only as escalation code `E13_subagent_invalid_response`
-> (ERR-40). Reason and escalation code are different taxonomies. Tracked in the backlog.
+> CONF-02 (RESOLVED, v2.15.0): `should_retry` used to list `subagent_invalid_response`
+> in its structural-reason set, but that value is **not** in `_VALID_FAILURE_REASONS` —
+> it is a meta→phase-orchestrator envelope/escalation concept (code
+> `E13_subagent_invalid_response`, ERR-40), never a `task_failed` reason, so it could
+> never match a task's `last_failure_reason`. It was removed from `should_retry`; the
+> structural set now equals the real synthesized-reason enum {stale_timeout,
+> worker_exited_without_terminal}.
 
 ## 3. Escalation codes (E-codes)
 

@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.14.0",
+  "version": "2.15.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-10T01:21:38Z",
+  "generated_at": "2026-07-10T01:48:05Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -169,7 +169,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "5f24484b24cd8c10cb2b20b82817e3db509f844f389b028b3d1bbee88cfa34d1"
+      "sha256": "7e1bba0e78ebe419203ca08330b6f20b32876e83b698969555330af3d24ab435"
     },
     {
       "path": "lib/sm_runner.py",

@@ -2945,13 +2945,18 @@ def should_retry(task: TaskState, policy: RetryPolicy) -> bool:
       - attempts >= policy.max_attempts → False (max exhausted)
       - otherwise → True
 
-    Structural reasons (agent could not execute, not a logic error):
-      subagent_invalid_response, worker_exited_without_terminal, stale_timeout
+    Structural reasons (agent could not execute, not a logic error) — these are the
+    synthesized worker/task-level task_failed reasons in _VALID_FAILURE_REASONS:
+      worker_exited_without_terminal, stale_timeout
+    (CONF-02: `subagent_invalid_response` was previously listed here but is a
+    meta→phase-orchestrator envelope/escalation concept — code E13_subagent_invalid_response,
+    with its own retry logic in orchestrator.md — never a task_failed reason. It is not
+    in _VALID_FAILURE_REASONS, so a task's last_failure_reason can never equal it; the
+    entry was dead. Removed to keep this set == the real structural reason enum.)
     """
     if task.last_failure_retryable is False:
         return False
     _STRUCTURAL_REASONS = frozenset({
-        "subagent_invalid_response",
         "worker_exited_without_terminal",
         "stale_timeout",
     })
