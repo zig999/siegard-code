@@ -85,6 +85,7 @@ failure). `E18` is an auto-approval. Curated from framework usage across
 | ERR-48 | `E21_qa_not_on_integrated_main` | warning | QA not run on integrated main |
 | ERR-49 | `E22_backlog_scope_violation` | warning | planner backlog exceeded declared scope |
 | ERR-50 | `E99_human_approval_required` / `E99_human_confirmation_required` / `E99_human_test_intervention_required` | info | human gate — awaiting operator response |
+| ERR-52 | `E23_resume_budget_exhausted` | warning | supervised auto-resume exhausted its per-phase budget; run halts awaiting a human (orch-resilience BR-08 / control UC-08) |
 
 ### 3b. Preflight fail-fast (not an escalation event)
 
@@ -105,3 +106,4 @@ failure). `E18` is an auto-approval. Curated from framework usage across
 | Version | Date | Author | Type | Description | CR |
 |---------|------|--------|------|-------------|----|
 | 0.1.0 | 2026-07-09 | orchestration-self-spec | minor | Exceptions, failure/skip reasons, escalation E-codes | — |
+| 0.2.0 | 2026-07-10 | consulta-web-report-audit | minor | ERR-52 `E23_resume_budget_exhausted` (E2 supervised auto-resume) | — |

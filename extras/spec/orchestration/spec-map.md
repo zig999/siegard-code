@@ -70,11 +70,11 @@
 
 ## Domain 6 — orch-control
 
-**Code:** `agents/orchestrator.md` (meta), `agents/orchestrator-{sdd,dev,review,test}.md`, heartbeat/escalation/human_response handlers, `skills/orch-infra/`, `hooks/on_stop.py`, `scripts/preflight.py`.
+**Code:** `agents/orchestrator.md` (meta), `agents/orchestrator-{sdd,dev,review,test}.md`, heartbeat/escalation/human_response handlers, `skills/orch-infra/`, `hooks/on_stop.py`, `scripts/preflight.py`, `scripts/supervisor_tick.py`, `commands/u-supervise.md`.
 
 | Artifact | Planned inventory |
 |----------|-------------------|
-| `orch-control.spec.md` | UC: run meta cycle (preflight→integrity→circuit→dispatch), emit heartbeat, escalate, process human response, recover session, fail-fast on `E_NO_BASH`. BR: orchestrator is pure function of log (INV-02), evidence-cited decisions (INV-08), foreground/Bash requirement, heartbeat cadence, escalation→run_status mapping. INV-02, INV-08. **ST-04 run_status** (empty/active/partial/completed/completed_with_dlq/escalated/awaiting_human/failed/needs_review/stale_orchestrator — 10 values; authoritative list in `orch-control.spec.md` §5). EV owned: EV-20, EV-23, EV-24. |
+| `orch-control.spec.md` | UC: run meta cycle (preflight→integrity→circuit→dispatch), emit heartbeat, escalate, process human response, recover session, fail-fast on `E_NO_BASH`, **supervised auto-resume (bounded)**. BR: orchestrator is pure function of log (INV-02), evidence-cited decisions (INV-08), foreground/Bash requirement, heartbeat cadence, escalation→run_status mapping. INV-02, INV-08. **ST-04 run_status** (empty/active/partial/completed/completed_with_dlq/escalated/awaiting_human/failed/needs_review/stale_orchestrator — 10 values; authoritative list in `orch-control.spec.md` §5). EV owned: EV-20, EV-23, EV-24, EV-31, EV-32. |
 | `orch-control.contract.md` | CLI: `preflight.py`, `run_integrity.py`, `run_circuit_check.py`, `classify_run_status.py`. Meta-orchestrator step protocol. Escalation/human_response envelope schemas. |
 
 ## Flows (process flows)
@@ -86,6 +86,7 @@
 | FLOW-03 | Stale reaping + false-positive reconciliation (F1–F4) | resilience, state |
 | FLOW-04 | Crash recovery (session end → on_stop reap → next invocation resumes) | control, resilience, log |
 | FLOW-05 | Phase transition + gate (exit criteria → approved → transitioned) | phases, control |
+| FLOW-06 | Supervised auto-resume (tick → detect stall → budget → foreground re-invoke → resumed) | control, resilience |
 
 ## Coverage targets & method
 
@@ -101,3 +102,4 @@
 | Version | Date | Author | Type | Description | CR |
 |---------|------|--------|------|-------------|----|
 | 0.1.0 | 2026-07-09 | orchestration-self-spec | minor | Module→artifact map, INV registry, per-domain inventory, flows | — |
+| 0.2.0 | 2026-07-10 | consulta-web-report-audit | minor | orch-control +supervised-resume UC/EV-31-32; FLOW-06 registered | — |

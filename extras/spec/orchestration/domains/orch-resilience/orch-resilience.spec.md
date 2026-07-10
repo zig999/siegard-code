@@ -70,9 +70,9 @@
 **Related contract:** `dlq_triage.py`, EV-08.
 
 ### UC-08 — Detect stalled orchestrator
-**Actor:** reaper / on_stop
+**Actor:** reaper / on_stop / supervisor
 **Pre:** active phase has non-terminal tasks but no `orchestrator_heartbeat` within `ORCHESTRATOR_STALE_SECONDS`.
-**Post:** an actionable diagnostic (pending_task_ids, command `/u-orchestrator`). Detection only — no destructive auto-recovery.
+**Post:** an actionable diagnostic (pending_task_ids, command `/u-orchestrator`). The signal now has a bounded AUTOMATED consumer (the supervisor — control UC-08 / BR-08) as well as the passive on_stop diagnostic. Destructive auto-recovery (`verify_and_recover`) is still never triggered here.
 **Related contract:** `detect_stale_orchestrator` (`orch_core.py:2438`). Threshold `ORCHESTRATOR_STALE_SECONDS = 900` (`:464`).
 
 ### UC-09 — Crash recovery
@@ -102,6 +102,9 @@ The reaper and hook emit `task_scheduled_retry` in the same Python call as the f
 
 ### BR-07 — Detection, not destruction
 `detect_stale_orchestrator` and the reaper surface actionable signals; `verify_and_recover` (destructive) stays manual. Related UC: UC-08. (`orch_core.py:2438`)
+
+### BR-08 — Bounded supervised auto-resume (E2/B(b))
+The `/u-supervise` command (foreground) + `supervisor_tick.py` re-invoke a stalled phase orchestrator (control UC-08), bounded by `supervisor_policy`: at most `max_auto_resumes` per phase (counted since its last `phase_entered`), a `cooldown_seconds` gap between resumes, and an `in_flight_ttl_seconds` guard so a crashed supervisor never wedges auto-resume permanently. A resume fires only under TOTAL PHASE SILENCE (no `orchestrator_heartbeat` AND no phase-task activity within the threshold), so a live worker's `task_progress` prevents a spurious second orchestrator. All accounting derives from the log (`orchestrator_resumed` / `orchestrator_resume_requested`, audit-only — no reducer state). Budget exhausted → `E23_resume_budget_exhausted` (halts, awaiting_human). Re-invoke is non-destructive (state re-derives from the intact log); destructive recovery stays manual (BR-07). (`supervisor_tick.py`, `commands/u-supervise.md`)
 
 ## 5. State Machine
 

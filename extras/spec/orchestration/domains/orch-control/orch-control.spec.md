@@ -20,6 +20,7 @@
 | meta-orchestrator | Top-level control loop | run infra checks; declare/transition phases; spawn phase orchestrators |
 | phase-orchestrator | Per-phase control | dispatch (orch-dispatch); emit heartbeat, escalation |
 | operator | Human | `human_response` to escalations/gates |
+| supervisor | Foreground watchdog (`/u-supervise` + `supervisor_tick.py`) | detect a stalled orchestrator; append `orchestrator_resume_requested`; re-invoke the meta, bounded by the resume budget |
 
 ## 3. Use Cases
 
@@ -62,6 +63,12 @@
 **Actor:** next meta invocation
 **Post:** state re-derived from the intact log; SCHEDULED tasks resumed (orch-resilience UC-09); stalled-orchestrator diagnostic acted on.
 **Related contract:** FLOW-04.
+
+### UC-08 — Supervised auto-resume
+**Actor:** supervisor
+**Pre:** an active phase has non-terminal tasks, no `orchestrator_heartbeat` within `ORCHESTRATOR_STALE_SECONDS`, AND no phase-task activity within the same window (TOTAL PHASE SILENCE — a live worker's `task_progress` advances `last_event_at` and keeps the phase alive, so it is not resumed).
+**Post:** within the per-phase resume budget, `orchestrator_resume_requested` → a foreground re-invoke of the meta (non-destructive: the log is intact and state re-derives) → `orchestrator_resumed`. Budget exhausted → `escalation E23_resume_budget_exhausted` (run halts, awaiting_human). Bounded by `supervisor_policy` (orch-resilience BR-08).
+**Related contract:** `scripts/supervisor_tick.py`, `commands/u-supervise.md`; EV-31/EV-32; ERR-52. Requires foreground Bash (UC-06 / `E_NO_BASH`). Automates FLOW-04 node K; destructive `verify_and_recover` stays manual (orch-resilience BR-07).
 
 ## 4. Business Rules
 

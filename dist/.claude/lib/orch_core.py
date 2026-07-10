@@ -363,7 +363,7 @@ class EventType(str, Enum):
     CONTEXT_BUDGET_EVALUATED = "context_budget_evaluated"
     OPERATION_MODE_DECLARED = "operation_mode_declared"
 
-    # Management and operations (7)
+    # Management and operations (9)
     CIRCUIT_BREAKER_TRIPPED = "circuit_breaker_tripped"
     ESCALATION = "escalation"
     HUMAN_RESPONSE = "human_response"
@@ -373,6 +373,13 @@ class EventType(str, Enum):
     # Emitted by the orchestrator at the start of each dispatch loop iteration.
     # Used by on_stop.py to detect a stale orchestrator (alive but not making progress).
     ORCHESTRATOR_HEARTBEAT = "orchestrator_heartbeat"
+    # Supervised auto-resume (E2 / B(b) — CONF-05 follow-up). Both AUDIT-ONLY: no reducer
+    # handler, so the log is the single source for budget/cooldown accounting (P1/P2).
+    # ORCHESTRATOR_RESUME_REQUESTED: appended by supervisor_tick.py when a phase is stalled
+    # (total phase silence) and within the resume budget. ORCHESTRATOR_RESUMED: appended by
+    # the /u-supervise command after it re-invokes the meta-orchestrator in foreground.
+    ORCHESTRATOR_RESUME_REQUESTED = "orchestrator_resume_requested"
+    ORCHESTRATOR_RESUMED = "orchestrator_resumed"
     # Handoff loop-closure (prod-hardening task 08, A3-F5): a receipt that a
     # manifest was consumed — a logged event (not a session side-file) so
     # consumed/orphan handoff state is derived from the log (P1/P12).
@@ -2708,6 +2715,17 @@ def default_config() -> dict[str, Any]:
             "window_minutes": 10,
             "failure_threshold": 50,
             "scope": "workflow",
+        },
+        # E2/B(b): bounded supervised auto-resume. supervisor_tick.py + /u-supervise
+        # re-invoke a stalled phase orchestrator, capped so a persistently stuck workflow
+        # escalates to a human (E23_resume_budget_exhausted) instead of looping forever.
+        # All accounting is derived from the log (orchestrator_resumed / _resume_requested).
+        "supervisor_policy": {
+            "enabled": True,
+            "max_auto_resumes": 3,          # per phase, since its last phase_entered
+            "cooldown_seconds": 300,        # min gap between resumes of the same phase
+            "in_flight_ttl_seconds": 900,   # a resume_requested older than this with no
+                                            # following resumed/heartbeat is expired (no wedge)
         },
         "payload_limits": {
             "max_inline_bytes": 3500,

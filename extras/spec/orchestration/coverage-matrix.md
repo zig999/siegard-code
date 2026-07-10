@@ -18,6 +18,7 @@
 | `hooks/on_subagent_stop.py`, `hooks/on_stop.py` | orch-resilience.contract §3, orch-control | full |
 | `scripts/check_stale.py`, `circuit_breaker.py`, `dlq_triage.py` | orch-resilience.contract §3 | full |
 | `scripts/preflight.py`, `classify_run_status.py`, `orch-infra/*` | orch-control (spec+contract) | full |
+| `scripts/supervisor_tick.py`, `commands/u-supervise.md` | orch-control UC-08, orch-resilience BR-08 | full (E2 supervised auto-resume) |
 | `agents/orchestrator*.md` | orch-control §4 (step protocol), orch-phases, orch-dispatch | structural (prompt bodies not line-spec'd) |
 | `skills/orch-report/scripts/emit.py` (worker write path) | orch-dispatch BR-04, orch-log UC-01 | boundary (worker is a leaf agent, not a domain) |
 
@@ -25,12 +26,12 @@
 
 | Family | Count | Source |
 |--------|-------|--------|
-| EV (events) | 30 | event-catalog.md |
+| EV (events) | 32 | event-catalog.md (+EV-31/32 supervised resume) |
 | INV (invariants) | 12 | spec-map.md (P1–P12) |
 | ST (state machines) | 4 | ST-01 task, ST-02 phase, ST-03 breaker, ST-04 run_status |
-| ERR (failures) | 51 | error-catalog.md (9 exceptions + 15 reasons + 26 E-codes + E_NO_BASH) |
-| UC (use cases) | 40 | 6 log-state-dispatch-phases(6 each) + resilience(9) + control(7) |
-| FLOW / FL | 5 / 12 | flows/ |
+| ERR (failures) | 52 | error-catalog.md (9 exceptions + 15 reasons + 27 E-codes + E_NO_BASH) |
+| UC (use cases) | 42 | 6 log-state-dispatch-phases(6 each) + resilience(9) + control(8) |
+| FLOW / FL | 6 / 12 | flows/ |
 
 ## Known gaps (deferred, not covered)
 
@@ -43,8 +44,9 @@
 
 ## Open conformance items
 
-CONF-01 (circuit breaker never persists trip) · CONF-02 (`subagent_invalid_response`
-reason) · CONF-03 (orphan `cancelled`) · CONF-04 (cached-verify CLI). See
+CONF-01 (circuit breaker trip — RESOLVED v2.14.0) · CONF-02 (`subagent_invalid_response`
+reason — RESOLVED v2.15.0) · CONF-03 (orphan `cancelled`) · CONF-04 (cached-verify CLI) ·
+CONF-05 (heartbeat conformance in sdd/review/test — RESOLVED v2.16.0). See
 `_validation/conformance-backlog.md`.
 
 ## Changelog
@@ -52,3 +54,4 @@ reason) · CONF-03 (orphan `cancelled`) · CONF-04 (cached-verify CLI). See
 | Version | Date | Author | Type | Description | CR |
 |---------|------|--------|------|-------------|----|
 | 0.1.0 | 2026-07-09 | orchestration-self-spec | minor | Module→spec coverage, identifier counts, deferred gaps | — |
+| 0.2.0 | 2026-07-10 | consulta-web-report-audit | minor | +supervisor_tick/u-supervise coverage; EV 30→32, ERR 51→52, UC 40→42, FLOW 5→6; CONF-05 resolved | — |

@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.16.0",
+  "version": "2.17.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-10T16:10:23Z",
+  "generated_at": "2026-07-10T16:55:02Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -152,6 +152,10 @@
       "sha256": "c222143f98932b8604186dbef74a029e44130be4398a274eac7f1dff71297ee4"
     },
     {
+      "path": "commands/u-supervise.md",
+      "sha256": "2546369802a0650abbb5fa833474e3e3629123e265efcf922ed47b7d7c4835fa"
+    },
+    {
       "path": "hooks/on_stop.py",
       "sha256": "238975ace6227ddb01a4e30631d4408b7b51bf0626c03f493386b2dcb6904218"
     },
@@ -169,7 +173,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "7e1bba0e78ebe419203ca08330b6f20b32876e83b698969555330af3d24ab435"
+      "sha256": "9b08ec1790840e0dd3ccca3118e44ac95391a58fbdeb130666d1c7006dffbabe"
     },
     {
       "path": "lib/sm_runner.py",
@@ -230,6 +234,10 @@
     {
       "path": "scripts/respond_escalation.py",
       "sha256": "8df9019f635ca5f968cc0454214c273203823913294cff0c1a8a64af33d5acc5"
+    },
+    {
+      "path": "scripts/supervisor_tick.py",
+      "sha256": "bef5ffbc95f9535485c50e09b33b487c977a8b953056ec3ab6e0d8e8248973ff"
     },
     {
       "path": "scripts/validate_dist.py",
