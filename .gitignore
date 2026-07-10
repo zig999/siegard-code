@@ -8,7 +8,9 @@ tools
 examples
 # CocoIndex Code (ccc)
 /.cocoindex_code/
-extras/
+extras/*
+!extras/spec/
+!extras/spec/**
 skills-lock.json
 tests
 !/tests/
