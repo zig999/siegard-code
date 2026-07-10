@@ -835,6 +835,16 @@ Stop conditions (break loop — evaluated over the **workflow-scoped `sdd_tasks`
   ```
   Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached after 30 iterations"}` and stop
 
+**Heartbeat + stale reaping (conformance — orch-control UC-01/UC-02; mirrors orchestrator-dev 5.0):** at the start of every iteration emit an `orchestrator_heartbeat` so `detect_stale_orchestrator` (the `on_stop.py` backstop and `check_stale.py`) can tell a stalled orchestrator from a live one. Audit-only event (EV-20); it does not mutate task state. The `phase` value MUST equal the canonical `current_phase` (`sdd`) — `detect_stale_orchestrator` filters heartbeats by `data.phase == current_phase`.
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py --agent orchestrator-sdd \
+  --event-type orchestrator_heartbeat --data '{"phase":"sdd"}'
+python3 .claude/scripts/check_stale.py
+```
+
+`check_stale.py` reaps `running` sdd tasks past their task-type threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The post-batch reaper at Step 5.4 remains the primary reaping point.
+
 **Retry re-queue:** for each `scheduled` task in the workflow-scoped `sdd_tasks` set with `next_retry_at <= now` (or null):
 
 ```bash

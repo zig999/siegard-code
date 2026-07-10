@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.15.0",
+  "version": "2.16.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-10T01:48:05Z",
+  "generated_at": "2026-07-10T16:10:23Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -61,15 +61,15 @@
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "5b779af1151a112f73bfb9d4945680b3569c13682354a614e7bd3d756476ddef"
+      "sha256": "f34421e6c107fce5da980047a8a2242ce49cb80285bd8adfd008fe974a823034"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "ed895fb5353eefb00ccd17a3bb89a2e34d28812f56687c12fd3b78550188e8f9"
+      "sha256": "361589b7585760cee912b58476b2bb82d4db057c27d1030dfb209df527b31480"
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "fe00757c0718c3bb431ca15e054cdff42b141243b5928028242ed4d3fa07e9cc"
+      "sha256": "b0bb451387d959b575066849227183673dae3828ac918e5b0411b7cfc6b9838e"
     },
     {
       "path": "agents/orchestrator.md",

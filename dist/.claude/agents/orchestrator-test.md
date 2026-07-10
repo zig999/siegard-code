@@ -255,15 +255,15 @@ Stop conditions:
 - All test tasks terminal → proceed to Step 5
 - Iteration ≥ 30 → output `{"status": "error", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached"}` and stop
 
-**Stale detection:** threshold by tier: `critical` → 600s, `standard` → 300s, `bulk` → 120s.
+**Heartbeat + stale reaping (conformance — orch-control UC-01/UC-02; mirrors orchestrator-dev 5.0):** at the start of every iteration emit an `orchestrator_heartbeat` so `detect_stale_orchestrator` (the `on_stop.py` backstop and `check_stale.py`) can tell a stalled orchestrator from a live one. Audit-only event (EV-20); it does not mutate task state. The `phase` value MUST equal the canonical `current_phase` (`test`) — `detect_stale_orchestrator` filters heartbeats by `data.phase == current_phase`. Then run the deterministic reaper — never synthesize `stale_timeout` from the prompt (F-03).
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-test \
-  --event-type task_failed \
-  --task-id <task_id> --attempt <attempt> \
-  --data '{"phase":"test","reason":"stale_timeout","retryable":true,"synthesized_by":"orchestrator-test"}'
+python3 .claude/skills/orch-log/scripts/append.py --agent orchestrator-test \
+  --event-type orchestrator_heartbeat --data '{"phase":"test"}'
+python3 .claude/scripts/check_stale.py
 ```
+
+`check_stale.py` reaps `running` test tasks past their tier threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The Step 4.4 reaper remains the post-batch reaping point.
 
 **Retry re-queue:** for `scheduled` tasks with `next_retry_at <= now`:
 
