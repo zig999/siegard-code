@@ -45,6 +45,8 @@ events (INV-03). Idempotency key: `(task_id, attempt, event_type)` (INV-04).
 | EV-19 | `operation_mode_declared` | orchestrator | Audit-only (mode) | detect_mode |
 | EV-20 | `orchestrator_heartbeat` | orchestrator | Audit-only; consumed by `detect_stale_orchestrator` | stale-orchestrator detection |
 | EV-21 | `spec_pipeline_return` | sdd-orchestrator | Audit-only (spec_change_status) | improve flow |
+| EV-31 | `orchestrator_resume_requested` | supervisor (`supervisor_tick.py`) | Audit-only; a bounded supervised-resume request | `/u-supervise`, budget accounting |
+| EV-32 | `orchestrator_resumed` | supervisor (`/u-supervise`) | Audit-only; a completed foreground re-invoke — budget/cooldown key | `supervisor_tick.py` |
 
 ## Group D — Resilience (owned by orch-resilience)
 

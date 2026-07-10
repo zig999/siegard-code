@@ -1,0 +1,270 @@
+"""Tests for supervised auto-resume (E2 / B(b) — supervisor_tick.py).
+
+Covers the pure `decide()` core (detection + budget + cooldown + in-flight TTL + the
+total-phase-silence false-positive guard) and the CLI side effects (append
+orchestrator_resume_requested / escalation E23). Timing-sensitive cases use a controllable
+clock (monkeypatched now_iso) so each event gets a deterministic ts.
+"""
+import importlib.util
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+SCRIPTS = Path(__file__).resolve().parents[2] / "dist" / ".claude" / "scripts"
+
+_spec = importlib.util.spec_from_file_location("supervisor_tick", SCRIPTS / "supervisor_tick.py")
+supervisor = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(supervisor)
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """A controllable clock: every append_event stamps ts from here; advance between
+    appends to place events at known offsets. decide() is called with clock.iso()."""
+    import orch_core
+    state = {"t": datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)}
+
+    def _now():
+        return state["t"].strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    monkeypatch.setattr(orch_core, "now_iso", _now)
+    return SimpleNamespace(
+        iso=_now,
+        advance=lambda s: state.__setitem__("t", state["t"] + timedelta(seconds=s)),
+    )
+
+
+def _seed_active_phase(orch_core, phase="dev", wf="wf-sup"):
+    """Active phase with one non-terminal (READY) task and no heartbeat → stalled base."""
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_declared",
+        data={"workflow_id": wf, "phases": [{"name": phase, "order": 1, "required": True}]})
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_entered",
+        data={"phase": phase, "order": 1, "workflow_id": wf})
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="task_created", task_id="dev_tc_001",
+        data={"phase": phase, "deps": [], "tier": "standard", "type": "impl", "spec": "x"})
+
+
+def _decide(orch_core, clock, policy=None):
+    state = orch_core.reduce_all()
+    events = list(orch_core.read_events_filtered(event_type=None))
+    return supervisor.decide(state, events, clock.iso(), policy or {})
+
+
+# --------------------------------------------------------------------------- detection
+
+def test_stalled_phase_triggers_resume(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)  # no heartbeat, task silent > 900s
+    d = _decide(orch_core, clock)
+    assert d["resume"] is True
+    assert d["escalate"] is False
+    assert d["phase"] == "dev"
+    assert d["workflow_id"] == "wf-sup"
+
+
+def test_fresh_heartbeat_suppresses_resume(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="orchestrator_heartbeat", data={"phase": "dev"})
+    d = _decide(orch_core, clock)  # now == heartbeat ts (fresh)
+    assert d["resume"] is False
+    assert d["reason"] == "orchestrator_live_or_no_pending"
+
+
+def test_recent_task_activity_blocks_resume(tmp_orch, clock):
+    """False-positive guard: orchestrator silent (no heartbeat) but a worker still emits
+    task_progress → phase is alive, must NOT spawn a second meta."""
+    import orch_core
+    _seed_active_phase(orch_core)
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="task_claimed", task_id="dev_tc_001",
+        data={"phase": "dev", "worker_type": "u-be-developer", "worker_id": "w1"})
+    clock.advance(1000)  # orchestrator loop blocked in a long dispatch (no heartbeat)
+    orch_core.append_event(
+        agent="u-be-developer", event_type="task_progress", task_id="dev_tc_001",
+        data={"phase": "dev", "note": "still working"})  # fresh worker activity
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "phase_tasks_active"
+
+
+def test_no_active_phase_is_noop(tmp_orch, clock):
+    import orch_core
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "no_active_phase"
+
+
+# --------------------------------------------------------------------------- budget
+
+def test_budget_exhausted_escalates(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    for _ in range(3):  # default max_auto_resumes == 3 resume attempts
+        orch_core.append_event(
+            agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["escalate"] is True
+    assert d["reason"] == "resume_budget_exhausted"
+    assert d["budget_remaining"] == 0
+
+
+def test_resumes_scoped_per_phase(tmp_orch, clock):
+    """Budget counts resumes for the CURRENT phase only — resumes attributed to another
+    phase must not consume the active phase's budget."""
+    import orch_core
+    _seed_active_phase(orch_core)  # current phase == dev
+    for _ in range(3):  # resume attempts belonging to a different phase
+        orch_core.append_event(
+            agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "sdd"})
+    clock.advance(1000)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is True
+    assert d["budget_remaining"] == 3  # dev budget untouched by sdd attempts
+
+
+# --------------------------------------------------------------------------- cooldown
+
+def test_cooldown_blocks_resume(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    orch_core.append_event(
+        agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    clock.advance(50)  # < cooldown_seconds (300)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "cooldown_active"
+    assert d["budget_remaining"] == 2
+
+
+# --------------------------------------------------------------------------- in-flight TTL
+
+def test_in_flight_request_blocks_resume(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    orch_core.append_event(
+        agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    clock.advance(400)  # past cooldown (300), within in_flight_ttl (900)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "resume_in_flight"
+
+
+def test_in_flight_expires_after_ttl(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    orch_core.append_event(
+        agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    clock.advance(1000)  # past in_flight_ttl (900) → expired, resume proceeds
+    d = _decide(orch_core, clock)
+    assert d["resume"] is True
+
+
+def test_heartbeat_after_request_clears_in_flight(tmp_orch, clock):
+    """A resume that landed (orchestrator emits heartbeat again) clears in-flight, but
+    that fresh heartbeat also makes the orchestrator non-stale → no new resume."""
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    orch_core.append_event(
+        agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="orchestrator_heartbeat", data={"phase": "dev"})
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "orchestrator_live_or_no_pending"
+
+
+# --------------------------------------------------------------------------- escalated run
+
+def test_escalated_run_is_noop(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    orch_core.append_event(
+        agent="orchestrator", event_type="escalation",
+        data={"code": "E99_human_approval_required", "severity": "info",
+              "reason": "gate", "evidence": [1]})
+    clock.advance(1000)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "run_escalated_awaiting_human"
+
+
+# --------------------------------------------------------------------------- disabled
+
+def test_disabled_policy_is_noop(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    d = _decide(orch_core, clock, policy={"enabled": False})
+    assert d["resume"] is False
+    assert d["reason"] == "supervisor_disabled"
+
+
+def test_config_override_max_resumes(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    orch_core.append_event(
+        agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    # max_auto_resumes lowered to 1 → the single attempt exhausts the budget
+    d = _decide(orch_core, clock, policy={"max_auto_resumes": 1})
+    assert d["escalate"] is True
+    assert d["budget_remaining"] == 0
+
+
+# --------------------------------------------------------------------------- audit-only reduce
+
+def test_new_events_are_audit_only(tmp_orch, clock):
+    """The two new events must append + reduce without error and NOT mutate task state."""
+    import orch_core
+    _seed_active_phase(orch_core)
+    before = orch_core.reduce_all()
+    orch_core.append_event(
+        agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    orch_core.append_event(
+        agent="supervisor", event_type="orchestrator_resumed", data={"phase": "dev"})
+    after = orch_core.reduce_all()  # must not raise
+    assert after.current_phase == before.current_phase == "dev"
+    assert set(after.tasks) == set(before.tasks)
+
+
+# --------------------------------------------------------------------------- CLI side effects
+
+def test_apply_appends_resume_requested(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    d = _decide(orch_core, clock)
+    events = list(orch_core.read_events_filtered(event_type=None))
+    supervisor._apply(d, events[-1].seq)
+    kinds = [e.event_type for e in orch_core.read_events_filtered(event_type=None)]
+    assert "orchestrator_resume_requested" in kinds
+
+
+def test_apply_appends_escalation_on_budget_exhausted(tmp_orch, clock):
+    import orch_core
+    _seed_active_phase(orch_core)
+    clock.advance(1000)
+    for _ in range(3):
+        orch_core.append_event(
+            agent="supervisor", event_type="orchestrator_resume_requested", data={"phase": "dev"})
+    d = _decide(orch_core, clock)
+    events = list(orch_core.read_events_filtered(event_type=None))
+    supervisor._apply(d, events[-1].seq)
+    escalations = [e for e in orch_core.read_events_filtered(event_type="escalation")]
+    assert any(e.data.get("code") == "E23_resume_budget_exhausted" for e in escalations)
+    # E23 halts the run — sticky until a human_response (intended "give up" semantics).
+    assert orch_core.reduce_all().run_status == "escalated"
