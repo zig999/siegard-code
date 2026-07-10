@@ -2697,11 +2697,13 @@ def default_config() -> dict[str, Any]:
             "ignore_patterns": [],
         },
         "circuit_breaker": {
-            # A4: window-based breaker only. It relaxes as failures age out of the
-            # rolling window, or via a manual reset (scripts/circuit_breaker.py). There
-            # is no cooldown / success-reset logic — do NOT re-add cooldown_minutes or
-            # reset_on_success_count here unless evaluate_circuit_state implements them
-            # (they were inert config that promised behavior the engine never had).
+            # A4/CONF-01: window-based detection, STICKY trip. When failures in the
+            # rolling window first reach failure_threshold, run_circuit_check.py appends
+            # circuit_breaker_tripped (trip_circuit_if_due) and state.circuit_breaker is
+            # set; the breaker then stays blocked (already_tripped) until a manual reset
+            # (scripts/circuit_breaker.py --reset → human_response). It does NOT relax on
+            # age-out — a persisted trip forces human attention. No cooldown / success-
+            # reset logic — do NOT re-add cooldown_minutes or reset_on_success_count.
             "enabled": True,
             "window_minutes": 10,
             "failure_threshold": 50,
@@ -3195,6 +3197,53 @@ def evaluate_circuit_state(
     }
 
 
+def trip_circuit_if_due(
+    now: str | None = None,
+    config: dict | None = None,
+    state: "OrchState | None" = None,
+) -> "Event | None":
+    """Append `circuit_breaker_tripped` when the failure window first crosses the
+    threshold, so the breaker becomes PERSISTED state instead of an ephemeral
+    per-cycle gate (CONF-01 — SIEGARD self-spec).
+
+    Before this, `evaluate_circuit_state`/`run_circuit_check.py` only computed
+    `should_trip` and blocked the cycle; nothing ever appended the event, so
+    `state.circuit_breaker` was always None, the breaker relaxed silently when
+    failures aged out of the window, and `circuit_breaker.py --reset` was
+    unreachable (`no_cb_event`). Emitting the event here makes the breaker STICKY:
+    once tripped it stays blocked (via `already_tripped`) until a human resets it
+    with `circuit_breaker.py --reset` (human_response → `_handle_human_response`).
+
+    Idempotent: `should_trip` is `(not already_tripped) and (count >= threshold)`,
+    so once the trip is persisted a second call is a no-op (no duplicate event).
+    Never raises — an infra check must not crash the orchestrator cycle.
+
+    Returns the appended Event when it tripped, else None.
+    """
+    now = now or now_iso()
+    cfg = config if config is not None else load_config()
+    try:
+        st = state if state is not None else reduce_all()
+    except Exception:  # noqa: BLE001 — an infra check must not raise
+        return None
+    cb = evaluate_circuit_state(st, now, cfg)
+    if not cb.get("should_trip"):
+        return None
+    try:
+        return append_event(
+            agent="circuit-monitor",
+            event_type=EventType.CIRCUIT_BREAKER_TRIPPED.value,
+            data={
+                "window_start": cb["window_start"],
+                "window_end": cb["window_end"],
+                "failure_count": cb["failure_count"],
+                "threshold": cb["threshold"],
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Escalation detection helpers
 # ---------------------------------------------------------------------------
@@ -3597,6 +3646,7 @@ __all__ = [
     "tasks_ready_for_retry",
     # Circuit breaker
     "evaluate_circuit_state",
+    "trip_circuit_if_due",
     # Recovery
     "verify_and_recover",
     # Dependency helpers

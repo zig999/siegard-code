@@ -118,16 +118,13 @@ The reaper and hook emit `task_scheduled_retry` in the same Python call as the f
 
 While `tripped`, dispatch is blocked (orch-control gate).
 
-> Conformance gap (CONF-01): ST-03 models a **persisted** breaker entered by a
-> `circuit_breaker_tripped` event and reset by `human_response`. In the shipped code
-> **no path ever appends `circuit_breaker_tripped`** — `state.circuit_breaker` is never
-> non-None at runtime. Blocking is derived **ephemerally** at check time
-> (`run_circuit_check.py`: `tripped = should_trip or already_tripped`; `should_trip =
-> failure_count >= threshold`, `evaluate_circuit_state`, `orch_core.py:3133`), and the
-> `circuit_breaker.py` reset tool aborts with `no_cb_event` because nothing writes the
-> trip event. The reducer clears `failure_timestamps` (what actually relaxes the window).
-> This spec states the intended (persisted) contract; the gap is tracked in the
-> conformance backlog.
+> CONF-01 (RESOLVED, v2.14.0): the persisted model above is now realized in code.
+> `trip_circuit_if_due` (`orch_core.py`), called from `run_circuit_check.py` when the
+> window first crosses the threshold, appends `circuit_breaker_tripped` — so
+> `state.circuit_breaker` becomes non-None, the breaker stays blocked via
+> `already_tripped` until a manual reset (`circuit_breaker.py --reset` →
+> `human_response`, `_handle_human_response:2044`), and it no longer relaxes on
+> age-out. Idempotent (`should_trip` excludes `already_tripped`).
 
 ## 6. Error Behaviors
 

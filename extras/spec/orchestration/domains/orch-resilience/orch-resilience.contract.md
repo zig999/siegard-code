@@ -40,7 +40,7 @@
 |--------|------|--------|
 | `check_stale.py` | `[--now <ISO>]` | `{"stale_count":N,"failed":[...],"stale_orchestrator":<dict\|null>}` exit 0 |
 | `circuit_breaker.py` | `--reset --confirm --operator <id> \| --status` | manual reset/status tool; emits `human_response(reset_circuit_breaker)`; does NOT window-check or append `circuit_breaker_tripped` (see CONF-01) |
-| `run_circuit_check.py` (orch-infra) | — | window evaluation: `should_trip`/`status:blocked` via `evaluate_circuit_state` (`orch_core.py:3133`); returns verdict, appends nothing |
+| `run_circuit_check.py` (orch-infra) | — | window evaluation via `evaluate_circuit_state` (`orch_core.py:3133`); on `should_trip` it appends `circuit_breaker_tripped` (`trip_circuit_if_due`, v2.14.0/CONF-01) then returns `status:blocked` |
 | `dlq_triage.py` | — | DLQ classification (`transient_issue` / …) for operator |
 
 ### Hook contracts

@@ -24,6 +24,7 @@ from orch_core import (
     load_config,
     now_iso,
     reduce_all,
+    trip_circuit_if_due,
 )
 
 
@@ -70,6 +71,11 @@ def main() -> int:
     except Exception:  # noqa: BLE001
         config = None
     cb = evaluate_circuit_state(state, now, config)
+
+    # CONF-01: persist the trip so the breaker is STICKY (blocked until manual reset)
+    # instead of an ephemeral per-cycle gate. Idempotent — a no-op once already tripped.
+    if cb.get("should_trip"):
+        trip_circuit_if_due(now, config, state)
 
     tripped = bool(cb.get("should_trip", False) or cb.get("already_tripped", False))
     output: dict = {
