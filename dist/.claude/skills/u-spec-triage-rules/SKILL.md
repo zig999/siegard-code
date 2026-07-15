@@ -175,8 +175,16 @@ Run the classifier and store its output verbatim:
 
 ```bash
 python3 .claude/skills/u-spec-triage-rules/scripts/classify_stack.py \
-  --requirement "<requirement text>"
+  --requirement "<requirement text>" \
+  --project-domain "<target CLAUDE.md domain: frontend|backend, if declared — else omit>"
 ```
+
+The classifier is **negation-aware** (a signal inside a negation clause such as
+"NÃO gerar specs de backend" is discarded) and applies **structural precedence**:
+when `--project-domain` is supplied and confidence is `low`, the declared domain
+resolves the decision in code (`structural_override` records it) instead of
+forcing a human gate. Pass `--project-domain` whenever the target CLAUDE.md
+declares a `domain:` — omit it otherwise.
 
 Output:
 

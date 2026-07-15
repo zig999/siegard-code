@@ -48,6 +48,24 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _PARSE_SCRIPT = _HERE / "parse_test_output.py"
 
+sys.path.insert(0, str(_HERE))
+from parse_test_output import detect_framework  # noqa: E402
+
+
+def _ensure_json_reporter(cmd: str, framework: str) -> str:
+    """Force a machine-readable reporter for known frameworks (DEF-2).
+
+    ``run_suite`` used to run ``--test-cmd`` verbatim; a default ``vitest run``
+    emits human output, so the parser degraded to ``_warning`` (E17) even on a
+    green suite. The framework is already detectable — apply it. Idempotent: a
+    command that already selects a reporter is left untouched.
+    """
+    if framework == "vitest" and "--reporter" not in cmd:
+        return f"{cmd} --reporter=json"
+    if framework == "jest" and "--json" not in cmd:
+        return f"{cmd} --json"
+    return cmd
+
 
 _TS_ERROR_RE = re.compile(
     r"^(?P<file>.+?)[(:](?P<line>\d+)[,:](?P<col>\d+)\)?:\s+error\s+(?P<code>[A-Z]+\d+):\s+(?P<msg>.+)$"
@@ -186,11 +204,16 @@ def main() -> None:
     tests_stdout_path = suite_run_dir / "tests.stdout.json"
     tests_stderr_path = suite_run_dir / "tests.stderr.txt"
 
-    rc, out, err, elapsed = _run(args.test_cmd, project_dir, args.timeout_tests)
+    resolved_framework = args.framework
+    if resolved_framework == "auto":
+        resolved_framework = detect_framework(project_dir)
+    test_cmd = _ensure_json_reporter(args.test_cmd, resolved_framework)
+
+    rc, out, err, elapsed = _run(test_cmd, project_dir, args.timeout_tests)
     tests_stdout_path.write_text(out, encoding="utf-8")
     tests_stderr_path.write_text(err, encoding="utf-8")
 
-    parsed = _invoke_parser(args.framework, tests_stdout_path, project_dir)
+    parsed = _invoke_parser(resolved_framework, tests_stdout_path, project_dir)
 
     if "_warning" in parsed:
         tests_result = "degraded"
@@ -202,7 +225,7 @@ def main() -> None:
         tests_result = "passed"
 
     tests_section = {
-        "command": args.test_cmd,
+        "command": test_cmd,
         "framework": parsed.get("framework", "unknown"),
         "exit_code": rc,
         "duration_s": round(elapsed, 2),

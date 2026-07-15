@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.17.0",
+  "version": "2.18.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-10T16:55:02Z",
+  "generated_at": "2026-07-15T14:22:34Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -53,7 +53,7 @@
     },
     {
       "path": "agents/dev/u-test-runner.md",
-      "sha256": "a16daa2d14684d266a313892aec7dc5366f6cbc47ce9f9935171ba2cee28f7c2"
+      "sha256": "951b40ff1de37effb62860ae8168d1982272e6698c93bd595e2ad7413694ed86"
     },
     {
       "path": "agents/orchestrator-dev.md",
@@ -157,7 +157,7 @@
     },
     {
       "path": "hooks/on_stop.py",
-      "sha256": "238975ace6227ddb01a4e30631d4408b7b51bf0626c03f493386b2dcb6904218"
+      "sha256": "961803a11b75de95d7e80e0ac2e6ebd7b6844d7957808bcadee1396ef2794881"
     },
     {
       "path": "hooks/on_subagent_stop.py",
@@ -429,7 +429,7 @@
     },
     {
       "path": "skills/phase-review-rules/scripts/run_suite.py",
-      "sha256": "5a425b32520928ce1e0bccc2a8a78828115fd0dd8093c27417ce8babadbca74a"
+      "sha256": "45cda0e48c42e1b4c8addbf85e834d3133f037a11e535ee7364c237bc2a5a626"
     },
     {
       "path": "skills/phase-review-rules/scripts/select_worker.py",
@@ -497,11 +497,11 @@
     },
     {
       "path": "skills/phase-test-rules/scripts/check_all_tests_passed.py",
-      "sha256": "61b6668dd66f2e678a8a2753c5c62f17c6bee915f3115064098b51b1a61b4994"
+      "sha256": "cb2a4ac42650d26be7a3f669c324b85144e12d5706883e2bb31b3b88821d6ed5"
     },
     {
       "path": "skills/phase-test-rules/scripts/check_no_critical_failures.py",
-      "sha256": "d742982f104999b7a26e85b755f6a12cd6839eacc2c8712b69cf251adba7d1b2"
+      "sha256": "e2527725b51c229dde8eb699d9b6fe7328b80fad11e6a8f5af5b4cf78f02086f"
     },
     {
       "path": "skills/phase-test-rules/scripts/select_worker.py",
@@ -625,7 +625,7 @@
     },
     {
       "path": "skills/u-shared-templates/SKILL.md",
-      "sha256": "695387ff84fdd48246cfa7827fb8a56a01460714482bd36f7ee3319531cdd49b"
+      "sha256": "eee34cc4068499d79f86c80f31df071c2a39db748c0f95a812ae730ef4920a52"
     },
     {
       "path": "skills/u-shared-templates/architecture-finding.schema.yaml",
@@ -764,6 +764,14 @@
       "sha256": "ca9ca1ef1f7c532bec2f0ff834cc4e942b531e44aed98cd7299654957ed2a6e3"
     },
     {
+      "path": "skills/u-shared-templates/test-report.schema.yaml",
+      "sha256": "300de080fd31dc76a2cb1ce66d25dbe086fdcf6a1e48e440e409c2431deb9ea4"
+    },
+    {
+      "path": "skills/u-shared-templates/test-report.yaml",
+      "sha256": "62438f4521ecb8d66ecae103a80c29d2b05bbc96d6d5270dcd995581181f1c5e"
+    },
+    {
       "path": "skills/u-shared-templates/ui-agent-output.schema.yaml",
       "sha256": "13e03c1bfdf912f84b00affc4c45872425bd6de9bca2a3b57cfb2fade28ba2e7"
     },
@@ -865,11 +873,11 @@
     },
     {
       "path": "skills/u-spec-triage-rules/SKILL.md",
-      "sha256": "cd43f5159ceb2c93bee0fdde54ddbc044ebc6b43d01cafca435abca6bda93645"
+      "sha256": "db9aae05619e7095df378b8be6e2cd34981a2ade55a7637e6c027faf94706736"
     },
     {
       "path": "skills/u-spec-triage-rules/scripts/classify_stack.py",
-      "sha256": "d23438375bb04558f9ee894704ab04c1e80b8951e46f1c0f39445986a0a92fde"
+      "sha256": "c5ee8799be62c5309756a72af3cefcfb0592771af37b222069a2d6327672af13"
     },
     {
       "path": "skills/u-spec-validation/SKILL.md",

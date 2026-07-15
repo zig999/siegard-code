@@ -78,6 +78,39 @@ def test_metrics_written_after_workflow(tmp_path):
     assert m["last_seq"] > 0
 
 
+def test_escalations_counted_from_log_even_when_resolved(tmp_path):
+    """SGD-004: metrics.escalations counts escalation EVENTS, not a boolean of the
+    currently-pending escalation. A completed run whose escalations were all
+    resolved must still report the real count (was hard-coded 0)."""
+    _append(tmp_path, "orchestrator", "phase_declared",
+            data={"workflow_id": "wf_esc", "phases": [{"name": "default", "order": 1, "required": True}]})
+    _append(tmp_path, "orchestrator", "phase_entered", data={"phase": "default", "order": 1, "workflow_id": "wf_esc"})
+
+    for i in range(1, 4):
+        esc = _append(tmp_path, "orchestrator", "escalation", data={
+            "code": "E99_human_approval_required", "severity": "high",
+            "reason": f"gate {i}", "evidence": [], "suggested_actions": [],
+        })
+        _append(tmp_path, "human", "human_response", data={
+            "escalation_seq": esc["seq"], "action": "confirm_proceed", "operator": "ops",
+        })
+
+    _append(tmp_path, "orchestrator", "task_created", "t_001",
+            data={"phase": "default", "deps": [], "tier": "standard", "type": "impl", "spec": "x"})
+    _append(tmp_path, "orchestrator", "task_claimed", "t_001",
+            data={"phase": "default", "worker_type": "test-worker", "worker_id": "w1"})
+    _emit(tmp_path, "w1", "completed", "t_001",
+          data={"phase": "default", "artifacts": [], "summary": "done"})
+
+    _run_hook(tmp_path)
+    m = _read_metrics(tmp_path)
+
+    assert m["run_status"] == "completed"          # all escalations resolved
+    assert m["escalations"] == 3                    # real count from the log
+    assert m["escalations_pending"] == 0            # none pending
+    assert m["escalations_by_code"]["E99_human_approval_required"] == 3
+
+
 def test_metrics_with_dlq(tmp_path):
     """Metrics reflect DLQ tasks correctly."""
     _append(tmp_path, "orchestrator", "phase_declared",

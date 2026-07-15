@@ -25,11 +25,11 @@ SCRIPTS = ROOT / "dist/.claude/skills/phase-sdd-rules/scripts"
 WID = "wf-test"
 
 
-def _classify(requirement: str) -> dict:
-    p = subprocess.run(
-        [sys.executable, str(CLASSIFY), "--requirement", requirement],
-        capture_output=True, text=True,
-    )
+def _classify(requirement: str, project_domain: str | None = None) -> dict:
+    args = [sys.executable, str(CLASSIFY), "--requirement", requirement]
+    if project_domain:
+        args += ["--project-domain", project_domain]
+    p = subprocess.run(args, capture_output=True, text=True)
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout)
 
@@ -180,6 +180,65 @@ class TestStackConfidence:
     def test_single_sided_is_high_confidence(self):
         assert _classify("A settings screen with a sidebar")["confidence"] == "high"
         assert _classify("Nightly cron writing to the database")["confidence"] == "high"
+
+
+class TestStackNegationAware:
+    """SGD-001: a backend signal that appears only inside a negation clause must
+    not inflate the stack to a false fullstack (the reported seq-9 gate)."""
+
+    def test_negated_backend_is_dropped(self):
+        # The exact reported case: UI work explicitly excluding backend specs.
+        r = _classify("Criar componentes de dashboard. NÃO gerar specs de backend nem OpenAPI.")
+        assert r["stack"] == "fe"
+        assert "backend" not in r["backend_signals"]
+        assert r["confidence"] == "high"
+
+    def test_negated_backend_english(self):
+        r = _classify("Build the settings screen; do not add any backend service or API.")
+        assert r["stack"] == "fe"
+        assert r["backend_signals"] == []
+
+    def test_non_negated_backend_still_counts(self):
+        # A negation cue in a PREVIOUS clause must not negate a later real signal.
+        r = _classify("No layout changes. Add a billing API and a payment service.")
+        assert "api" in r["backend_signals"] or "service" in r["backend_signals"]
+        assert r["stack"] in ("be", "fullstack")
+
+    def test_genuine_copresence_unaffected(self):
+        r = _classify("A checkout page that consumes the payment API")
+        assert r["stack"] == "fullstack"
+
+
+class TestStackStructuralPrecedence:
+    """SGD-001: a declared project domain resolves a LOW-confidence decision in
+    code instead of escalating — but never overrides a high-confidence one."""
+
+    def test_frontend_domain_resolves_low_confidence_fullstack(self):
+        base = _classify("Nightly report page that also hits the billing service and the API")
+        assert base["stack"] == "fullstack" and base["confidence"] == "low"
+        r = _classify("Nightly report page that also hits the billing service and the API",
+                      project_domain="frontend")
+        assert r["stack"] == "fe"
+        assert r["confidence"] == "high"
+        assert r["structural_override"] == "fullstack->fe"
+
+    def test_no_signals_default_resolved_by_domain(self):
+        r = _classify("Rapid processing of records", project_domain="frontend")
+        assert r["stack"] == "fe"
+        assert r["structural_override"] == "fullstack->fe"
+
+    def test_domain_does_not_override_high_confidence(self):
+        # A genuine fullstack (high confidence) is NOT silently downgraded — it
+        # still surfaces for a human decision.
+        r = _classify("A dashboard screen with forms consuming the auth API and billing service",
+                      project_domain="frontend")
+        assert r["stack"] == "fullstack"
+        assert r["structural_override"] is None
+
+    def test_backend_domain_resolves_low_confidence(self):
+        r = _classify("Rapid processing of records", project_domain="backend")
+        assert r["stack"] == "be"
+        assert r["structural_override"] == "fullstack->be"
 
 
 # --------------------------------------------------------------------------- #

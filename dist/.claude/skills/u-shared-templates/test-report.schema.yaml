@@ -1,0 +1,60 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/test-report.schema.yaml"
+title: test-report
+description: >
+  Machine-readable JSON schema for a test-execution report. Produced by
+  u-test-runner (one report per test-phase Task Contract, written to
+  .orch/test-reports/{task_id}.json) and consumed by the test-phase exit-criteria
+  checkers (phase-test-rules: check_all_tests_passed.py, check_no_critical_failures.py).
+  Single source of truth for the report contract (SGD-002): the report is JSON —
+  the checkers parse it structurally, never by text/regex.
+type: object
+required:
+  - task_id
+  - result
+additionalProperties: true
+properties:
+  task_id:
+    type: string
+  workflow_id:
+    type: string
+  stack:
+    type: string
+    enum: [be, fe, fullstack]
+  delivery_artifact:
+    type: string
+  result:
+    type: string
+    enum: [passed, failed, blocked]
+    description: "passed = all commands exit 0; failed = one or more non-zero; blocked = delivery not qa_ready."
+  commands_run:
+    type: array
+    items:
+      type: object
+      required: [command, exit_code]
+      additionalProperties: true
+      properties:
+        command:
+          type: string
+        exit_code:
+          type: integer
+        total:
+          type: integer
+          minimum: 0
+        passed:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        output_snippet:
+          type: string
+  summary:
+    type: string
+  severity:
+    description: >
+      Populated only when result == failed. critical = zero test output (runner
+      failed to start). A plain command timeout is transient — high, not critical
+      (see u-test-runner I5). null/absent when result != failed.
+    type: [string, "null"]
+    enum: [critical, high, medium, low, null]

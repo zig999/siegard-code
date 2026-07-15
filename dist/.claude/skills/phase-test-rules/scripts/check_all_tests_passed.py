@@ -48,6 +48,26 @@ _RESULT_RE = re.compile(r"^\s*result\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
 _PASSED_VALUE = "passed"
 
 
+def _extract_result(content: str) -> str | None:
+    """Read the ``result`` field from a test-report artifact.
+
+    The canonical producer (u-test-runner) writes JSON (agents/dev/u-test-runner.md);
+    the JSON path is authoritative. A YAML-style report (``result: passed``) is
+    tolerated as a fallback so a worker emitting either shape is classified
+    correctly rather than mis-reported as ``field_absent`` (DEF-1: the previous
+    YAML-only regex never matched a quoted JSON key and blocked green suites).
+    """
+    if content.lstrip().startswith("{"):
+        try:
+            report = json.loads(content)
+        except json.JSONDecodeError:
+            report = None
+        if isinstance(report, dict) and report.get("result") is not None:
+            return str(report["result"]).lower()
+    match = _RESULT_RE.search(content)
+    return match.group(1).lower() if match else None
+
+
 def evaluate() -> dict:
     state = reduce_all()
     # 5-a: scoped to ORCH_WORKFLOW_ID when set (shared-log isolation).
@@ -96,8 +116,7 @@ def evaluate() -> dict:
                 failed.append({"task_id": task.task_id, "artifact": rel_path, "result": f"unreadable: {exc}"})
                 continue
 
-            match = _RESULT_RE.search(content)
-            result_value = match.group(1).lower() if match else None
+            result_value = _extract_result(content)
 
             if result_value == _PASSED_VALUE:
                 passed_count += 1

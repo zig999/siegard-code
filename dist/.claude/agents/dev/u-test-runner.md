@@ -74,7 +74,9 @@ Do not abort on first failure — run all commands and collect all results.
 
 ### Step 3 — Write the report artifact
 
-Write a JSON report to `.orch/test-reports/{task_id}.json`:
+Write a JSON report to `.orch/test-reports/{task_id}.json`. The canonical contract
+is `u-shared-templates/test-report.schema.yaml` — the report MUST validate against
+it (the test-phase exit-criteria checkers parse this JSON structurally):
 
 ```json
 {
@@ -141,4 +143,4 @@ python3 .claude/skills/orch-report/scripts/emit.py \
 | I2 | Never skip commands — run all and report all results. |
 | I3 | Always write the report before emitting the terminal event. |
 | I4 | Report artifact must be valid JSON — no free-form text output. |
-| I5 | If a command times out after 5 minutes, record `exit_code: -1` and `severity: critical`. |
+| I5 | If a command times out after 5 minutes, record `exit_code: -1`, `result: failed`, and `severity: high` with `retryable: true` — a timeout is transient (contention under parallel load), not a deterministic failure. Reserve `severity: critical` for zero test output (runner failed to start), per the severity rules above. Do not send a flaky timeout straight to a non-retryable DLQ. |

@@ -23,13 +23,21 @@ Decision rule (co-presence aware):
 keeps reading `triage.ui_task` unchanged (back-compat); `stack` is the new
 first-class field that orchestrator-sdd and the handoff guard consume.
 
+SGD-001 hardening:
+  - negation-aware: a signal that appears only inside a negation clause
+    ("NÃO gerar specs de backend") is discarded, so it no longer inflates the
+    stack to a false fullstack.
+  - structural precedence: an optional --project-domain (the target CLAUDE.md
+    `domain:`) resolves a LOW-confidence decision in code instead of escalating.
+
 Usage:
-    classify_stack.py --requirement "<text>"
+    classify_stack.py --requirement "<text>" [--project-domain frontend|backend]
 
 Output (exit 0; exit 1 only on internal error):
-    {"stack": "fullstack", "ui_task": true,
-     "ui_signals": ["page"], "backend_signals": ["api"],
-     "rationale": "ui+backend signals present -> fullstack"}
+    {"stack": "fe", "ui_task": true,
+     "ui_signals": ["component"], "backend_signals": [],
+     "rationale": "ui signals only -> fe", "confidence": "high",
+     "confidence_hint": "...", "structural_override": null}
 """
 from __future__ import annotations
 
@@ -81,6 +89,33 @@ BACKEND_SIGNALS: tuple[str, ...] = (
 # "tela" does not match inside "etiqueta".
 _WORD = r"0-9A-Za-zÀ-ÿ"
 
+# SGD-001: negation cues (bilingual). A signal that appears ONLY inside a
+# negation clause ("NÃO gerar specs de backend") is not a real dependency and
+# must not count. Kept conservative — a cue only ever *removes* a signal, never
+# adds one, so the safe asymmetry (never silently drop the front leg) holds.
+_NEGATION_CUES: tuple[str, ...] = (
+    "não", "nao", "sem ", "nem ", "nunca", "jamais", "exclua", "excluir", "excluindo",
+    "not ", "n't", "no ", "do not", "don't", "without", "exclude", "excluding",
+)
+# Comma is a soft boundary too: it separates clauses, so a cue before the comma
+# ("não use X, mas crie uma API") must not negate a signal after it. A dedicated
+# cue after the comma ("nem"/"nor") still negates via _NEGATION_CUES.
+_SENTENCE_BOUNDARY = re.compile(r"[.,!?;:\n]")
+
+
+def _is_negated(text: str, start: int) -> bool:
+    """True when the token match at ``start`` sits inside a negation clause.
+
+    Looks back a short window for a negation cue, cutting the window at the last
+    sentence boundary so a cue in a *previous* clause does not falsely negate
+    this match ("add backend. no UI changes" does not negate 'backend').
+    """
+    window = text[max(0, start - 40):start].lower()
+    boundaries = [m.end() for m in _SENTENCE_BOUNDARY.finditer(window)]
+    if boundaries:
+        window = window[boundaries[-1]:]
+    return any(cue in window for cue in _NEGATION_CUES)
+
 
 def _compile(terms: tuple[str, ...]) -> list[tuple[str, re.Pattern[str]]]:
     out: list[tuple[str, re.Pattern[str]]] = []
@@ -98,10 +133,19 @@ _BACKEND_PATTERNS = _compile(BACKEND_SIGNALS)
 
 
 def _matches(text: str, patterns: list[tuple[str, re.Pattern[str]]]) -> list[str]:
+    """Return matched terms that have at least one NON-negated occurrence.
+
+    SGD-001: a term whose every occurrence is inside a negation clause is
+    dropped (e.g. 'backend' in "NÃO gerar specs de backend").
+    """
     found: list[str] = []
     for term, pattern in patterns:
-        if term not in found and pattern.search(text):
-            found.append(term)
+        if term in found:
+            continue
+        for m in pattern.finditer(text):
+            if not _is_negated(text, m.start()):
+                found.append(term)
+                break
     return found
 
 
@@ -131,8 +175,14 @@ def _confidence(stack: str, ui: list[str], backend: list[str]) -> tuple[str, str
     return "high", "ui+backend both clearly present -> fullstack"
 
 
-def classify(requirement: str) -> dict:
-    """Pure function: requirement text -> stack decision envelope."""
+def classify(requirement: str, project_domain: str | None = None) -> dict:
+    """Pure function: requirement text -> stack decision envelope.
+
+    ``project_domain`` (optional) is the target project's declared CLAUDE.md
+    ``domain:`` — a structural signal stronger than incidental keywords. It is
+    applied ONLY to resolve a low-confidence decision (never to override a
+    high-confidence one), so a genuine fullstack requirement still surfaces.
+    """
     text = requirement or ""
     ui = _matches(text, _UI_PATTERNS)
     backend = _matches(text, _BACKEND_PATTERNS)
@@ -148,6 +198,21 @@ def classify(requirement: str) -> dict:
 
     confidence, confidence_hint = _confidence(stack, ui, backend)
 
+    # SGD-001: structural precedence. Resolve a low-confidence decision with the
+    # explicit project domain rather than escalating to a human (Golden Rule 5 —
+    # if code can answer, code answers).
+    structural_override = None
+    domain = (project_domain or "").strip().lower()
+    if domain in ("frontend", "backend") and confidence == "low":
+        if domain == "frontend" and stack != "fe":
+            structural_override, stack, confidence = f"{stack}->fe", "fe", "high"
+            rationale = "low-confidence stack resolved by structural signal (domain: frontend)"
+        elif domain == "backend" and stack != "be":
+            structural_override, stack, confidence = f"{stack}->be", "be", "high"
+            rationale = "low-confidence stack resolved by structural signal (domain: backend)"
+        if structural_override:
+            confidence_hint = f"structural override applied ({structural_override}) — declared project domain"
+
     return {
         "stack": stack,
         "ui_task": stack in ("fe", "fullstack"),
@@ -156,6 +221,7 @@ def classify(requirement: str) -> dict:
         "rationale": rationale,
         "confidence": confidence,
         "confidence_hint": confidence_hint,
+        "structural_override": structural_override,
     }
 
 
@@ -164,8 +230,11 @@ def main() -> int:
         description="Deterministically classify a requirement as fe|be|fullstack (stdlib only)."
     )
     ap.add_argument("--requirement", required=True, help="Requirement text to classify.")
+    ap.add_argument("--project-domain", default=None,
+                    help="Target project's declared CLAUDE.md domain (frontend|backend); "
+                         "structural tie-breaker for low-confidence decisions.")
     args = ap.parse_args()
-    print(json.dumps(classify(args.requirement)))
+    print(json.dumps(classify(args.requirement, args.project_domain)))
     return 0
 
 

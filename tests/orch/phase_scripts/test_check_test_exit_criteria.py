@@ -11,6 +11,8 @@ Scripts under test:
   - check_all_tests_passed.py
   - check_no_critical_failures.py
 """
+import json
+
 import pytest
 import orch_core
 from orch_core import append_event
@@ -37,17 +39,28 @@ def _test_task(task_id):
     })
 
 
-def _complete_test(task_id, project_dir, result="passed", has_critical=False):
-    """Complete a test task and create a test-report artifact."""
+def _complete_test(task_id, project_dir, result="passed", has_critical=False, fmt="json"):
+    """Complete a test task and create a test-report artifact.
+
+    Default fmt="json" mirrors the canonical producer contract
+    (agents/dev/u-test-runner.md writes JSON). fmt="yaml" exercises the tolerant
+    fallback path in the checkers.
+    """
     report_dir = project_dir / ".orch" / "sessions" / "wf_test_test" / "test-reports"
     report_dir.mkdir(parents=True, exist_ok=True)
-    report_path = report_dir / f"{task_id}-report.md"
 
-    content = f"# Test Report: {task_id}\n\n"
-    content += f"result: {result}\n"
-    if has_critical:
-        content += "severity: critical\n"
-    report_path.write_text(content)
+    if fmt == "json":
+        report_path = report_dir / f"{task_id}-report.json"
+        report = {"task_id": task_id, "result": result}
+        if has_critical:
+            report["severity"] = "critical"
+        report_path.write_text(json.dumps(report, indent=2))
+    else:  # yaml-style fallback
+        report_path = report_dir / f"{task_id}-report.md"
+        content = f"# Test Report: {task_id}\n\nresult: {result}\n"
+        if has_critical:
+            content += "severity: critical\n"
+        report_path.write_text(content)
 
     append_event("worker", "task_claimed", task_id=task_id, attempt=1, data={
         "phase": "test", "worker_type": "test-run", "worker_id": f"w_{task_id}",
@@ -188,6 +201,32 @@ class TestAllTestsPassed:
         assert result["evidence"]["passed"] == 1
         assert len(result["evidence"]["failed"]) == 1
 
+    # DEF-1: the canonical producer (u-test-runner) writes JSON. The old
+    # YAML-only regex never matched a quoted JSON key and blocked green suites.
+    def test_json_report_passed_is_met(self, phase_env):
+        _test_phase()
+        _test_task("test_dev_tc_001")
+        _complete_test("test_dev_tc_001", phase_env, result="passed", fmt="json")
+        result = run_check(TEST_SCRIPTS["check_passed"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["passed"] == 1
+
+    def test_json_report_failed_is_not_met(self, phase_env):
+        _test_phase()
+        _test_task("test_dev_tc_001")
+        _complete_test("test_dev_tc_001", phase_env, result="failed", fmt="json")
+        result = run_check(TEST_SCRIPTS["check_passed"], phase_env)
+        assert result["met"] is False
+        assert result["evidence"]["failed"][0]["result"] == "failed"
+
+    def test_yaml_report_passed_fallback_is_met(self, phase_env):
+        _test_phase()
+        _test_task("test_dev_tc_001")
+        _complete_test("test_dev_tc_001", phase_env, result="passed", fmt="yaml")
+        result = run_check(TEST_SCRIPTS["check_passed"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["passed"] == 1
+
 
 # ---------------------------------------------------------------------------
 # check_no_critical_failures.py
@@ -227,3 +266,21 @@ class TestNoCriticalFailures:
         assert result["met"] is False
         assert result["evidence"]["clean"] == 1
         assert len(result["evidence"]["with_critical"]) == 1
+
+    # DEF-1 sibling: a JSON "severity": "critical" was silently missed by the
+    # YAML-only regex — a genuine critical failure passed the gate undetected.
+    def test_json_critical_is_detected(self, phase_env):
+        _test_phase()
+        _test_task("test_dev_tc_001")
+        _complete_test("test_dev_tc_001", phase_env, result="failed", has_critical=True, fmt="json")
+        result = run_check(TEST_SCRIPTS["check_critical"], phase_env)
+        assert result["met"] is False
+        assert len(result["evidence"]["with_critical"]) == 1
+
+    def test_json_no_critical_is_met(self, phase_env):
+        _test_phase()
+        _test_task("test_dev_tc_001")
+        _complete_test("test_dev_tc_001", phase_env, result="passed", has_critical=False, fmt="json")
+        result = run_check(TEST_SCRIPTS["check_critical"], phase_env)
+        assert result["met"] is True
+        assert result["evidence"]["clean"] == 1

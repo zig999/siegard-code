@@ -1,0 +1,18 @@
+# Canonical example of a test-execution report (test-report.schema.yaml).
+# The live artifact is JSON at .orch/test-reports/{task_id}.json; this YAML is the
+# human-readable reference. Producer: u-test-runner. Consumers: phase-test-rules
+# exit-criteria checkers (parse the JSON structurally — never by regex).
+task_id: "test_panels_tc_002"
+workflow_id: "panels-dashboard-shell"
+stack: "fe"
+delivery_artifact: ".orch/sessions/panels-dashboard-shell/deliveries/tc_002.md"
+result: "passed"
+commands_run:
+  - command: "npx vitest run --reporter=json"
+    exit_code: 0
+    total: 138
+    passed: 138
+    failed: 0
+    output_snippet: "Test Files 7 passed (7)\n Tests 138 passed (138)"
+summary: "all tests passed (138/138)"
+severity: null

@@ -46,6 +46,25 @@ _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 _CRITICAL_RE = re.compile(r"^\s*severity\s*:\s*critical\s*$", re.MULTILINE | re.IGNORECASE)
 
 
+def _has_critical(content: str) -> bool:
+    """Return True when a test-report artifact declares ``severity: critical``.
+
+    The canonical producer (u-test-runner) writes JSON; the JSON path is
+    authoritative. A YAML-style report is tolerated as a fallback. This closes a
+    silent false-negative (DEF-1 sibling): the YAML-only regex never matched a
+    quoted JSON ``"severity": "critical"``, so a genuine critical failure passed
+    the gate undetected.
+    """
+    if content.lstrip().startswith("{"):
+        try:
+            report = json.loads(content)
+        except json.JSONDecodeError:
+            report = None
+        if isinstance(report, dict):
+            return str(report.get("severity", "")).lower() == "critical"
+    return bool(_CRITICAL_RE.search(content))
+
+
 def evaluate() -> dict:
     state = reduce_all()
     # 5-a: scoped to ORCH_WORKFLOW_ID when set (shared-log isolation).
@@ -69,7 +88,7 @@ def evaluate() -> dict:
                 with_critical.append({"task_id": task.task_id, "artifact": rel_path, "reason": f"unreadable: {exc}"})
                 continue
 
-            if _CRITICAL_RE.search(content):
+            if _has_critical(content):
                 with_critical.append({"task_id": task.task_id, "artifact": rel_path, "reason": "critical_failure_present"})
             else:
                 clean_count += 1

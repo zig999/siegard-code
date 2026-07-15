@@ -21,6 +21,7 @@ Resource bundle: inter-agent envelope contracts. Every envelope ships as a pair 
 | `task_contract` | planners | developers |
 | `delivery` | developers | QA workers |
 | `qa-verdict` | QA workers | orchestrator-review |
+| `test-report` | u-test-runner | phase-test-rules exit-criteria checkers |
 | `blocked-report` | any worker | orchestrator |
 | `validation-result` | u-spec-validator | orchestrator-sdd |
 | `compliance-finding` | u-spec-compliance | orchestrator-sdd |

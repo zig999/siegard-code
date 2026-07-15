@@ -174,9 +174,34 @@ def _write_stuck_improve_alert(stuck: dict, metrics: dict) -> None:
     out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def _compute_metrics(state=None) -> dict:
+def _count_escalations(events: list | None) -> tuple[int, dict[str, int]]:
+    """Count escalation EVENTS from the log (SGD-004).
+
+    The metric used to be ``1 if state.escalation else 0`` — a boolean over the
+    *currently pending* escalation. On a completed run every escalation was
+    already resolved by a human_response, so state.escalation is None and the
+    metric read 0 even when several escalations occurred. Governance/SLA reports
+    need the real count, derived from the log (P1/P2 — the log is the truth).
+    """
+    if events is None:
+        events = list(read_events_filtered(event_type=None))
+    total = 0
+    by_code: dict[str, int] = {}
+    for e in events:
+        if e.event_type != "escalation":
+            continue
+        total += 1
+        data = e.data if isinstance(e.data, dict) else {}
+        code = data.get("code")
+        if code:
+            by_code[code] = by_code.get(code, 0) + 1
+    return total, by_code
+
+
+def _compute_metrics(state=None, events=None) -> dict:
     if state is None:
         state = reduce_all()
+    escalations_total, escalations_by_code = _count_escalations(events)
 
     tasks_by_status: dict[str, int] = {}
     for t in state.tasks.values():
@@ -242,7 +267,9 @@ def _compute_metrics(state=None) -> dict:
         "tasks_dlq": dlq,
         "phases_completed": phases_completed,
         "phase_durations": phase_durations,
-        "escalations": 1 if state.escalation else 0,
+        "escalations": escalations_total,
+        "escalations_pending": 1 if state.escalation else 0,
+        "escalations_by_code": escalations_by_code,
         "circuit_breaker_tripped": state.circuit_breaker is not None,
         "failure_reason_breakdown": failure_reason_breakdown,
         "structural_failure_rate": structural_failure_rate,
@@ -400,7 +427,7 @@ def main() -> None:
 
         events = list(read_events_filtered(event_type=None))
         state = reduce_all()
-        metrics = _compute_metrics(state)
+        metrics = _compute_metrics(state, events)
         metrics["orphaned_phase"] = None
 
         orphan = _detect_orphaned_phase(state)
@@ -450,7 +477,7 @@ def main() -> None:
         if (
             metrics.get("run_status") in _ERROR_RUN_STATUSES
             or metrics.get("circuit_breaker_tripped")
-            or metrics.get("escalations", 0) > 0
+            or metrics.get("escalations_pending", 0) > 0
         ):
             _write_last_error(metrics, events)
     except Exception:
