@@ -62,6 +62,13 @@ If code can answer, code answers.
 Per-task: 4,000 tokens. Per-session: 30,000 tokens.
 If approaching budget, summarize and start fresh.
 Surface the breach. Do not silently overrun.
+> NOTE — two distinct budgets, do not conflate: this rule is guidance for *your own*
+> per-task/per-session work. It is SEPARATE from the orchestration engine's
+> **context-window thresholds** (emitted as `context_budget_evaluated`: sdd 30k/60k,
+> dev 40k/50k, review 20k/25.6k), which estimate the token footprint of a worker
+> *spawn* (delivery bytes + prompt overhead) to decide whether to dispatch. Those
+> thresholds are engine-internal and phase-specific; they are not the 4k/30k above.
+> Neither budget currently measures *billed* tokens — both are estimates.
 
 **Rule 7 — Surface Conflicts, Don't Average Them**
 If two patterns contradict, pick one (more recent / more tested).
@@ -119,8 +126,14 @@ runtime_dir: {e.g. docs/runtime/logs}
 
 # --- Review phase (orchestrator-review) ---
 # test_command must emit JSON: vitest --reporter=json | jest --json | pytest --json-report (pytest-json-report plugin)
+# WORKING DIRECTORY: the shared suite (run_suite.py) executes these from the PROJECT ROOT
+# (ORCH_PROJECT_DIR), not from an app subdirectory. If your app lives in a subdir with no
+# root package.json, the command MUST be root-runnable — use a workspace/prefix flag or an
+# explicit cd, e.g. `npm --prefix frontend run build`, `npm run build -w frontend`, or
+# `cd frontend && npx vitest run --reporter=json`. A bare `npm run build` will fail from the
+# root (E17_suite_parser_degraded) — the suite then falls back to per-worker local test-gate.
 test_command: {e.g. npx vitest run --reporter=json}
-build_command: {e.g. npm run build}   # empty string "" skips build step
+build_command: {e.g. npm run build}   # empty string "" skips build step; must be root-runnable (see note above)
 
 # --- Backend config (u-be-developer, u-be-qa, u-be-standards) ---
 # All fields are optional. Agents use stated defaults when absent.

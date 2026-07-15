@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.18.0",
+  "version": "2.18.1",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-15T14:22:34Z",
+  "generated_at": "2026-07-15T15:33:15Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -117,7 +117,7 @@
     },
     {
       "path": "claude-md-target-template.md",
-      "sha256": "f168032206471d54d3331089514b4e09b88f90203724bfb96290e22f2f102d35"
+      "sha256": "7d11f5e035b66a74678379268ceebeaa136ccbb53fbab456c8cb941310322ebd"
     },
     {
       "path": "commands/u-cleanup.md",
