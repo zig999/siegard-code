@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.18.1",
+  "version": "2.19.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-15T15:33:15Z",
+  "generated_at": "2026-07-15T23:27:11Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -73,7 +73,7 @@
     },
     {
       "path": "agents/orchestrator.md",
-      "sha256": "610be00c79ebc4a685766a067582746f2ed98fa7f23175f66ade1693b5a8fd70"
+      "sha256": "1eec3fba86e52654dde73b8a0b4fe05cc3d53ef158fedc9ec0ee759bf99d6570"
     },
     {
       "path": "agents/reverse-spec/orchestrator-reverse-spec.md",
@@ -125,7 +125,7 @@
     },
     {
       "path": "commands/u-dev.md",
-      "sha256": "09568832845638bcc617833c43b11589c2b008f6ec9055f837ab8f59be04600f"
+      "sha256": "0aa673b9405846c3b638d78c82b2098aba345c8fa2012b2f96e1bfcfd7d613df"
     },
     {
       "path": "commands/u-doc-cleanup.md",
@@ -141,7 +141,7 @@
     },
     {
       "path": "commands/u-orchestrator.md",
-      "sha256": "69624afd2f07d1fb1cbae2c7a89371eb19446bf8782e28b665d99e9e24de2b4b"
+      "sha256": "451fc3c8bf545395d3cc59409743d740e3bef45ec61011cd4f5b0c07020c457a"
     },
     {
       "path": "commands/u-reverse-spec.md",
@@ -234,6 +234,10 @@
     {
       "path": "scripts/respond_escalation.py",
       "sha256": "8df9019f635ca5f968cc0454214c273203823913294cff0c1a8a64af33d5acc5"
+    },
+    {
+      "path": "scripts/supervision_advice.py",
+      "sha256": "f8bb0f19ca8ebe54ebe9074096c87c620ba4e8a16fcc0c6137d014215b3f5522"
     },
     {
       "path": "scripts/supervisor_tick.py",

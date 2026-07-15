@@ -593,9 +593,21 @@ Completed:  {current_phase}  (last_seq: {last_seq})
 Next phase: {next_phase}     (ready — re-invoke orchestrator to proceed)
 ```
 
+**Supervision advice (detach point):** run the deterministic recommender and attach its
+output verbatim as the `supervision` field. It recommends a hand-off to `/u-supervise`
+(via `/loop` or `/schedule`) ONLY at the first phase transition of the workflow, so the
+caller offers the "keep driving here vs detach" decision once, not on every advance:
+
+```bash
+python3 .claude/scripts/supervision_advice.py --workflow-id <workflow_id>
+```
+
+Parse the single JSON line and place it under `supervision` in the report. Do not act on
+it — surfacing/acting on the recommendation is the entry command's job (§Re-invocation loop).
+
 Output:
 ```json
-{"status": "phase_advanced", "completed_phase": "<current_phase>", "next_phase": "<next_phase>", "workflow_id": "<workflow_id>", "last_seq": <n>}
+{"status": "phase_advanced", "completed_phase": "<current_phase>", "next_phase": "<next_phase>", "workflow_id": "<workflow_id>", "last_seq": <n>, "supervision": <supervision_advice_json>}
 ```
 
 Stop.
