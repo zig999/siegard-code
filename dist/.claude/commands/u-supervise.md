@@ -1,5 +1,5 @@
 ---
-description: Supervises a running workflow and auto-resumes a stalled phase orchestrator. Runs one supervision tick — detects a stalled orchestrator (active phase, non-terminal tasks, no heartbeat AND no worker activity within the threshold) and, within the resume budget, re-invokes the meta-orchestrator in the foreground. Meant to run on an interval via /loop (attended) or /schedule (unattended). Usage: /u-supervise {workflow_id}
+description: Supervises a running workflow and auto-resumes a stalled phase orchestrator. Runs one supervision tick — detects a stalled orchestrator (active phase, non-terminal tasks, no heartbeat AND no worker activity within the threshold) OR a parked workflow (no active phase, next phase pending, whole log silent past the threshold — the state the detach on-ramp hands off in) and, within the resume budget, re-invokes the meta-orchestrator in the foreground. Meant to run on an interval via /loop (attended) or /schedule (unattended). Usage: /u-supervise {workflow_id}
 ---
 
 ## Variable Resolution
@@ -64,10 +64,10 @@ state and confirm the stall is still real before spawning:
 python3 .claude/skills/orch-state/scripts/reduce.py
 ```
 
-If the current phase now shows an `orchestrator_heartbeat` (or any task activity) newer than the
-`orchestrator_resume_requested` just appended, the orchestrator recovered on its own — **skip the
-re-invoke**, do NOT emit `orchestrator_resumed`, report `{"status": "ok", "action": "recovered"}`,
-and stop.
+If the log now shows any event newer than the `orchestrator_resume_requested` just appended — an
+`orchestrator_heartbeat`, task activity, or (for a parked-workflow resume) a `phase_entered` — the
+workflow recovered or another driver picked it up — **skip the re-invoke**, do NOT emit
+`orchestrator_resumed`, report `{"status": "ok", "action": "recovered"}`, and stop.
 
 Otherwise re-invoke the meta-orchestrator exactly as `/u-orchestrator` does — read
 `.claude/agents/orchestrator.md` and invoke it (foreground, NOT `run_in_background`) with:
@@ -90,9 +90,10 @@ Report `{"status": "ok", "action": "resumed", "phase": "<phase>", "orchestrator_
 
 ## Running on an interval
 
-- **Attended:** `/loop 20m /u-supervise <workflow_id>` — re-runs this tick every 20 min in the
-  foreground session. Keep the interval coherent with `ORCHESTRATOR_STALE_SECONDS` (900s) so ticks
-  are not redundant.
+- **Attended:** `/loop 5m /u-supervise <workflow_id>` — re-runs this tick every 5 min in the
+  foreground session (the same interval `supervision_advice.py` generates, and its
+  `supervisor_policy.loop_interval` default — keep the two coherent). A no-op tick is cheap;
+  detection latency after a threshold expires stays bounded by the interval.
 - **Unattended:** schedule `/u-supervise <workflow_id>` as a cloud/cron agent — each run is a fresh
   foreground session (with Bash), so Step 0 passes. Budget + cooldown + in-flight TTL
   (`supervisor_policy` in `.orch/config.json`) bound how often it acts and guarantee it escalates

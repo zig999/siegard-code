@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.20.0",
+  "version": "2.21.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-16T00:42:14Z",
+  "generated_at": "2026-07-16T01:39:15Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -153,7 +153,7 @@
     },
     {
       "path": "commands/u-supervise.md",
-      "sha256": "2546369802a0650abbb5fa833474e3e3629123e265efcf922ed47b7d7c4835fa"
+      "sha256": "17409e328fe4e77010ab8cb24ef46e507c068e6d7e12fe919a9f54204bfed31d"
     },
     {
       "path": "hooks/on_stop.py",
@@ -173,7 +173,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "c4fc871caa55e80c90ec38425d551b9063cffeea9d33c3b801aa0d06f52d16f4"
+      "sha256": "10a59d4a27e266ec02c4eefcb21618db03e1bf2a6f75e142be1bd0c495b69ce2"
     },
     {
       "path": "lib/sm_runner.py",
@@ -245,7 +245,7 @@
     },
     {
       "path": "scripts/supervisor_tick.py",
-      "sha256": "53cc41098b5b9ffab464d729e2fdcfb5c99cf8f58525f71c3c55f08c742be8a5"
+      "sha256": "61327aff403fc08646f7b292a94579f3c24ce287ed05a50e0636a702a0c87499"
     },
     {
       "path": "scripts/validate_dist.py",

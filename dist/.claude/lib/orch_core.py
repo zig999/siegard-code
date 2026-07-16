@@ -1777,23 +1777,40 @@ def _handle_phase_exit_approved(state: OrchState, event: Event) -> None:
 def _handle_phase_transitioned(state: OrchState, event: Event) -> None:
     from_phase = event.data.get("from_phase")
     to_phase = event.data.get("to_phase")
-    if from_phase and from_phase in state.phases:
+    is_return = (
+        bool(from_phase and to_phase)
+        and (from_phase, to_phase) in _RETURN_TRANSITIONS
+    )
+    # A return transition is a REJECTION, not a completion: the from_phase did not
+    # pass — marking it COMPLETED here (as v2.20.0 still did) froze it out of the
+    # meta's "lowest order pending" selection after the rework's own FORWARD hop
+    # (dev->review is forward — no reset), so review/test were never re-entered,
+    # M3 derived run_status=completed with the rework never re-validated, and the
+    # review->test human gate was bypassed via phase_entered (which has no
+    # precondition). 2026-07-15 post-fix audit, C1.
+    if from_phase and from_phase in state.phases and not is_return:
         state.phases[from_phase].status = PhaseStatus.COMPLETED
         state.phases[from_phase].completed_at = event.ts
     if state.current_phase == from_phase:
         state.current_phase = None
-    # Return transitions (review->dev, test->dev, test->review) send rework to a
-    # phase that already COMPLETED its earlier forward pass. Without this, to_phase
-    # stays COMPLETED forever: the meta's phase selection ("lowest order whose status
-    # is pending") can never re-select it, and M3 derives run_status=completed once
-    # every required phase has been marked COMPLETED at least once — even with the
-    # returned rework tasks sitting PENDING, unfinished. Reset to_phase to PENDING
-    # (not ACTIVE — phase_entered stays the meta's sole entry point, I2) so the
-    # standard "next pending phase" flow re-enters it on the following invocation.
-    if from_phase and to_phase and (from_phase, to_phase) in _RETURN_TRANSITIONS \
-            and to_phase in state.phases:
-        state.phases[to_phase].status = PhaseStatus.PENDING
-        state.phases[to_phase].completed_at = None
+    # A return invalidates EVERY phase from to_phase up to and including from_phase:
+    # the rework changes the code those phases validated, so each earlier pass is
+    # void. Reset them to PENDING (not ACTIVE — phase_entered stays the meta's sole
+    # entry point, I2) and clear the recorded pass (completed_at / approved_at /
+    # criteria_met — first-pass results must not masquerade as fresh ones), so the
+    # standard "next pending phase" flow re-runs the full validation chain:
+    # dev -> review -> test, each with its own fresh exit approval.
+    if is_return and to_phase in state.phases:
+        lo = state.phases[to_phase].order
+        hi = state.phases[from_phase].order if from_phase in state.phases else lo
+        for p in state.phases.values():
+            if lo <= p.order <= hi and p.status in (
+                PhaseStatus.ACTIVE, PhaseStatus.EXIT_APPROVED, PhaseStatus.COMPLETED
+            ):
+                p.status = PhaseStatus.PENDING
+                p.completed_at = None
+                p.approved_at = None
+                p.criteria_met = []
 
 
 def _handle_phase_paused(state: OrchState, event: Event) -> None:
@@ -1983,12 +2000,47 @@ def _handle_task_failed(state: OrchState, event: Event) -> None:
     # C2: Idempotency — already terminal or failed → no-op. Prevents TOCTOU duplicate
     # from on_subagent_stop hook and orchestrator Step 6.4 racing on the same task.
     if task.status in (TaskStatus.FAILED, TaskStatus.COMPLETED, TaskStatus.DLQ):
+        if task.status == TaskStatus.FAILED:
+            # Record the duplicate's seq as evidence: a racing scheduler that
+            # observed THIS event cites its seq as previous_failure_seq in its own
+            # task_scheduled_retry, and the duplicate-absorb there matches against
+            # task.evidence — without this, the losing scheduler's citation missed
+            # the membership check and its (otherwise absorbable) duplicate
+            # schedule poisoned the log (2026-07-15 post-fix audit, C5).
+            task.evidence.append(event.seq)
+            state.anomalies.append({
+                "seq": event.seq,
+                "event_type": EventType.TASK_FAILED.value,
+                "task_id": task_id,
+                "reason": "duplicate_task_failed_absorbed",
+            })
         return
     # Superseded-attempt straggler: task_retried already advanced this task to a newer
     # attempt. A task_failed carrying an OLDER event.attempt is residue from the prior
     # attempt's worker → idempotent no-op. Placed before the RUNNING check so a late
     # failed for attempt N cannot corrupt a task currently RUNNING on attempt N+1.
     if event.attempt < (task.attempts or 1):
+        return
+    # A failure for an attempt that already failed AND already has its retry
+    # scheduled (the reaper/hook schedule atomically — F3/F4). Two real producers:
+    # a live worker's late GENUINE failure after a false-positive stale reap
+    # ("Poison D" — the symmetric twin of the reconciled task_completed case), or
+    # a second synthesizer racing the first. Either way the failure episode is
+    # already recorded and the scheduled retry stays correct — absorbing is a pure
+    # no-op (unlike the COMPLETED reconciliation, nothing flips), so it is safe
+    # for ANY reason, not only synthesized ones. Without this the late failure
+    # raised below and poisoned every future reduce_all() (2026-07-15 post-fix
+    # audit, C3). A failure for an attempt the task never reached still raises.
+    if task.status == TaskStatus.SCHEDULED and event.attempt == (task.attempts or 1):
+        task.evidence.append(event.seq)
+        state.anomalies.append({
+            "seq": event.seq,
+            "event_type": EventType.TASK_FAILED.value,
+            "task_id": task_id,
+            "reason": "late_failure_on_scheduled_absorbed",
+            "prior_failure": task.last_failure_reason,
+            "late_reason": event.data.get("reason"),
+        })
         return
     if task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
@@ -2043,6 +2095,24 @@ def _handle_task_retried(state: OrchState, event: Event) -> None:
         return
     task = state.tasks[task_id]
     if task.status != TaskStatus.SCHEDULED:
+        # Duplicate promotion — requeue_due_tasks.py derives state OUTSIDE the log
+        # lock, so two concurrent ticks (the dual-meta window: racing supervisor
+        # sessions, or a human re-invoke during a live turn) can both see the same
+        # due SCHEDULED task and both append task_retried with the same attempt.
+        # The first applied SCHEDULED->PENDING and set task.attempts=event.attempt;
+        # the second re-promotes nothing — absorb it as an anomaly instead of
+        # raising, which poisoned every future reduce_all() (2026-07-15 post-fix
+        # audit, C4 "Poison C"). A task_retried for an attempt the task never
+        # reached (attempt > attempts, or a task that never failed at all) is
+        # still genuine corruption and raises below.
+        if task.attempts >= 1 and event.attempt <= task.attempts:
+            state.anomalies.append({
+                "seq": event.seq,
+                "event_type": EventType.TASK_RETRIED.value,
+                "task_id": task_id,
+                "reason": "duplicate_task_retried_absorbed",
+            })
+            return
         raise IllegalTransition(
             f"task_retried: task {task_id!r} is {task.status!r}, expected scheduled"
         )
@@ -2060,6 +2130,19 @@ def _handle_task_dlq(state: OrchState, event: Event) -> None:
     if task_id is None or task_id not in state.tasks:
         return
     task = state.tasks[task_id]
+    # Duplicate routing — same TOCTOU as task_retried above (two concurrent requeue
+    # ticks both saw the task FAILED and both routed it): DLQ->DLQ is a no-op,
+    # absorb it as an anomaly instead of poisoning the log (2026-07-15 post-fix
+    # audit, C4). COMPLETED/SKIPPED->DLQ still raises below — flipping a genuine
+    # terminal is corruption.
+    if task.status == TaskStatus.DLQ:
+        state.anomalies.append({
+            "seq": event.seq,
+            "event_type": EventType.TASK_DLQ.value,
+            "task_id": task_id,
+            "reason": "duplicate_task_dlq_absorbed",
+        })
+        return
     # PENDING/SCHEDULED allowed for cascade-from-dep: dep went to DLQ, so dependent
     # can never run and goes directly to DLQ. SCHEDULED added for C5: a task waiting
     # for retry whose dep entered DLQ should be cascaded immediately, not left scheduled.

@@ -359,3 +359,120 @@ def test_apply_appends_escalation_on_budget_exhausted(tmp_orch, clock):
     assert any(e.data.get("code") == "E23_resume_budget_exhausted" for e in escalations)
     # E23 halts the run — sticky until a human_response (intended "give up" semantics).
     assert orch_core.reduce_all().run_status == "escalated"
+
+
+# --------------------------------------------------------------------------- parked resume (C2)
+
+def _seed_parked_between_phases(orch_core, wf="wf-sup"):
+    """D1, 2026-07-15 post-fix audit: the meta emitted phase_transitioned and
+    stopped (phase_advanced, I5) — current_phase=None, next phase PENDING, and
+    the v2.19 detach on-ramp hands exactly this state to /u-supervise. Before
+    this fix decide() no-op'd on no_active_phase forever and the workflow was
+    parked under active supervision."""
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_declared",
+        data={"workflow_id": wf, "phases": [
+            {"name": "sdd", "order": 1, "required": True},
+            {"name": "dev", "order": 2, "required": True}]})
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_entered",
+        data={"phase": "sdd", "order": 1, "workflow_id": wf})
+    orch_core.append_event(
+        agent="orchestrator-sdd", event_type="phase_exit_criterion_met",
+        data={"phase": "sdd", "criterion": "c"})
+    orch_core.append_event(
+        agent="orchestrator-sdd", event_type="phase_exit_approved",
+        data={"phase": "sdd", "criteria_met": ["c"], "next_phase": "dev",
+              "workflow_id": wf})
+    seq = orch_core.reduce_all().last_seq
+    orch_core.append_event(
+        agent="orchestrator-sdd", event_type="phase_transitioned",
+        data={"from_phase": "sdd", "to_phase": "dev", "evidence_seq": seq,
+              "workflow_id": wf})
+
+
+def test_parked_between_phases_resumes_after_silence(tmp_orch, clock):
+    import orch_core
+    _seed_parked_between_phases(orch_core)
+    clock.advance(1000)  # parked state persisted past ORCHESTRATOR_STALE_SECONDS
+    d = _decide(orch_core, clock)
+    assert d["resume"] is True
+    assert d["phase"] == "dev"  # the next pending phase, for budget attribution
+    assert d["reason"] == "parked_between_phases_pending_next"
+
+
+def test_parked_recent_activity_suppresses_resume(tmp_orch, clock):
+    """A live driver re-invokes within seconds of phase_advanced ('stay' mode
+    passes through current_phase=None transiently) — never race it."""
+    import orch_core
+    _seed_parked_between_phases(orch_core)
+    clock.advance(100)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "parked_pending_recent_activity"
+
+
+def test_parked_never_entered_first_phase_resumes(tmp_orch, clock):
+    """D2: phases declared, meta died before entering the first phase."""
+    import orch_core
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_declared",
+        data={"workflow_id": "wf-sup", "phases": [
+            {"name": "sdd", "order": 1, "required": True}]})
+    clock.advance(1000)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is True
+    assert d["phase"] == "sdd"
+
+
+def test_parked_with_no_pending_phase_is_noop(tmp_orch, clock):
+    """All phases completed: nothing to drive — genuine no_active_phase."""
+    import orch_core
+    _seed_parked_between_phases(orch_core)
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_entered",
+        data={"phase": "dev", "order": 2, "workflow_id": "wf-sup"})
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="phase_exit_approved",
+        data={"phase": "dev", "criteria_met": ["c"], "next_phase": "done",
+              "workflow_id": "wf-sup"})
+    seq = orch_core.reduce_all().last_seq
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="phase_transitioned",
+        data={"from_phase": "dev", "to_phase": "done", "evidence_seq": seq,
+              "workflow_id": "wf-sup"})
+    clock.advance(1000)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "no_active_phase"
+
+
+def test_parked_escalated_run_is_noop(tmp_orch, clock):
+    import orch_core
+    _seed_parked_between_phases(orch_core)
+    orch_core.append_event(
+        agent="orchestrator", event_type="escalation",
+        data={"code": "E23_resume_budget_exhausted", "severity": "warning",
+              "reason": "r", "evidence": [], "suggested_actions": []})
+    clock.advance(1000)
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["reason"] == "run_escalated_awaiting_human"
+
+
+def test_parked_resume_budget_exhausts_to_escalation(tmp_orch, clock):
+    """Parked resumes share the standard budget machinery, attributed to the
+    next pending phase — a meta that keeps dying between phases reaches E23
+    instead of being re-spawned forever."""
+    import orch_core
+    _seed_parked_between_phases(orch_core)
+    clock.advance(1000)
+    for _ in range(3):
+        orch_core.append_event(
+            agent="supervisor", event_type="orchestrator_resume_requested",
+            data={"phase": "dev"})
+    clock.advance(1000)  # past both cooldown and the parked-silence threshold
+    d = _decide(orch_core, clock)
+    assert d["resume"] is False
+    assert d["escalate"] is True
+    assert d["reason"] == "resume_budget_exhausted"

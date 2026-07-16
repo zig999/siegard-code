@@ -198,13 +198,17 @@ class TestScenarioF_ReviewReturnToDev:
         state = reduce_all()
         assert_current_phase(state, "dev")
 
-    def test_review_phase_marked_completed_after_transition(self, wf_env):
+    def test_review_phase_reset_to_pending_after_return(self, wf_env):
+        """A return is a REJECTION, not a completion: review must be PENDING
+        again so the meta re-selects it after the rework's dev->review forward
+        hop (2026-07-15 post-fix audit, C1 — before this, review stayed
+        COMPLETED and the rework was never re-reviewed)."""
         self._setup_review_phase()
         transition_phase("review", "dev", ["partial_rejection_rework"])
         enter_phase("dev", 2)
 
         state = reduce_all()
-        assert_phase_status(state, "review", "completed")
+        assert_phase_status(state, "review", "pending")
 
     def test_multiple_revision_rounds_tracked(self, wf_env):
         """Two review rounds: _r1 and _r2 both visible in state."""
@@ -376,7 +380,12 @@ class TestScenarioH_TestReturnToDev:
         state = reduce_all()
         assert_task_status(state, "dev_feedback_001", "ready")
 
-    def test_test_phase_completed_after_transition_back(self, wf_env):
+    def test_test_return_resets_test_and_review_to_pending(self, wf_env):
+        """A test->dev return invalidates every phase from dev up to test: the
+        rework changes the code both review and test validated, so both must be
+        PENDING again (2026-07-15 post-fix audit, C1 — before this, test stayed
+        COMPLETED and M3 derived run_status=completed with the fix never
+        re-tested)."""
         self._setup_to_test_phase()
 
         create_task("test_run_001", "test", task_type="test-run")
@@ -388,7 +397,8 @@ class TestScenarioH_TestReturnToDev:
         enter_phase("dev", 2)
 
         state = reduce_all()
-        assert_phase_status(state, "test", "completed")
+        assert_phase_status(state, "test", "pending")
+        assert_phase_status(state, "review", "pending")
 
     def test_all_tests_pass_completes_workflow(self, wf_env):
         self._setup_to_test_phase()

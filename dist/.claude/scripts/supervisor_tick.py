@@ -16,6 +16,13 @@ so this tick additionally requires TOTAL PHASE SILENCE: no phase-task activity w
 threshold. Combined guards (no orchestrator_heartbeat AND no recent task activity) make a
 false-positive resume during active work practically impossible.
 
+PARKED workflows (no active phase) are also driven: the meta stops on `phase_advanced`
+BEFORE entering the next phase (I5), so `current_phase` is None with the next phase
+PENDING — the exact state the v2.19 detach on-ramp hands to /u-supervise. The tick
+resumes it once the whole log has been silent past the threshold (a live in-turn driver
+passes through this state transiently between invocations — never race it), attributing
+budget/cooldown to the next pending phase (D1/D2, 2026-07-15 post-fix audit).
+
 Budget (`supervisor_policy` in `.orch/config.json`):
   - max_auto_resumes: resume ATTEMPTS (`orchestrator_resume_requested`) for the phase since
     its last `phase_entered` — counting attempts, not just completions, so a /u-supervise
@@ -46,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 from orch_core import (  # noqa: E402
     EventType,
     ORCHESTRATOR_STALE_SECONDS,
+    PhaseStatus,
     TaskStatus,
     _elapsed_seconds,
     append_event,
@@ -103,38 +111,59 @@ def decide(state: Any, events: list, now: str, policy: dict,
     phase = state.current_phase
     workflow_id = getattr(state, "workflow_id", None)
 
-    if phase is None:
-        return _no("no_active_phase", None, workflow_id, 0)
     if getattr(state, "run_status", None) == "escalated":
         # already awaiting a human — the supervisor must not act (and must not re-emit E23).
         return _no("run_escalated_awaiting_human", phase, workflow_id, 0)
     if not policy.get("enabled", True):
         return _no("supervisor_disabled", phase, workflow_id, 0)
 
-    # (1) orchestrator-heartbeat staleness (active phase, non-terminal tasks, no heartbeat).
-    if detect_stale_orchestrator(state, events, now, threshold) is None:
-        return _no("orchestrator_live_or_no_pending", phase, workflow_id, 0)
+    if phase is None:
+        # PARKED workflow (D1/D2, 2026-07-15 post-fix audit): the meta emits
+        # phase_transitioned and stops (phase_advanced, I5) BEFORE entering the
+        # next phase, so current_phase is None with the next phase PENDING — and
+        # the v2.19 detach on-ramp hands exactly this state to /u-supervise.
+        # Before this branch existed the tick no-op'd on no_active_phase forever
+        # and the workflow it was configured to keep alive stayed parked. Resume
+        # iff a phase is PENDING and the parked state has PERSISTED: an in-turn
+        # driver ('stay' mode) passes through current_phase=None transiently
+        # between invocations, so any log event younger than `threshold` means a
+        # live driver may still be at work — never race it.
+        pending = [p for p in state.phases.values() if p.status == PhaseStatus.PENDING]
+        if not pending:
+            return _no("no_active_phase", None, workflow_id, 0)
+        phase = min(pending, key=lambda p: p.order).name
+        last_ev = events[-1] if events else None
+        if last_ev is None:
+            return _no("no_active_phase", None, workflow_id, 0)
+        if _elapsed_seconds(now, last_ev.ts) < threshold:
+            return _no("parked_pending_recent_activity", phase, workflow_id, 0)
+        resume_reason = "parked_between_phases_pending_next"
+    else:
+        # (1) orchestrator-heartbeat staleness (active phase, non-terminal tasks, no heartbeat).
+        if detect_stale_orchestrator(state, events, now, threshold) is None:
+            return _no("orchestrator_live_or_no_pending", phase, workflow_id, 0)
 
-    # (2) TOTAL PHASE SILENCE: a RUNNING task that moved within ITS OWN stale threshold
-    # means a worker is still progressing (task_progress advances last_event_at only for
-    # RUNNING tasks) — do NOT resume. Only RUNNING counts: a just-completed terminal
-    # task's frozen last_event_at is not "ongoing work" and must not mask a stalled
-    # orchestrator that failed to dispatch.
-    #
-    # Per-task threshold, NOT the flat orchestrator-heartbeat `threshold` (900s): a
-    # task_type override can legitimately exceed it (impl=1200s, test-run=1800s — see
-    # stale_policy.overrides_by_task_type). Reusing the flat 900s here — as an earlier
-    # version of this guard did — let a test-run silent for 901-1800s (still healthy,
-    # well inside ITS OWN allowance) read as "phase silent", spawning a false-positive
-    # second meta-orchestrator while the first was still mid-dispatch. Each task's own
-    # stale_threshold_seconds() is the single source of truth the reaper itself uses
-    # (F-02/A2-F6) — this guard must agree with it, not with the orchestrator's own,
-    # unrelated heartbeat cadence.
-    running_tasks = [t for t in state.tasks.values()
-                     if t.phase == phase and t.status == TaskStatus.RUNNING and t.last_event_at]
-    if any(_elapsed_seconds(now, t.last_event_at) < stale_threshold_seconds(t, stale_config)
-           for t in running_tasks):
-        return _no("phase_tasks_active", phase, workflow_id, 0)
+        # (2) TOTAL PHASE SILENCE: a RUNNING task that moved within ITS OWN stale threshold
+        # means a worker is still progressing (task_progress advances last_event_at only for
+        # RUNNING tasks) — do NOT resume. Only RUNNING counts: a just-completed terminal
+        # task's frozen last_event_at is not "ongoing work" and must not mask a stalled
+        # orchestrator that failed to dispatch.
+        #
+        # Per-task threshold, NOT the flat orchestrator-heartbeat `threshold` (900s): a
+        # task_type override can legitimately exceed it (impl=1200s, test-run=1800s — see
+        # stale_policy.overrides_by_task_type). Reusing the flat 900s here — as an earlier
+        # version of this guard did — let a test-run silent for 901-1800s (still healthy,
+        # well inside ITS OWN allowance) read as "phase silent", spawning a false-positive
+        # second meta-orchestrator while the first was still mid-dispatch. Each task's own
+        # stale_threshold_seconds() is the single source of truth the reaper itself uses
+        # (F-02/A2-F6) — this guard must agree with it, not with the orchestrator's own,
+        # unrelated heartbeat cadence.
+        running_tasks = [t for t in state.tasks.values()
+                         if t.phase == phase and t.status == TaskStatus.RUNNING and t.last_event_at]
+        if any(_elapsed_seconds(now, t.last_event_at) < stale_threshold_seconds(t, stale_config)
+               for t in running_tasks):
+            return _no("phase_tasks_active", phase, workflow_id, 0)
+        resume_reason = "stalled_no_heartbeat_no_task_activity"
 
     # Budget accounting, scoped to the current phase attempt (since last phase_entered).
     # Count resume ATTEMPTS (requests), not just completions: a request that never lands
@@ -177,7 +206,7 @@ def decide(state: Any, events: list, now: str, policy: dict,
 
     return {
         "resume": True, "escalate": False, "phase": phase,
-        "workflow_id": workflow_id, "reason": "stalled_no_heartbeat_no_task_activity",
+        "workflow_id": workflow_id, "reason": resume_reason,
         "budget_remaining": remaining,
     }
 
