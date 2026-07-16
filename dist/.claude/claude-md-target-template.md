@@ -494,7 +494,7 @@ Required protocol:
 
 <!-- Fixed-stack profile: if this project uses Vite + React 19 + TypeScript (strict) + Tailwind v4
      + shadcn/ui + TanStack Query/Router/Table + React Hook Form + Zod, paste the contents of
-     dist/claude-md-fragments/fe-stack-react-tailwind-tanstack.md below this line. That fragment
+     .claude/claude-md-fragments/fe-stack-react-tailwind-tanstack.md below this line. That fragment
      fixes the data layer (TanStack Query), component contract (className/cn, CVA, ref-as-prop),
      forms (RHF+Zod), tables (TanStack Table + URL state), and responsive rules (named breakpoints
      + container queries). Omit the fragment for any other stack. -->

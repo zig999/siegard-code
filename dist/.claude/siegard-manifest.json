@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.23.0",
+  "version": "2.24.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-16T02:31:51Z",
+  "generated_at": "2026-07-16T20:03:55Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -116,8 +116,12 @@
       "sha256": "d2259100a94d469c3083cd7de1e1feb771ea365a39c0238660937495150c29d7"
     },
     {
+      "path": "claude-md-fragments/fe-stack-react-tailwind-tanstack.md",
+      "sha256": "7cf6e42661ad4096b5c8582877e178b76a1e74ec4c4a16d1abeaadb75da97cef"
+    },
+    {
       "path": "claude-md-target-template.md",
-      "sha256": "7d11f5e035b66a74678379268ceebeaa136ccbb53fbab456c8cb941310322ebd"
+      "sha256": "a047e5fcb57aec0b21ddcb4c0508779ae048bc443be4938725f9ea05bc58e1a2"
     },
     {
       "path": "commands/u-cleanup.md",
@@ -901,7 +905,7 @@
     },
     {
       "path": "skills/u-ui-design/SKILL.md",
-      "sha256": "b610e1ec30025d1719e1b2450e0dd812d2caffea0ebf11745631a2fa8fe53d43"
+      "sha256": "001da750458b93cf5d21717c20d7b3ee5c9174f3befd377d30bf4d56f5ceded3"
     },
     {
       "path": "skills/u-ui-design/anti-patterns.md",

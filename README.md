@@ -265,6 +265,20 @@ Version 2.0 is an architectural reset. The v1.x model of three agent teams chain
 
 ---
 
+## Development (this lab)
+
+Requirements: Python 3.10+ (the shipped engine is stdlib-only; these deps are for the lab's test suite).
+
+```bash
+pip install -r requirements-dev.txt
+
+pytest                                # all tests
+pytest --cov=dist/.claude/lib         # with coverage
+ruff check dist/.claude/lib           # lint the shared library
+```
+
+---
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution details.

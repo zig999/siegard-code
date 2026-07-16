@@ -1,13 +1,20 @@
 <!--
   CLAUDE.md fragment — Fixed frontend stack profile.
 
+  WHAT: an authoring-time include for the TARGET project's CLAUDE.md.
+  CONSUMER: the person assembling the target's CLAUDE.md at install time,
+  directed here by .claude/claude-md-target-template.md ("## Stack — Frontend").
   WHEN TO USE: paste this block into the target project's CLAUDE.md, inside the
   "## Stack — Frontend" section, ONLY when the project uses this exact stack:
   Vite + React 19 + TypeScript (strict) + Tailwind v4 + shadcn/ui +
   TanStack Query/Router/Table + React Hook Form + Zod.
+  For any other stack, omit this fragment — the generic u-fe-* skills stay
+  library-agnostic.
 
-  For any other stack, omit this fragment — the generic u-fe-* skills stay library-agnostic.
-  This file is an authoring-time include; it lives outside dist/.claude/ and is NOT part of the copied distribution.
+  This file SHIPS with the distribution (.claude/claude-md-fragments/) so the
+  reference above resolves inside the copied tree — no install tooling runs, so
+  every referenced artifact must travel with the copy (self-containment gate:
+  tests/test_layer_dist_self_containment.py).
 -->
 
 ### Fixed stack contract

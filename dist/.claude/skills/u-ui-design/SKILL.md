@@ -21,7 +21,7 @@ status: blocked
 reason: design_system_not_found | missing_visual_personality | missing_target
 required: "{SPECS_DIR}/front/design-system/_index.md"
 action: create_design_system_first
-reference: dist/skills/u-spec-templates/TEMPLATE.design-system/
+reference: .claude/skills/u-spec-templates/TEMPLATE.design-system/
 ```
 
 ---
