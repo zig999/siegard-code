@@ -54,6 +54,7 @@ from orch_core import (  # noqa: E402
     now_iso,
     read_events_filtered,
     reduce_all,
+    stale_threshold_seconds,
 )
 
 _RESUME_REQUESTED = EventType.ORCHESTRATOR_RESUME_REQUESTED.value
@@ -84,12 +85,21 @@ def _no(reason: str, phase: str | None, workflow_id: str | None, budget_remainin
 
 
 def decide(state: Any, events: list, now: str, policy: dict,
-           threshold: int = ORCHESTRATOR_STALE_SECONDS) -> dict:
+           threshold: int = ORCHESTRATOR_STALE_SECONDS,
+           stale_config: dict | None = None) -> dict:
     """Pure decision function (no I/O) — the testable core.
+
+    `stale_config` feeds the per-task activity guard's stale_threshold_seconds()
+    lookup (task_type/tier overrides — e.g. impl=1200s, test-run=1800s). Defaults
+    to `{}` (never `None` passed onward), which resolves to the plain Tier default
+    for every task — never triggers a real load_config() file read from within
+    this otherwise-pure function. The caller (main()) passes the already-loaded
+    config so this stays testable with a fully in-memory state+events fixture.
 
     Returns a dict with `resume` (append resume_requested + re-invoke), `escalate`
     (budget exhausted -> emit E23), or neither (no-op with a `reason`).
     """
+    stale_config = stale_config or {}
     phase = state.current_phase
     workflow_id = getattr(state, "workflow_id", None)
 
@@ -105,13 +115,25 @@ def decide(state: Any, events: list, now: str, policy: dict,
     if detect_stale_orchestrator(state, events, now, threshold) is None:
         return _no("orchestrator_live_or_no_pending", phase, workflow_id, 0)
 
-    # (2) TOTAL PHASE SILENCE: a RUNNING task that moved within the threshold means a worker
-    # is still progressing (task_progress advances last_event_at only for RUNNING tasks) — do
-    # NOT resume. Only RUNNING counts: a just-completed terminal task's frozen last_event_at
-    # is not "ongoing work" and must not mask a stalled orchestrator that failed to dispatch.
-    activity = [t.last_event_at for t in state.tasks.values()
-                if t.phase == phase and t.status == TaskStatus.RUNNING and t.last_event_at]
-    if any(_elapsed_seconds(now, ts) < threshold for ts in activity):
+    # (2) TOTAL PHASE SILENCE: a RUNNING task that moved within ITS OWN stale threshold
+    # means a worker is still progressing (task_progress advances last_event_at only for
+    # RUNNING tasks) — do NOT resume. Only RUNNING counts: a just-completed terminal
+    # task's frozen last_event_at is not "ongoing work" and must not mask a stalled
+    # orchestrator that failed to dispatch.
+    #
+    # Per-task threshold, NOT the flat orchestrator-heartbeat `threshold` (900s): a
+    # task_type override can legitimately exceed it (impl=1200s, test-run=1800s — see
+    # stale_policy.overrides_by_task_type). Reusing the flat 900s here — as an earlier
+    # version of this guard did — let a test-run silent for 901-1800s (still healthy,
+    # well inside ITS OWN allowance) read as "phase silent", spawning a false-positive
+    # second meta-orchestrator while the first was still mid-dispatch. Each task's own
+    # stale_threshold_seconds() is the single source of truth the reaper itself uses
+    # (F-02/A2-F6) — this guard must agree with it, not with the orchestrator's own,
+    # unrelated heartbeat cadence.
+    running_tasks = [t for t in state.tasks.values()
+                     if t.phase == phase and t.status == TaskStatus.RUNNING and t.last_event_at]
+    if any(_elapsed_seconds(now, t.last_event_at) < stale_threshold_seconds(t, stale_config)
+           for t in running_tasks):
         return _no("phase_tasks_active", phase, workflow_id, 0)
 
     # Budget accounting, scoped to the current phase attempt (since last phase_entered).
@@ -206,9 +228,10 @@ def main() -> int:
 
     state = reduce_all()
     events = list(read_events_filtered())
-    policy = load_config().get("supervisor_policy", {})
+    cfg = load_config()
+    policy = cfg.get("supervisor_policy", {})
 
-    decision = decide(state, events, now, policy)
+    decision = decide(state, events, now, policy, stale_config=cfg)
     last_seq = events[-1].seq if events else 0
     _apply(decision, last_seq)
 

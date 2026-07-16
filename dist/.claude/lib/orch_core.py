@@ -1776,11 +1776,24 @@ def _handle_phase_exit_approved(state: OrchState, event: Event) -> None:
 
 def _handle_phase_transitioned(state: OrchState, event: Event) -> None:
     from_phase = event.data.get("from_phase")
+    to_phase = event.data.get("to_phase")
     if from_phase and from_phase in state.phases:
         state.phases[from_phase].status = PhaseStatus.COMPLETED
         state.phases[from_phase].completed_at = event.ts
     if state.current_phase == from_phase:
         state.current_phase = None
+    # Return transitions (review->dev, test->dev, test->review) send rework to a
+    # phase that already COMPLETED its earlier forward pass. Without this, to_phase
+    # stays COMPLETED forever: the meta's phase selection ("lowest order whose status
+    # is pending") can never re-select it, and M3 derives run_status=completed once
+    # every required phase has been marked COMPLETED at least once — even with the
+    # returned rework tasks sitting PENDING, unfinished. Reset to_phase to PENDING
+    # (not ACTIVE — phase_entered stays the meta's sole entry point, I2) so the
+    # standard "next pending phase" flow re-enters it on the following invocation.
+    if from_phase and to_phase and (from_phase, to_phase) in _RETURN_TRANSITIONS \
+            and to_phase in state.phases:
+        state.phases[to_phase].status = PhaseStatus.PENDING
+        state.phases[to_phase].completed_at = None
 
 
 def _handle_phase_paused(state: OrchState, event: Event) -> None:
@@ -1907,8 +1920,15 @@ def _handle_task_completed(state: OrchState, event: Event) -> None:
     # irreducible. This is deliberately NARROW: a completed over a WORKER-reported
     # FAILED (validation_failed, internal_error, ...) or over a never-claimed task
     # still raises below — the validator rejecting genuine corruption stays a feature.
+    # SCHEDULED is included alongside FAILED: the reaper/hook schedule a retry
+    # ATOMICALLY in the same call that synthesizes the failure (F3/F4), so by the
+    # time a live worker's genuine late completion lands, the task has already
+    # moved FAILED->SCHEDULED. last_failure_reason survives that transition
+    # untouched, so this is the same false positive as the FAILED case — just
+    # observed one event later. Without this, the atomic scheduled_retry
+    # permanently blocks the reconciliation and every future reduce_all() raises.
     reconciled_false_positive = (
-        task.status == TaskStatus.FAILED
+        task.status in (TaskStatus.FAILED, TaskStatus.SCHEDULED)
         and task.last_failure_reason in _SYNTHESIZED_FAILURE_REASONS
     )
     if reconciled_false_positive:
@@ -1919,6 +1939,7 @@ def _handle_task_completed(state: OrchState, event: Event) -> None:
             "reason": "reconciled_false_positive_completion",
             "prior_failure": task.last_failure_reason,
         })
+        task.next_retry_at = None
     elif task.status != TaskStatus.RUNNING:
         raise IllegalTransition(
             f"task_completed: task {task_id!r} is {task.status!r}, expected running"
@@ -1989,6 +2010,23 @@ def _handle_task_scheduled_retry(state: OrchState, event: Event) -> None:
     if task_id is None or task_id not in state.tasks:
         return
     task = state.tasks[task_id]
+    if task.status == TaskStatus.SCHEDULED:
+        # Idempotency — schedule_retry_if_due re-derives state OUTSIDE the log lock
+        # (unlike claim_task's check-and-append), so two concurrent schedulers
+        # (reaper / SubagentStop hook / on_stop backstop) can both see FAILED and
+        # both append task_scheduled_retry for the SAME failure. Absorb the
+        # duplicate rather than raising: previous_failure_seq already present in
+        # task.evidence proves this event re-schedules a failure already handled,
+        # not a new one. A genuinely unknown previous_failure_seq while already
+        # SCHEDULED is real corruption and still raises below.
+        if event.data.get("previous_failure_seq") in task.evidence:
+            state.anomalies.append({
+                "seq": event.seq,
+                "event_type": EventType.TASK_SCHEDULED_RETRY.value,
+                "task_id": task_id,
+                "reason": "duplicate_scheduled_retry_absorbed",
+            })
+            return
     if task.status != TaskStatus.FAILED:
         raise IllegalTransition(
             f"task_scheduled_retry: task {task_id!r} is {task.status!r}, expected failed"

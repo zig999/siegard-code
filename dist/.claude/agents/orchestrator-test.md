@@ -250,10 +250,7 @@ python3 .claude/skills/orch-infra/scripts/run_circuit_check.py
 
 If `status == "blocked"`: output `{"status": "error", "last_seq": <last_seq>, "summary": "circuit breaker tripped"}` and stop.
 
-Stop conditions:
-- No tasks with `status = "ready"` → proceed to Step 5
-- All test tasks terminal → proceed to Step 5
-- Iteration ≥ 30 → output `{"status": "error", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached"}` and stop
+**Iteration ≥ 30** → output `{"status": "error", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached"}` and stop. Checked here, first, so the mutations below never spend an iteration they can't afford.
 
 **Heartbeat + stale reaping (conformance — orch-control UC-01/UC-02; mirrors orchestrator-dev 5.0):** at the start of every iteration emit an `orchestrator_heartbeat` so `detect_stale_orchestrator` (the `on_stop.py` backstop and `check_stale.py`) can tell a stalled orchestrator from a live one. Audit-only event (EV-20); it does not mutate task state. The `phase` value MUST equal the canonical `current_phase` (`test`) — `detect_stale_orchestrator` filters heartbeats by `data.phase == current_phase`. Then run the deterministic reaper — never synthesize `stale_timeout` from the prompt (F-03).
 
@@ -265,17 +262,20 @@ python3 .claude/scripts/check_stale.py
 
 `check_stale.py` reaps `running` test tasks past their tier threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The Step 4.4 reaper remains the post-batch reaping point.
 
-**Retry re-queue:** for `scheduled` tasks with `next_retry_at <= now`:
-
+**Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0):**
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-test \
-  --event-type task_retried \
-  --task-id <task_id> --attempt <task.attempts + 1> \
-  --data '{"phase":"test","previous_attempt":<task.attempts>,"scheduled_retry_seq":<seq>}'
+python3 .claude/scripts/requeue_due_tasks.py --phase test --workflow-id "<workflow_id>"
 ```
+Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>}`.
+
+Run this — and the heartbeat/reaping block above it — **before** evaluating the stop conditions below; they mutate state the stop conditions read.
 
 Re-read state after all syntheses.
+
+**Stop conditions (evaluated against the state just re-read, i.e. post-mutation):**
+- All test tasks terminal → proceed to Step 5
+- No tasks with `status = "ready"` or `"running"`, AND `earliest_pending_retry_at` is non-null (from the requeue output above) → nothing to dispatch right now, but a task is legitimately waiting out its backoff, not stuck. Output `{"status": "blocked", "last_seq": <last_seq>, "summary": "waiting on scheduled retry backoff", "earliest_pending_retry_at": "<earliest_pending_retry_at>"}` and stop — busy-spinning here burns the 30-iteration budget without letting real time pass; re-invoking after the backoff elapses resumes normally.
+- No tasks with `status = "ready"` (and the backoff case above does not apply) → proceed to Step 5
 
 #### 4.1 — Select batch
 

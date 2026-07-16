@@ -482,6 +482,116 @@ class TestReviewReturnToDev:
         assert any(e.data["action"] == "approve" for e in events)
 
 
+class TestReturnTransitionResetsDestinationPhase:
+    """Recommendation #2, 2026-07-15 workflow audit (C2 — "return-loop break").
+
+    _handle_phase_transitioned only ever updated from_phase. On a RETURN transition
+    (review->dev, test->dev, test->review) to_phase was already COMPLETED from its
+    earlier forward pass and stayed COMPLETED forever: the meta's phase selection
+    ("lowest order whose status is pending", orchestrator.md Step 5) could never
+    re-select it, and M3 derived run_status=completed once every phase had been
+    marked COMPLETED at least once — even with the returned rework sitting PENDING,
+    unfinished. Fixed by resetting to_phase to PENDING on a _RETURN_TRANSITIONS pair.
+
+    Unlike TestReviewReturnToDev above (which hand-emits phase_entered right after
+    the return and so never exercises the selection/derivation bug — see its
+    docstring-free `_enter_phase("dev", 2)` at line 427), these tests drive state
+    purely through appended events and inspect derivation BEFORE any subsequent
+    phase_entered — exactly the window the meta reads between invocations.
+    """
+
+    @staticmethod
+    def _lowest_order_pending(state):
+        """Mirrors orchestrator.md Step 5's exact selection rule."""
+        pending = [p for p in state.phases.values() if p.status == PhaseStatus.PENDING]
+        if not pending:
+            return None
+        return min(pending, key=lambda p: p.order).name
+
+    def test_review_to_dev_return_resets_dev_to_pending(self, tmp_orch):
+        _declare_phases()
+        _enter_phase("sdd", 1)
+        _transition_phase("sdd", "dev", ["c_sdd"])
+        _enter_phase("dev", 2)
+        _create_task("dev_tc_001", "dev")
+        _run_task("dev_tc_001", "dev", artifacts=["d.md"])
+        _transition_phase("dev", "review", ["c_dev"])
+        _enter_phase("review", 3)
+        _create_task("dev_tc_002_r1", "dev", spec="fix")
+        seq = reduce_all().last_seq
+        append_event("orchestrator-review", "phase_transitioned", data={
+            "from_phase": "review", "to_phase": "dev",
+            "evidence_seq": seq, "workflow_id": _WORKFLOW_ID,
+        })
+
+        state = reduce_all()
+        assert state.phases["dev"].status == PhaseStatus.PENDING
+        assert state.phases["dev"].completed_at is None
+        # Before the fix this picked "test" (dev stayed COMPLETED) — skipping rework.
+        assert self._lowest_order_pending(state) == "dev"
+
+    def test_test_to_dev_return_does_not_derive_completed(self, tmp_orch):
+        _declare_phases()
+        _enter_phase("sdd", 1)
+        _transition_phase("sdd", "dev", ["c_sdd"])
+        _enter_phase("dev", 2)
+        _create_task("dev_tc_001", "dev")
+        _run_task("dev_tc_001", "dev", artifacts=["d.md"])
+        _transition_phase("dev", "review", ["c_dev"])
+        _enter_phase("review", 3)
+        _create_task("review_tc_001", "review", spec="d.md")
+        _run_task("review_tc_001", "review", artifacts=["qa.md"])
+        _escalate("orchestrator-review", "E99_human_approval_required", "awaiting approval")
+        append_event("human", "human_response", data={
+            "escalation_seq": reduce_all().last_seq, "action": "approve", "operator": "human",
+        })
+        _transition_phase("review", "test", ["all_qa_verdicts_approved"])
+        _enter_phase("test", 4)
+        _create_task("test_tc_001", "test", spec="d.md")
+        _run_task("test_tc_001", "test", artifacts=["report.md"])
+        _create_task("dev_tc_001_r1", "dev", spec="regression fix")
+        seq = reduce_all().last_seq
+        append_event("orchestrator-test", "phase_transitioned", data={
+            "from_phase": "test", "to_phase": "dev",
+            "evidence_seq": seq, "workflow_id": _WORKFLOW_ID,
+        })
+
+        state = reduce_all()
+        phases_payload = [
+            {"name": n, "order": p.order, "required": p.required, "status": p.status}
+            for n, p in state.phases.items()
+        ]
+        run_status = orch_core._m3_derive_run_status(
+            {"raw_run_status": state.run_status, "phases": phases_payload}
+        )
+        # Before the fix: all four phases COMPLETED -> M3 said "completed" with the
+        # rework task (dev_tc_001_r1) still PENDING. Now dev is reset -> "active".
+        assert run_status == "active"
+        assert state.tasks["dev_tc_001_r1"].status == TaskStatus.PENDING
+        assert self._lowest_order_pending(state) == "dev"
+
+    def test_forward_transition_leaves_to_phase_untouched(self, tmp_orch):
+        """Boundary: a FORWARD transition (not in _RETURN_TRANSITIONS) must not
+        reset to_phase — it should still be PENDING pre-entry as always, and the
+        fix must not interfere with the normal happy path."""
+        _declare_phases()
+        _enter_phase("sdd", 1)
+        seq = reduce_all().last_seq
+        append_event("orchestrator-sdd", "phase_exit_criterion_met",
+                     data={"phase": "sdd", "criterion": "c"})
+        append_event("orchestrator-sdd", "phase_exit_approved", data={
+            "phase": "sdd", "criteria_met": ["c"], "next_phase": "dev",
+            "workflow_id": _WORKFLOW_ID,
+        })
+        append_event("orchestrator-sdd", "phase_transitioned", data={
+            "from_phase": "sdd", "to_phase": "dev", "evidence_seq": seq,
+            "workflow_id": _WORKFLOW_ID,
+        })
+        state = reduce_all()
+        assert state.phases["sdd"].status == PhaseStatus.COMPLETED
+        assert state.phases["dev"].status == PhaseStatus.PENDING
+
+
 # ---------------------------------------------------------------------------
 # E.6 — run_status derivation
 # ---------------------------------------------------------------------------

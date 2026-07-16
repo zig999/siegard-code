@@ -162,8 +162,15 @@ def _cl(make_event, tid, attempt=1):
 
 
 def _f(make_event, tid, reason, attempt=1):
-    make_event("task_failed", task_id=tid, attempt=attempt, data={
+    return make_event("task_failed", task_id=tid, attempt=attempt, data={
         "phase": "dev", "reason": reason, "retryable": True,
+    })
+
+
+def _sched(make_event, tid, previous_failure_seq, next_retry_at="2026-01-01T00:00:00+00:00"):
+    make_event("task_scheduled_retry", task_id=tid, data={
+        "phase": "dev", "next_retry_at": next_retry_at,
+        "backoff_seconds": 30, "previous_failure_seq": previous_failure_seq,
     })
 
 
@@ -268,3 +275,93 @@ class TestFalsePositiveReconciliation:
             orch_core.TaskStatus.READY, orch_core.TaskStatus.PENDING)
         # Superseded straggler is NOT a false-positive reconciliation.
         assert "reconciled_false_positive_completion" not in _anomaly_reasons(state)
+
+
+# ---------------------------------------------------------------------------
+# Poison A / Poison B — 2026-07-15 workflow audit, recommendation #1.
+#
+# Poison A: reap_stale_tasks / on_subagent_stop schedule a retry ATOMICALLY in the
+# same call that synthesizes the failure (task_failed -> task_scheduled_retry, no
+# orchestrator turn in between, F3/F4). If the worker was actually alive, its
+# genuine late task_completed then lands over SCHEDULED, not FAILED — the F2
+# reconciliation above only checked FAILED, so this permanently poisoned the log
+# (every future reduce_all() raised IllegalTransition forever). Fixed by extending
+# _handle_task_completed's reconciliation to accept SCHEDULED alongside FAILED.
+#
+# Poison B: schedule_retry_if_due reads state OUTSIDE the log lock (unlike
+# claim_task's check-and-append under one lock). Two racing schedulers (reaper /
+# SubagentStop hook / on_stop backstop) can both observe FAILED and both append
+# task_scheduled_retry for the same failure — the second one, replayed, found the
+# task already SCHEDULED and raised. Fixed by absorbing a duplicate
+# task_scheduled_retry whose previous_failure_seq is already recorded in
+# task.evidence.
+# ---------------------------------------------------------------------------
+
+class TestScheduledRetryReconciliation:
+
+    def test_poison_a_late_completion_over_scheduled_reconciles(self, orch_dir, make_event):
+        _ep(make_event)
+        _c(make_event, "t1")
+        _cl(make_event, "t1")
+        f = _f(make_event, "t1", "stale_timeout")      # reap synthesizes...
+        _sched(make_event, "t1", f.seq)                # ...and schedules retry atomically
+        _done(make_event, "t1")                        # live worker's genuine completion, late
+
+        state = orch_core.reduce_all()   # must NOT raise
+        assert state.tasks["t1"].status == orch_core.TaskStatus.COMPLETED
+        assert state.tasks["t1"].next_retry_at is None
+        assert "reconciled_false_positive_completion" in _anomaly_reasons(state)
+
+    def test_poison_a_worker_exited_variant_also_reconciles(self, orch_dir, make_event):
+        _ep(make_event)
+        _c(make_event, "t1")
+        _cl(make_event, "t1")
+        f = _f(make_event, "t1", "worker_exited_without_terminal")
+        _sched(make_event, "t1", f.seq)
+        _done(make_event, "t1")
+
+        state = orch_core.reduce_all()   # must NOT raise
+        assert state.tasks["t1"].status == orch_core.TaskStatus.COMPLETED
+
+    def test_poison_b_duplicate_scheduled_retry_absorbed(self, orch_dir, make_event):
+        _ep(make_event)
+        _c(make_event, "t1")
+        _cl(make_event, "t1")
+        f = _f(make_event, "t1", "worker_exited_without_terminal")
+        _sched(make_event, "t1", f.seq)   # scheduler A wins the race
+        _sched(make_event, "t1", f.seq)   # scheduler B, same failure — duplicate
+
+        state = orch_core.reduce_all()   # must NOT raise
+        assert state.tasks["t1"].status == orch_core.TaskStatus.SCHEDULED
+        assert "duplicate_scheduled_retry_absorbed" in _anomaly_reasons(state)
+
+    def test_scheduled_retry_for_unknown_failure_while_scheduled_still_raises(
+        self, orch_dir, make_event
+    ):
+        """Boundary: a second scheduled_retry NOT referencing the recorded failure
+        while already SCHEDULED is genuine corruption, not a benign duplicate."""
+        _ep(make_event)
+        _c(make_event, "t1")
+        _cl(make_event, "t1")
+        f = _f(make_event, "t1", "worker_exited_without_terminal")
+        _sched(make_event, "t1", f.seq)
+        _sched(make_event, "t1", 999999)   # bogus previous_failure_seq
+
+        try:
+            orch_core.reduce_all()
+            assert False, "expected IllegalTransition (unknown previous_failure_seq)"
+        except orch_core.IllegalTransition:
+            pass
+
+    def test_scheduled_retry_over_running_still_raises(self, orch_dir, make_event):
+        """Boundary: scheduling a retry for a task that never failed is corruption."""
+        _ep(make_event)
+        _c(make_event, "t1")
+        _cl(make_event, "t1")
+        _sched(make_event, "t1", 1)
+
+        try:
+            orch_core.reduce_all()
+            assert False, "expected IllegalTransition (task is running, not failed)"
+        except orch_core.IllegalTransition:
+            pass

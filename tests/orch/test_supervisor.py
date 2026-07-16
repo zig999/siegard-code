@@ -49,10 +49,10 @@ def _seed_active_phase(orch_core, phase="dev", wf="wf-sup"):
         data={"phase": phase, "deps": [], "tier": "standard", "type": "impl", "spec": "x"})
 
 
-def _decide(orch_core, clock, policy=None):
+def _decide(orch_core, clock, policy=None, stale_config=None):
     state = orch_core.reduce_all()
     events = list(orch_core.read_events_filtered(event_type=None))
-    return supervisor.decide(state, events, clock.iso(), policy or {})
+    return supervisor.decide(state, events, clock.iso(), policy or {}, stale_config=stale_config)
 
 
 # --------------------------------------------------------------------------- detection
@@ -223,6 +223,97 @@ def test_config_override_max_resumes(tmp_orch, clock):
     d = _decide(orch_core, clock, policy={"max_auto_resumes": 1})
     assert d["escalate"] is True
     assert d["budget_remaining"] == 0
+
+
+# --------------------------------------------------------------------------- per-task threshold
+# Recommendation #5, 2026-07-15 workflow audit (A3 — "supervisor threshold incoherence").
+#
+# The activity guard used to reuse the flat ORCHESTRATOR_STALE_SECONDS (900s) for a
+# RUNNING task's silence window, instead of that task's OWN stale_threshold_seconds()
+# (task_type override — e.g. impl=1200s, test-run=1800s). A test-run silent for
+# 901-1800s is still healthy (well inside its own allowance) but read as "phase
+# silent" under the flat bound, spawning a false-positive second meta-orchestrator
+# while the first was still mid-dispatch — colliding with it.
+
+def _seed_running_task_type(orch_core, task_type, phase="dev", wf="wf-sup", tier="standard"):
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_declared",
+        data={"workflow_id": wf, "phases": [{"name": phase, "order": 1, "required": True}]})
+    orch_core.append_event(
+        agent="orchestrator", event_type="phase_entered",
+        data={"phase": phase, "order": 1, "workflow_id": wf})
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="task_created", task_id="tr_001",
+        data={"phase": phase, "deps": [], "tier": tier, "type": task_type, "spec": "x"})
+    orch_core.append_event(
+        agent="orchestrator-dev", event_type="task_claimed", task_id="tr_001",
+        data={"phase": phase, "worker_type": "u-be-qa", "worker_id": "w1"})
+
+
+def test_flat_900s_would_false_positive_on_healthy_test_run(tmp_orch, clock):
+    """Contrast case: WITHOUT the real stale_policy config (stale_config={}, falling
+    back to the plain Tier default of 300s for standard), a test-run silent 1000s
+    reads as phase-silent — proving the guard's threshold source actually matters,
+    not that it was always harmless."""
+    import orch_core
+    _seed_running_task_type(orch_core, "test-run")
+    clock.advance(1000)
+    d = _decide(orch_core, clock, stale_config={})
+    assert d["resume"] is True
+    assert d["reason"] == "stalled_no_heartbeat_no_task_activity"
+
+
+def test_real_config_suppresses_false_positive_for_test_run(tmp_orch, clock):
+    """Same task, same 1000s silence, but with the project's real stale_policy
+    override (test-run=1800s) passed as stale_config — main() always passes the
+    fully loaded config, never {}. 1000s < 1800s: the worker is healthy, still well
+    inside its own allowance. Must NOT resume."""
+    import orch_core
+    _seed_running_task_type(orch_core, "test-run")
+    clock.advance(1000)
+    real_config = orch_core.default_config()
+    d = _decide(orch_core, clock, stale_config=real_config)
+    assert d["resume"] is False
+    assert d["reason"] == "phase_tasks_active"
+
+
+def test_real_config_still_resumes_once_test_run_exceeds_its_own_1800s(tmp_orch, clock):
+    """The guard isn't just permissive — past the task's OWN threshold it still
+    triggers, proving this is a coherent bound swap, not a resume-suppression."""
+    import orch_core
+    _seed_running_task_type(orch_core, "test-run")
+    clock.advance(1801)
+    real_config = orch_core.default_config()
+    d = _decide(orch_core, clock, stale_config=real_config)
+    assert d["resume"] is True
+
+
+def test_impl_task_type_override_also_respected(tmp_orch, clock):
+    """impl=1200s override: 1000s silence must NOT resume (matches the reaper's own
+    bound for the exact same task_type, per stale_threshold_seconds' single-source
+    -of-truth contract)."""
+    import orch_core
+    _seed_running_task_type(orch_core, "impl")
+    clock.advance(1000)
+    real_config = orch_core.default_config()
+    d = _decide(orch_core, clock, stale_config=real_config)
+    assert d["resume"] is False
+    assert d["reason"] == "phase_tasks_active"
+
+
+def test_no_stale_config_defaults_to_tier_without_io(tmp_orch, clock, monkeypatch):
+    """decide() must stay pure: omitting stale_config must NOT trigger a real
+    load_config() file read from inside the 'pure, no I/O' function."""
+    import orch_core
+
+    def _boom(*a, **kw):
+        raise AssertionError("decide() must not call load_config() itself")
+
+    monkeypatch.setattr(supervisor, "load_config", _boom)
+    _seed_running_task_type(orch_core, "impl")
+    clock.advance(1000)
+    d = _decide(orch_core, clock)  # no stale_config passed -> defaults to {}
+    assert d["resume"] is True  # falls back to plain Tier default (300s for standard)
 
 
 # --------------------------------------------------------------------------- audit-only reduce

@@ -344,6 +344,38 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"from_phase":"sdd","to_phase":"dev","evidence_seq":<last_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
+**If `trigger == "u-improve"`:** close the spec_change_status loop exactly as Step 6 does — this
+branch never reaches Step 6, so without this the `improve-scope.json` written by `u-improve` stays
+`pending_spec` forever and `orchestrator-dev`'s R4 guard blocks indefinitely (no SDD work ever runs
+to advance it). Use the `phase_exit_approved` seq emitted two commands above as evidence:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type spec_pipeline_return \
+  --data '{"workflow_id":"<workflow_id>","session_id":"<workflow_id>","spec_change_status":"completed","operator":"orchestrator-sdd","evidence_seq":<phase_exit_approved_seq>}'
+
+python3 -c "
+import json, sys, os
+from datetime import datetime, timezone
+from pathlib import Path
+project_dir = os.environ.get('ORCH_PROJECT_DIR', '.')
+workflow_id = sys.argv[1]
+exit_seq = sys.argv[2]
+scope_path = Path(project_dir) / '.orch' / 'sessions' / workflow_id / 'improve-scope.json'
+if scope_path.exists():
+    scope = json.loads(scope_path.read_text())
+    scope['spec_change_status'] = 'completed'
+    scope['last_updated_by'] = 'orchestrator-sdd'
+    scope['last_updated_at'] = datetime.now(timezone.utc).isoformat()
+    scope['last_updated_evidence_seq'] = int(exit_seq) if exit_seq.isdigit() else exit_seq
+    scope_path.write_text(json.dumps(scope, indent=2))
+    print(json.dumps({'updated': True, 'path': str(scope_path), 'operator': 'orchestrator-sdd'}))
+else:
+    print(json.dumps({'updated': False, 'reason': 'file_not_found'}))
+" "<workflow_id>" "<phase_exit_approved_seq>"
+```
+
 Output:
 
 ```json
@@ -823,17 +855,14 @@ python3 .claude/skills/orch-infra/scripts/run_circuit_check.py
 
 If `status == "blocked"` (circuit tripped): output `{"status": "error", "last_seq": <last_seq>, "summary": "circuit breaker tripped during dispatch"}` and stop.
 
-Stop conditions (break loop — evaluated over the **workflow-scoped `sdd_tasks` set** from Step 1, never the raw global state):
-- No scoped tasks have `status = "ready"` → proceed to Step 6
-- All scoped sdd tasks are terminal → proceed to Step 6
-- Iteration ≥ 30 → emit escalation and stop:
-  ```bash
-  python3 .claude/skills/orch-log/scripts/append.py \
-    --agent orchestrator-sdd \
-    --event-type escalation \
-    --data '{"code":"E06_dispatch_loop_limit","severity":"critical","reason":"Dispatch loop reached safety limit of 30 iterations without convergence. Tasks may be stuck in ready/retry cycle.","evidence":[<last_seq>],"suggested_actions":["inspect log for tasks with status ready that are not progressing","check select_worker.py and worker agent definitions","reset stuck tasks manually and re-invoke"]}'
-  ```
-  Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached after 30 iterations"}` and stop
+**Iteration ≥ 30** → emit escalation and stop (checked here, first, so the mutations below never spend an iteration they can't afford):
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type escalation \
+  --data '{"code":"E06_dispatch_loop_limit","severity":"critical","reason":"Dispatch loop reached safety limit of 30 iterations without convergence. Tasks may be stuck in ready/retry cycle.","evidence":[<last_seq>],"suggested_actions":["inspect log for tasks with status ready that are not progressing","check select_worker.py and worker agent definitions","reset stuck tasks manually and re-invoke"]}'
+```
+Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached after 30 iterations"}` and stop
 
 **Heartbeat + stale reaping (conformance — orch-control UC-01/UC-02; mirrors orchestrator-dev 5.0):** at the start of every iteration emit an `orchestrator_heartbeat` so `detect_stale_orchestrator` (the `on_stop.py` backstop and `check_stale.py`) can tell a stalled orchestrator from a live one. Audit-only event (EV-20); it does not mutate task state. The `phase` value MUST equal the canonical `current_phase` (`sdd`) — `detect_stale_orchestrator` filters heartbeats by `data.phase == current_phase`.
 
@@ -845,18 +874,23 @@ python3 .claude/scripts/check_stale.py
 
 `check_stale.py` reaps `running` sdd tasks past their task-type threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The post-batch reaper at Step 5.4 remains the primary reaping point.
 
-**Retry re-queue:** for each `scheduled` task in the workflow-scoped `sdd_tasks` set with `next_retry_at <= now` (or null):
-
+**Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0), workflow-scoped:**
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type task_retried \
-  --task-id <task_id> \
-  --attempt <task.attempts + 1> \
-  --data '{"phase":"sdd","previous_attempt":<task.attempts>,"scheduled_retry_seq":<scheduled_retry_seq>}'
+python3 .claude/scripts/requeue_due_tasks.py --phase sdd --workflow-id "<workflow_id>" \
+  --protect-task-types spec-writer,spec-validator
 ```
+Promotes every `scheduled` task in the workflow-scoped `sdd_tasks` set whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>}`.
+
+`spec-writer`/`spec-validator` are excluded from the DLQ/reschedule resolution: the **Rejection cycle check** right below has its own attempt-count escalation (E05) at a threshold — `spec-validator` at `attempts >= 2` — *lower* than the tier's generic `max_attempts` (3 for standard). Left unprotected, this script would schedule another retry for a `spec-validator` at attempts=2 (still under 3), letting it reach attempt 3 and silently skip that human escalation.
+
+Run this — and the heartbeat/reaping block above it — **before** evaluating the stop conditions below; they mutate state the stop conditions read.
 
 After all syntheses, re-read state.
+
+**Stop conditions (break loop — evaluated over the workflow-scoped `sdd_tasks` set, against the state just re-read, i.e. post-mutation; never the raw global state):**
+- All scoped sdd tasks are terminal → proceed to Step 6
+- No scoped tasks have `status = "ready"` or `"running"`, AND `earliest_pending_retry_at` is non-null (from the requeue output above) → nothing to dispatch right now, but a task is legitimately waiting out its backoff, not stuck. Output `{"status": "blocked", "last_seq": <last_seq>, "summary": "waiting on scheduled retry backoff", "earliest_pending_retry_at": "<earliest_pending_retry_at>"}` and stop — busy-spinning here burns the 30-iteration budget without letting real time pass; re-invoking after the backoff elapses resumes normally.
+- No scoped tasks have `status = "ready"` (and the backoff case above does not apply) → proceed to Step 6
 
 **Rejection cycle check:**
 
