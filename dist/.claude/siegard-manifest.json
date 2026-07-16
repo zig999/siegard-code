@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.21.0",
+  "version": "2.22.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-16T01:39:15Z",
+  "generated_at": "2026-07-16T02:04:18Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,19 +57,19 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "ea9b2a9d222da18120779bb0de52ad8797b19ccfbf4992dbdb1bbd9aeb8a8bc2"
+      "sha256": "379506583140ead9cf3a1e504b62cf1e803c7fc219a444ea731f1761abc33867"
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "74ed84ead510bb33ff5040abf026c2f079d4cb678864db75791d9b9e88979c80"
+      "sha256": "51114cc3335a054c466650a1fcd6840476b3bde34e10fe65d47faf8c885d6b06"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "d52a3ab6ca9924a508bbee805f4cebf63d2a5dd158efc81d1733378b71d99d3f"
+      "sha256": "7726884f6c128f689c3e02aa9b752b6ff09725f9e456ed4451f1ea222d9c8b9b"
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "727c061f26bb28c2ce594b1786fbc0b596ba3496b1dd3900449c1d0243c1e767"
+      "sha256": "53ea64e4f660f6d38f357b24bc553167e511d4ef1408663fb47383dfb4519b68"
     },
     {
       "path": "agents/orchestrator.md",
@@ -233,7 +233,7 @@
     },
     {
       "path": "scripts/requeue_due_tasks.py",
-      "sha256": "124d8318f2bda5e9f2479508dd2c7e676ed0a7a0f2346096b130dcaccf6380fd"
+      "sha256": "426b0e54dfac366ebe700e89ef5b75412164a05eb8720f004aca418b69c59af8"
     },
     {
       "path": "scripts/respond_escalation.py",

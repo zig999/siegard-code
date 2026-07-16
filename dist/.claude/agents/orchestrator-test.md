@@ -264,9 +264,9 @@ python3 .claude/scripts/check_stale.py
 
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0):**
 ```bash
-python3 .claude/scripts/requeue_due_tasks.py --phase test --workflow-id "<workflow_id>"
+python3 .claude/scripts/requeue_due_tasks.py --phase test --workflow-id "<workflow_id>" --wait-window 90
 ```
-Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>}`.
+Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>, "waited_seconds": <float>}`. With `--wait-window 90`, when nothing is dispatchable and the earliest pending retry is due within 90s, the script waits it out and promotes IN THIS CALL (`waited_seconds` > 0) — reaching the backoff stop-condition below therefore means the wait is genuinely long, not a ~30s reap backoff that would otherwise cost a full supervisor cycle to resume.
 
 Run this — and the heartbeat/reaping block above it — **before** evaluating the stop conditions below; they mutate state the stop conditions read.
 

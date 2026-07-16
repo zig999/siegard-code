@@ -127,7 +127,7 @@ def test_phase_scoping_ignores_other_phases(tmp_orch):
 
     out = requeue_mod.requeue(now=_NOW, phase="review")
     assert out == {"retried": [], "scheduled": [], "dlq_routed": [],
-                   "earliest_pending_retry_at": None}
+                   "earliest_pending_retry_at": None, "waited_seconds": 0.0}
     state = orch_core.reduce_all()
     assert state.tasks["dev_t1"].status == orch_core.TaskStatus.FAILED  # untouched
 
@@ -139,7 +139,7 @@ def test_workflow_id_scoping_ignores_other_workflows(tmp_orch):
 
     out = requeue_mod.requeue(now=_NOW, phase="dev", workflow_id="wf-b")
     assert out == {"retried": [], "scheduled": [], "dlq_routed": [],
-                   "earliest_pending_retry_at": None}
+                   "earliest_pending_retry_at": None, "waited_seconds": 0.0}
     state = orch_core.reduce_all()
     assert state.tasks["t1"].status == orch_core.TaskStatus.FAILED  # untouched
 
@@ -156,7 +156,7 @@ def test_protected_task_type_left_failed_for_own_escalation(tmp_orch):
     out = requeue_mod.requeue(
         now=_NOW, phase="sdd", protect_task_types=frozenset({"spec-writer", "spec-validator"}))
     assert out == {"retried": [], "scheduled": [], "dlq_routed": [],
-                   "earliest_pending_retry_at": None}
+                   "earliest_pending_retry_at": None, "waited_seconds": 0.0}
     state = orch_core.reduce_all()
     assert state.tasks["sv1"].status == orch_core.TaskStatus.FAILED
 
@@ -171,3 +171,84 @@ def test_unprotected_spec_validator_would_be_rescheduled(tmp_orch):
     assert out["scheduled"] == ["sv1"]
     state = orch_core.reduce_all()
     assert state.tasks["sv1"].status == orch_core.TaskStatus.SCHEDULED
+
+
+# ---------------------------------------------------------------- wait window
+
+class TestWaitWindow:
+    """--wait-window (2026-07-15 post-fix audit, "double-resume tax").
+
+    A reap-and-schedule pass leaves the retry ~24-36s in the future; without the
+    wait, the invocation ends "blocked on backoff" and dispatching the retry
+    costs a full supervisor cycle (heartbeat threshold + tick interval, 15-25
+    min) or a second human invocation. Within the window, the tick waits out
+    the backoff and promotes in the same call.
+    """
+
+    def _sleep_recorder(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(requeue_mod.time, "sleep", calls.append)
+        return calls
+
+    def _schedule(self, orch_core, f, retry_at):
+        orch_core.append_event(
+            agent="o", event_type="task_scheduled_retry", task_id="t1",
+            data={"phase": "dev", "next_retry_at": retry_at, "backoff_seconds": 30,
+                  "previous_failure_seq": f.seq})
+
+    def test_waits_out_near_backoff_and_promotes_same_call(self, tmp_orch, monkeypatch):
+        import orch_core
+        sleeps = self._sleep_recorder(monkeypatch)
+        _seed_phase(orch_core)
+        f = _create_claim_fail(orch_core, "t1")
+        self._schedule(orch_core, f, "2026-01-01T00:00:30.000Z")  # due 30s after _NOW
+
+        out = requeue_mod.requeue(now=_NOW, wait_window_s=90.0)
+        assert out["retried"] == ["t1"]
+        assert out["waited_seconds"] == 30.0
+        assert sleeps == [30.0]
+        assert out["earliest_pending_retry_at"] is None
+        state = orch_core.reduce_all()
+        assert state.tasks["t1"].status in (orch_core.TaskStatus.READY, orch_core.TaskStatus.PENDING)
+
+    def test_does_not_wait_beyond_window(self, tmp_orch, monkeypatch):
+        import orch_core
+        sleeps = self._sleep_recorder(monkeypatch)
+        _seed_phase(orch_core)
+        f = _create_claim_fail(orch_core, "t1")
+        self._schedule(orch_core, f, "2026-01-01T00:05:00.000Z")  # due 300s after _NOW
+
+        out = requeue_mod.requeue(now=_NOW, wait_window_s=90.0)
+        assert out["retried"] == []
+        assert out["waited_seconds"] == 0.0
+        assert sleeps == []
+        assert out["earliest_pending_retry_at"] == "2026-01-01T00:05:00.000Z"
+
+    def test_does_not_wait_when_work_is_dispatchable(self, tmp_orch, monkeypatch):
+        """A READY sibling means the loop has real work — never block it."""
+        import orch_core
+        sleeps = self._sleep_recorder(monkeypatch)
+        _seed_phase(orch_core)
+        f = _create_claim_fail(orch_core, "t1")
+        self._schedule(orch_core, f, "2026-01-01T00:00:30.000Z")
+        orch_core.append_event(
+            agent="orchestrator", event_type="task_created", task_id="t2",
+            data={"phase": "dev", "tier": "standard", "type": "impl", "spec": "s",
+                  "deps": [], "workflow_id": "wf-req"})  # promotes to READY
+
+        out = requeue_mod.requeue(now=_NOW, wait_window_s=90.0)
+        assert sleeps == []
+        assert out["waited_seconds"] == 0.0
+        assert out["earliest_pending_retry_at"] == "2026-01-01T00:00:30.000Z"
+
+    def test_default_is_disabled(self, tmp_orch, monkeypatch):
+        import orch_core
+        sleeps = self._sleep_recorder(monkeypatch)
+        _seed_phase(orch_core)
+        f = _create_claim_fail(orch_core, "t1")
+        self._schedule(orch_core, f, "2026-01-01T00:00:30.000Z")
+
+        out = requeue_mod.requeue(now=_NOW)
+        assert sleeps == []
+        assert out["retried"] == []
+        assert out["waited_seconds"] == 0.0

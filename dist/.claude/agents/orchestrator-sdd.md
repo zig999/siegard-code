@@ -860,7 +860,7 @@ If `status == "blocked"` (circuit tripped): output `{"status": "error", "last_se
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type escalation \
-  --data '{"code":"E06_dispatch_loop_limit","severity":"critical","reason":"Dispatch loop reached safety limit of 30 iterations without convergence. Tasks may be stuck in ready/retry cycle.","evidence":[<last_seq>],"suggested_actions":["inspect log for tasks with status ready that are not progressing","check select_worker.py and worker agent definitions","reset stuck tasks manually and re-invoke"]}'
+  --data '{"code":"E06_dispatch_loop_limit","phase":"sdd","severity":"critical","reason":"Dispatch loop reached safety limit of 30 iterations without convergence. Tasks may be stuck in ready/retry cycle.","evidence":[<last_seq>],"suggested_actions":["inspect log for tasks with status ready that are not progressing","check select_worker.py and worker agent definitions","reset stuck tasks manually and re-invoke"]}'
 ```
 Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached after 30 iterations"}` and stop
 
@@ -877,9 +877,9 @@ python3 .claude/scripts/check_stale.py
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0), workflow-scoped:**
 ```bash
 python3 .claude/scripts/requeue_due_tasks.py --phase sdd --workflow-id "<workflow_id>" \
-  --protect-task-types spec-writer,spec-validator
+  --protect-task-types spec-writer,spec-validator --wait-window 90
 ```
-Promotes every `scheduled` task in the workflow-scoped `sdd_tasks` set whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>}`.
+Promotes every `scheduled` task in the workflow-scoped `sdd_tasks` set whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>, "waited_seconds": <float>}`. With `--wait-window 90`, when nothing is dispatchable and the earliest pending retry is due within 90s, the script waits it out and promotes IN THIS CALL (`waited_seconds` > 0) — reaching the backoff stop-condition below therefore means the wait is genuinely long, not a ~30s reap backoff that would otherwise cost a full supervisor cycle to resume.
 
 `spec-writer`/`spec-validator` are excluded from the DLQ/reschedule resolution: the **Rejection cycle check** right below has its own attempt-count escalation (E05) at a threshold — `spec-validator` at `attempts >= 2` — *lower* than the tier's generic `max_attempts` (3 for standard). Left unprotected, this script would schedule another retry for a `spec-validator` at attempts=2 (still under 3), letting it reach attempt 3 and silently skip that human escalation.
 
@@ -903,7 +903,7 @@ Escalation:
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type escalation \
-  --data '{"code":"E05_rejection_cycle_limit","severity":"critical","reason":"<task_id> has exceeded rejection cycle limit (<n> attempts)","evidence":[<task_evidence_seqs>],"suggested_actions":["inspect spec for <domain>","manually resolve and emit human_response to resume"]}'
+  --data '{"code":"E05_rejection_cycle_limit","phase":"sdd","severity":"critical","reason":"<task_id> has exceeded rejection cycle limit (<n> attempts)","evidence":[<task_evidence_seqs>],"suggested_actions":["inspect spec for <domain>","manually resolve and emit human_response to resume"]}'
 ```
 
 Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "rejection cycle limit reached for <task_id>"}` and stop.

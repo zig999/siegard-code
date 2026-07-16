@@ -98,3 +98,70 @@ class TestReviewSMQualifies:
             "all_verdicts_approved": True, "any_severe_findings": False,
         })
         assert r.name == "auto_approve"
+
+
+class TestE18SynthesizedResponseContract:
+    """E18 auto-approval payload contract (2026-07-15 post-fix audit, 5.1).
+
+    The synthesized human_response documented in orchestrator-review.md MUST carry
+    escalation_seq — it is a REQUIRED field of human_response, so the payload the
+    prompt previously prescribed was rejected by _validate_event_data at append
+    time: the 'skip the human gate' feature deterministically degraded into a
+    manual gate plus a mid-flow error. These tests pin (a) the documented payload
+    template and (b) the functional round-trip: E18 -> synthesized response ->
+    escalation resolved, run_status back to active.
+    """
+
+    REVIEW_MD = ROOT / "dist/.claude/agents/orchestrator-review.md"
+
+    def _auto_approve_block(self):
+        text = self.REVIEW_MD.read_text(encoding="utf-8")
+        start = text.index('If `$ACTION == "auto_approve"`')
+        end = text.index("Skip the E99 escalation", start)
+        return text[start:end]
+
+    def test_documented_payload_template_carries_escalation_seq(self):
+        block = self._auto_approve_block()
+        response_payloads = [
+            line for line in block.splitlines()
+            if "human_response" not in line and '"auto_approved":true' in line
+        ]
+        assert response_payloads, "synthesized human_response payload not found in auto-approve block"
+        for payload in response_payloads:
+            assert '"escalation_seq"' in payload, (
+                "orchestrator-review.md auto-approve human_response payload lost the "
+                "required escalation_seq field (append would fail validation and the "
+                "auto-approval silently degrades into a manual gate)"
+            )
+
+    def test_synthesized_response_without_escalation_seq_is_rejected(self, orch_dir):
+        """Enshrines WHY the field is load-bearing: the pre-fix payload fails append."""
+        import orch_core
+        import pytest
+        with pytest.raises(orch_core.EventValidationError):
+            orch_core.append_event(
+                agent="orchestrator-review", event_type="human_response",
+                data={"action": "approve", "auto_approved": True,
+                      "reason": "micro_unanimous_clean",
+                      "synthesized_by": "orchestrator-review", "phase": "review"})
+
+    def test_e18_then_synthesized_response_resolves_escalation(self, orch_dir):
+        """Functional round-trip of the documented sequence: the E18 escalation
+        sets run_status=escalated; the synthesized response citing its seq
+        resolves it in the same invocation — no human required."""
+        import orch_core
+        e18 = orch_core.append_event(
+            agent="orchestrator-review", event_type="escalation",
+            data={"code": "E18_auto_approval_granted", "severity": "info",
+                  "reason": "strict gate met", "evidence": [],
+                  "options": ["override_via_human_response: action=return_to_dev"],
+                  "suggested_actions": []})
+        assert orch_core.reduce_all().run_status == "escalated"
+        orch_core.append_event(
+            agent="orchestrator-review", event_type="human_response",
+            data={"escalation_seq": e18.seq, "action": "approve",
+                  "auto_approved": True, "reason": "micro_unanimous_clean",
+                  "synthesized_by": "orchestrator-review", "phase": "review"})
+        state = orch_core.reduce_all()
+        assert state.run_status == "active"
+        assert state.escalation is None

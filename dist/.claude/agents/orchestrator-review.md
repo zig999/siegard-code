@@ -487,9 +487,9 @@ python3 .claude/scripts/check_stale.py
 
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0):**
 ```bash
-python3 .claude/scripts/requeue_due_tasks.py --phase review --workflow-id "<workflow_id>"
+python3 .claude/scripts/requeue_due_tasks.py --phase review --workflow-id "<workflow_id>" --wait-window 90
 ```
-Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>}`.
+Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>, "waited_seconds": <float>}`. With `--wait-window 90`, when nothing is dispatchable and the earliest pending retry is due within 90s, the script waits it out and promotes IN THIS CALL (`waited_seconds` > 0) — reaching the backoff stop-condition below therefore means the wait is genuinely long, not a ~30s reap backoff that would otherwise cost a full supervisor cycle to resume.
 
 Run this — and the heartbeat/reaping block above it — **before** evaluating the stop conditions below; they mutate state the stop conditions read.
 
@@ -795,7 +795,9 @@ DISQUALIFIED_BY=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(
 
 **If `$ACTION == "auto_approve"`:**
 
-1. Emit the audit-trail escalation:
+1. Emit the audit-trail escalation and capture its `seq` from the printed event JSON
+   (`append.py` prints the appended event on success — extract the top-level `"seq"` value
+   as `$E18_SEQ`):
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -804,13 +806,18 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"code":"E18_auto_approval_granted","severity":"info","reason":"<rationale from script>","evidence":[<completed review task seqs>],"options":["override_via_human_response: action=return_to_dev"],"suggested_actions":["operator may override by appending a human_response with action=return_to_dev within the same workflow"]}'
 ```
 
-2. Emit the synthesized human_response (the orchestrator stands in for the human when the strict gate is met):
+2. Emit the synthesized human_response (the orchestrator stands in for the human when the
+   strict gate is met). `escalation_seq` is a REQUIRED field of `human_response` — it MUST
+   be `$E18_SEQ` from step 1: it resolves the E18 in the reducer (clearing
+   `run_status=escalated`) and lets `classify_run_status.py` count the escalation as
+   resolved. Omitting it makes the append fail validation and the auto-approval silently
+   degrades into a manual gate:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type human_response \
-  --data '{"action":"approve","auto_approved":true,"reason":"micro_unanimous_clean","synthesized_by":"orchestrator-review","gate_evidence":<evidence_obj from script>,"phase":"review"}'
+  --data '{"escalation_seq":<$E18_SEQ>,"action":"approve","auto_approved":true,"reason":"micro_unanimous_clean","synthesized_by":"orchestrator-review","gate_evidence":<evidence_obj from script>,"phase":"review"}'
 ```
 
 3. Skip the E99 escalation entirely and proceed directly to Step 6.

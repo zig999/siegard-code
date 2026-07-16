@@ -288,10 +288,18 @@ Stop.
 ```
 Stop.
 
-**If `workflow_type == "improve"` AND `spec_change_status == "not_required"`:**
+**If `workflow_type == "improve"` AND `spec_change_status` is `"not_required"` OR `"divergence_accepted"`:**
 
-No SDD phase ran for this improve flow — skip manifest validation. Derive `stack` from CLAUDE.md
-and set fixed handoff context for a targeted improvement:
+Two cases share this fast path, both meaning "no fresh handoff-manifest exists and none is coming":
+- `not_required` — no SDD phase ran for this improve flow.
+- `divergence_accepted` — the SDD pipeline terminated fatally and a human explicitly accepted
+  implementing without the spec update (the `E_r4_spec_pipeline_failed` suggested action, set via
+  `fix_stuck_improve.py --action accept_divergence`). Routing this through the manifest gate below
+  would dead-end on the manifest that fatal SDD never produced — or worse, silently consume a
+  STALE manifest from an earlier workflow (wrong stack/dev_impact/changed_files).
+
+Skip manifest validation. Derive `stack` from CLAUDE.md and set fixed handoff context for a
+targeted improvement:
 
 ```bash
 python3 -c "
@@ -780,9 +788,9 @@ python3 .claude/scripts/check_stale.py
 
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit):**
 ```bash
-python3 .claude/scripts/requeue_due_tasks.py --phase dev --workflow-id "<workflow_id>"
+python3 .claude/scripts/requeue_due_tasks.py --phase dev --workflow-id "<workflow_id>" --wait-window 90
 ```
-Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet — a worker-reported failure whose Step 5.5 never ran because a prior turn ended first — by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>}`.
+Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet — a worker-reported failure whose Step 5.5 never ran because a prior turn ended first — by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>, "waited_seconds": <float>}`. With `--wait-window 90`, when nothing is dispatchable and the earliest pending retry is due within 90s, the script waits it out and promotes IN THIS CALL (`waited_seconds` > 0) — reaching the backoff stop-condition below therefore means the wait is genuinely long, not a ~30s reap backoff that would otherwise cost a full supervisor cycle to resume.
 
 Run this — and the two blocks above it — **before** evaluating the stop conditions below. They mutate state that the stop conditions read; checking "no ready tasks" against state captured before these mutations is exactly the bug this fix closes: a due retry that would have been promoted right here instead got silently skipped, and the loop bounced between here and Step 6 until the iteration cap fired a spurious error.
 

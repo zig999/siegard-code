@@ -90,3 +90,29 @@ class TestRequeueScriptCalledBeforeStopConditions:
             "this exclusion requeue_due_tasks.py would rescheduled it instead, "
             "silently skipping the human escalation"
         )
+
+
+class TestWaitWindowWiring:
+    """--wait-window 90 (2026-07-15 post-fix audit, "double-resume tax"): each
+    orchestrator's requeue call must wait out a near-due backoff in-turn instead
+    of stopping "blocked on backoff" ~30s before the retry is due — that stop
+    cost a full supervisor cycle (heartbeat threshold + tick interval, 15-25 min)
+    or a second human invocation just to run the promotion."""
+
+    def test_each_requeue_call_passes_wait_window(self):
+        for name, text in _TEXT.items():
+            call_lines = "\n".join(
+                line for line in text.splitlines()
+                if "requeue_due_tasks.py" in line or "--wait-window" in line
+            )
+            assert "--wait-window 90" in call_lines, (
+                f"orchestrator-{name}.md's requeue_due_tasks.py call must pass "
+                "--wait-window 90"
+            )
+
+    def test_output_contract_documents_waited_seconds(self):
+        for name, text in _TEXT.items():
+            assert "waited_seconds" in text, (
+                f"orchestrator-{name}.md must document the waited_seconds output "
+                "field so the LLM does not treat the extra key as an error"
+            )
