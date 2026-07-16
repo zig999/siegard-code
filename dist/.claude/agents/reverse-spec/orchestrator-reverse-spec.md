@@ -111,7 +111,7 @@ Fullstack project detected. Which side to process first?
 
 ### Step 2: Check mode (new vs resume)
 
-`{SPECS_DIR}/log-reverse-spec.md` is the authoritative state signal (P1 — log is truth). Check it first.
+`{SPECS_DIR}/log-reverse-spec.md` is the authoritative state signal for THIS pipeline. Check it first. CAVEAT (2026-07-15 post-fix audit, 5.5): this is a free-form Markdown side-file, NOT the engine's append-only event log — the reverse-spec pipeline runs entirely OUTSIDE the orchestration engine: no phase/task events, no heartbeats, no stale reaper, no retry, no supervisor coverage. A dead analyzer/writer subagent here is detected by nothing; recovery is manual. Engine integration begins only at the /u-spec handoff (`_meta/origin-reverse-spec.md`).
 
 | log exists | specs/ exists | analysis-report exists | Mode |
 |------------|---------------|----------------------|------|

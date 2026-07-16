@@ -104,10 +104,17 @@ def advise(
 
 
 def compute(workflow_id: str | None = None, loop_interval: str | None = None) -> dict:
-    """Read the log and derive the recommendation. workflow_id is observability only —
-    the log is single per project (mirrors supervisor_tick)."""
+    """Read the log and derive the recommendation. transitions_count is scoped to
+    workflow_id when given: the per-project log outlives workflows, and a global
+    count made the SECOND workflow's first transition read as count > 1 →
+    "not_first_transition" — the detach on-ramp silently never fired again for
+    that project (2026-07-15 post-fix audit, M4). phase_transitioned carries
+    workflow_id as a required field; events without it (legacy logs) stay counted."""
     state = reduce_all()
-    transitions = read_events_filtered(event_type=_PHASE_TRANSITIONED)
+    transitions = [
+        e for e in read_events_filtered(event_type=_PHASE_TRANSITIONED)
+        if workflow_id is None or e.data.get("workflow_id") in (None, workflow_id)
+    ]
     interval = loop_interval or load_config().get("supervisor_policy", {}).get(
         "loop_interval", "5m"
     )
@@ -121,7 +128,9 @@ def compute(workflow_id: str | None = None, loop_interval: str | None = None) ->
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Supervision detach-point advice (pure log).")
-    ap.add_argument("--workflow-id", default=None, help="Workflow id (observability only).")
+    ap.add_argument("--workflow-id", default=None,
+                    help="Scope transitions_count to this workflow (prior workflows in a "
+                         "shared log must not suppress the on-ramp).")
     ap.add_argument("--loop-interval", default=None, help="/loop interval, e.g. 5m (default 5m).")
     args = ap.parse_args()
     print(json.dumps(compute(args.workflow_id, args.loop_interval)))

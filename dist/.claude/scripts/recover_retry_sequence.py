@@ -36,7 +36,7 @@ from pathlib import Path
 
 def _early_resolve_project_dir() -> Path:
     for i, arg in enumerate(sys.argv[1:], 1):
-        if arg in ("--project-dir", "-project-dir") and i < len(sys.argv):
+        if arg in ("--project-dir", "-project-dir") and i + 1 < len(sys.argv):
             return Path(sys.argv[i + 1]).resolve()
         if arg.startswith("--project-dir="):
             return Path(arg.split("=", 1)[1]).resolve()

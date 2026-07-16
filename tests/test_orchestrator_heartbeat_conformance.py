@@ -79,3 +79,33 @@ def test_no_in_prompt_stale_synthesis(filename, agent):
         f"{filename} still synthesizes task_failed(stale_timeout) in-prompt "
         "(F-03 violation) — reap via check_stale.py instead"
     )
+
+
+class TestCheckpointBlindTaskTypes:
+    """2026-07-15 post-fix audit: planning and spec-triage dispatch prompts had NO
+    progress-checkpoint instructions — those tasks rode their whole stale window
+    (900s / 600s) in total silence, forcing the large thresholds that set every
+    liveness-detection floor. Their dispatch prompts must now carry the same
+    mandatory task_progress checkpoint block the impl/spec/test/review prompts have.
+    """
+
+    def _text(self, name):
+        from pathlib import Path
+        root = Path(__file__).parent.parent / "dist" / ".claude" / "agents"
+        return (root / name).read_text(encoding="utf-8")
+
+    def test_spec_triage_prompt_has_checkpoints(self):
+        text = self._text("orchestrator-sdd.md")
+        idx = text.index("subagent_type: u-spec-triage")
+        block = text[idx:idx + 3000]
+        assert '"checkpoint":"context_loaded"' in block
+        assert '"checkpoint":"classification_complete"' in block
+
+    def test_planner_prompts_have_checkpoints(self):
+        text = self._text("orchestrator-dev.md")
+        assert '"checkpoint":"specs_loaded"' in text
+        assert '"checkpoint":"contracts_drafted"' in text
+        # the parallel-planners path must reference the same block explicitly:
+        idx = text.index("dispatch_parallel_planners")
+        par_block = text[idx:idx + 6000]
+        assert "Progress checkpoints" in par_block

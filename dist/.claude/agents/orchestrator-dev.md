@@ -535,6 +535,7 @@ Spawn **both planners in a single response turn** (two parallel Agent tool calls
 - FE: `subagent_type: "u-fe-planner"`, `ORCH_TASK_ID=dev_<workflow_id>_planning_fe`, write to `<session_dir>/backlog/backlog_fe.json`
 - Each planner prompt must include: ORCH_TASK_ID, ORCH_ATTEMPT, ORCH_WORKER_ID, SPECS_DIR, ORCH_PROJECT_DIR, SESSION_DIR, nesting_depth, handoff_type, changed_files, dev_impact, the original requirement text (Rec A — verbatim `.requirement` from `<session_dir>/triage.json`, or `""` if absent), the change-scope line (`Change scope: <scope_domains>` — same wording as the single-planner prompt below; L4), and explicit instruction to scope tasks to its own stack only (no cross-stack tasks)
 - Each planner must `Emit task_completed with artifacts: [<session_dir>/backlog/backlog_{be|fe}.json] when done`
+- Each planner prompt must include the same mandatory `Progress checkpoints` block as the single-planner prompt below (`specs_loaded` after reading inputs, `contracts_drafted` before writing backlog files) — a silent planner otherwise rides its whole 900s stale window undetectable
 
 Wait for both planners to return. Re-read state.
 
@@ -644,6 +645,14 @@ Spawn via Agent tool:
   Write backlog.md  to: <session_dir>/backlog/backlog.md
   Write individual TC files to: <session_dir>/backlog/tc-NNN.md
   Emit task_completed with artifacts: [<session_dir>/backlog/backlog.json] when done.
+
+  Progress checkpoints (mandatory — emit before proceeding to each next step; without
+  them the whole planning run rides its 900s stale window in total silence and a
+  stalled planner is indistinguishable from a working one):
+    1. After reading the specs/manifest/scope inputs:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"dev","checkpoint":"specs_loaded"}'
+    2. After drafting the Task Contracts, before writing the backlog files:
+       python3 .claude/skills/orch-log/scripts/append.py --agent $ORCH_WORKER_ID --event-type task_progress --task-id $ORCH_TASK_ID --attempt $ORCH_ATTEMPT --data '{"phase":"dev","checkpoint":"contracts_drafted"}'
   ```
 
   Read `<requirement_text>` from `<session_dir>/triage.json` (`.requirement`) before spawning; pass `""` when triage.json is absent (e.g. a `/u-spec` greenfield run without a triage requirement).
@@ -799,7 +808,8 @@ After all syntheses, re-read state (re-run `reduce.py`).
 **Stop conditions (evaluated against the state just re-read, i.e. post-mutation):**
 - All dev tasks terminal → proceed to Step 6
 - No tasks with `status = "ready"` or `"running"`, AND `earliest_pending_retry_at` is non-null (from the requeue output above) → nothing to dispatch right now, but a task is legitimately waiting out its backoff, not stuck. Output `{"status": "blocked", "last_seq": <last_seq>, "summary": "waiting on scheduled retry backoff", "earliest_pending_retry_at": "<earliest_pending_retry_at>"}` and stop. **Do not** keep iterating — an empty-batch iteration costs no wall-clock time worth mentioning, so busy-spinning here never lets real time pass; it only burns the 30-iteration budget toward the safety-limit error above for a condition that isn't actually stuck. Re-invoking after `earliest_pending_retry_at` has passed resumes normally: the next Step 5.0 pass promotes it via `requeue_due_tasks.py` before this check is ever reached.
-- No tasks with `status = "ready"` (and the backoff case above does not apply) → proceed to Step 6
+- No tasks with `status = "ready"`, AND at least one task has `status = "running"` → nothing to dispatch, and the running worker's task is still inside its liveness window (Step 5.0's `check_stale.py` ran in THIS iteration — any running task past its own stale threshold would already have been reaped and rescheduled above). Output `{"status": "blocked", "last_seq": <last_seq>, "summary": "waiting on in-flight worker liveness window"}` and stop. **Do not** keep iterating — iterating cannot make wall-clock time pass, and for long windows (`test-run` = 1800s) the 30-iteration budget structurally burns out BEFORE the reaper is allowed to fire, producing the spurious safety-limit error plus a full supervisor recovery cycle. The SubagentStop hook synthesizes the terminal once the window expires, or the next invocation's Step 5.0 reaps it; the supervisor resumes after the task's own threshold.
+- No tasks with `status = "ready"` (and neither case above applies) → proceed to Step 6
 
 #### 5.1 — Select batch
 

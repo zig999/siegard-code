@@ -221,3 +221,57 @@ class TestClassifyRunStatus:
         result = _run(tmp_orch)
         assert result["run_status"] == "failed"
         assert result["active_escalation"]["code"] == "E07_planning_failed"
+
+
+# ------------------------------------------------ --project-dir binding (M1)
+
+class TestProjectDirBinding:
+    """--project-dir was silently ignored (2026-07-15 post-fix audit, M1):
+    ORCH_DIR/LOG_PATH bind when orch_core is imported, but the env var was set
+    inside evaluate() — after the import. The CLI always read ./.orch of the
+    CWD and reported a confident healthy verdict for the wrong (possibly
+    missing) log. Now the flag is resolved BEFORE the import, and a missing
+    log is an explicit log_missing error instead of an empty-log 'healthy'."""
+
+    def _run_cli(self, project_dir, cwd):
+        import subprocess, sys as _sys
+        script = Path(__file__).resolve().parents[2] / "dist" / ".claude" / "scripts" / "classify_run_status.py"
+        return subprocess.run(
+            [_sys.executable, str(script), "--project-dir", str(project_dir)],
+            capture_output=True, text=True, cwd=str(cwd),
+            env={k: v for k, v in __import__("os").environ.items()
+                 if k != "ORCH_PROJECT_DIR"},
+        )
+
+    def test_missing_log_reports_log_missing_not_healthy(self, tmp_path):
+        empty_project = tmp_path / "no-orch-here"
+        empty_project.mkdir()
+        r = self._run_cli(empty_project, cwd=tmp_path)
+        assert r.returncode == 1
+        err = json.loads(r.stderr.strip())
+        assert err["reason"] == "log_missing"
+
+    def test_project_dir_flag_reads_the_target_log(self, tmp_path):
+        # Build a minimal log in the TARGET project via a SUBPROCESS (append.py):
+        # reloading orch_core in-process would swap the module object the whole
+        # suite (conftest path-restore included) holds references to.
+        import os, subprocess, sys as _sys
+        target = tmp_path / "target-project"
+        (target / ".orch").mkdir(parents=True)
+        append_py = (Path(__file__).resolve().parents[2] / "dist" / ".claude"
+                     / "skills" / "orch-log" / "scripts" / "append.py")
+        env = {k: v for k, v in os.environ.items() if k != "ORCH_PROJECT_DIR"}
+        env["ORCH_PROJECT_DIR"] = str(target)
+        r0 = subprocess.run(
+            [_sys.executable, str(append_py), "--agent", "x",
+             "--event-type", "escalation",
+             "--data", json.dumps({"code": "E99_human_approval_required",
+                                    "severity": "critical", "reason": "r",
+                                    "evidence": [], "suggested_actions": []})],
+            capture_output=True, text=True, cwd=str(target), env=env)
+        assert r0.returncode == 0, r0.stderr or r0.stdout
+        # CLI run from an UNRELATED cwd must still see the escalation:
+        r = self._run_cli(target, cwd=tmp_path)
+        assert r.returncode == 0, r.stderr
+        out = json.loads(r.stdout.strip())
+        assert out["run_status"] == "awaiting_human"

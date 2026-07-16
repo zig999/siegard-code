@@ -296,6 +296,27 @@ def test_quiescence_guard_does_not_mask_all_tasks_terminal_no_transition(tmp_pat
     assert "_sentinel" not in m2
 
 
+def test_quiescence_guard_does_not_skip_zero_required_phases(tmp_path):
+    """Gap 6a (2026-07-15 post-fix audit): with every phase declared
+    required:false, all(<empty required set>) is vacuously True while M3 still
+    derives "active" for the ACTIVE optional phase — the guard must mirror M3's
+    non-empty-required rule and keep the reap/cleanup backstop running."""
+    _append(tmp_path, "orchestrator", "phase_declared",
+            data={"workflow_id": "wf_opt", "phases": [{"name": "default", "order": 1, "required": False}]})
+    _append(tmp_path, "orchestrator", "phase_entered", data={"phase": "default", "order": 1, "workflow_id": "wf_opt"})
+    _append(tmp_path, "orchestrator", "task_created", "t_001",
+            data={"phase": "default", "deps": [], "tier": "standard", "type": "impl", "spec": "x"})
+    _append(tmp_path, "orchestrator", "task_claimed", "t_001",
+            data={"phase": "default", "worker_type": "test-worker", "worker_id": "w1"})
+    _emit(tmp_path, "w1", "completed", "t_001", data={"phase": "default", "artifacts": [], "summary": "done"})
+
+    _run_hook(tmp_path)
+    _poison_metrics_file(tmp_path)
+    _run_hook(tmp_path)  # log unchanged, phase ACTIVE + required:false -> must NOT skip
+    m2 = _read_metrics(tmp_path)
+    assert "_sentinel" not in m2
+
+
 def test_empty_workflow_run_status(tmp_path):
     """Workflow with no tasks has run_status=empty."""
     _append(tmp_path, "orchestrator", "phase_declared",

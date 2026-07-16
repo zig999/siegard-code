@@ -42,6 +42,26 @@ _CLAUDE_DIR = Path(__file__).resolve().parents[1]
 _LIB = _CLAUDE_DIR / "lib"
 sys.path.insert(0, str(_LIB))
 
+
+def _early_resolve_project_dir() -> Path:
+    """Resolve --project-dir BEFORE importing orch_core: ORCH_DIR/LOG_PATH bind at
+    module import, so setting ORCH_PROJECT_DIR inside evaluate() (as this script
+    previously did) had NO effect — the flag was silently ignored and the script
+    always read ./.orch of the CWD, confidently classifying the wrong (possibly
+    empty) log (2026-07-15 post-fix audit, M1)."""
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == "--project-dir" and i + 1 < len(sys.argv):
+            return Path(sys.argv[i + 1]).resolve()
+        if arg.startswith("--project-dir="):
+            return Path(arg.split("=", 1)[1]).resolve()
+    env = os.environ.get("ORCH_PROJECT_DIR")
+    if env:
+        return Path(env).resolve()
+    return Path(".").resolve()
+
+
+os.environ["ORCH_PROJECT_DIR"] = str(_early_resolve_project_dir())
+
 try:
     from orch_core import read_events, reduce_all_tolerant, TaskStatus
 except ImportError as exc:
@@ -155,7 +175,12 @@ def _dlq_summary(state, dlq_reasons: dict) -> dict:
 
 
 def evaluate(project_dir: str) -> dict:
-    os.environ["ORCH_PROJECT_DIR"] = project_dir
+    os.environ["ORCH_PROJECT_DIR"] = project_dir  # kept for programmatic callers; CLI binds earlier
+    import orch_core as _oc
+    if not _oc.LOG_PATH.exists():
+        # read_events on a missing log yields nothing — without this the script
+        # reported a confident "no_pending_escalation" for a log that isn't there.
+        raise FileNotFoundError(str(_oc.LOG_PATH))
     # Tolerant reduction (read-only): an illegal transition is recorded and skipped
     # instead of aborting, so historical/anomalous logs (e.g. a stale-reaped worker's
     # FAILED→completed straggler) stay readable. The engine still uses strict reduce_all.

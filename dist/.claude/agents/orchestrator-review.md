@@ -498,7 +498,8 @@ Re-read state after all syntheses.
 **Stop conditions (evaluated against the state just re-read, i.e. post-mutation):**
 - All review tasks terminal → proceed to Step 5
 - No tasks with `status = "ready"` or `"running"`, AND `earliest_pending_retry_at` is non-null (from the requeue output above) → nothing to dispatch right now, but a task is legitimately waiting out its backoff, not stuck. Output `{"status": "blocked", "last_seq": <last_seq>, "summary": "waiting on scheduled retry backoff", "earliest_pending_retry_at": "<earliest_pending_retry_at>"}` and stop — busy-spinning here burns the 30-iteration budget without letting real time pass; re-invoking after the backoff elapses resumes normally.
-- No tasks with `status = "ready"` (and the backoff case above does not apply) → proceed to Step 5
+- No tasks with `status = "ready"`, AND at least one task has `status = "running"` → nothing to dispatch, and the running worker's task is still inside its liveness window (Step 5.0's `check_stale.py` ran in THIS iteration — any running task past its own stale threshold would already have been reaped and rescheduled above). Output `{"status": "blocked", "last_seq": <last_seq>, "summary": "waiting on in-flight worker liveness window"}` and stop. **Do not** keep iterating — iterating cannot make wall-clock time pass, and for long windows (`test-run` = 1800s) the 30-iteration budget structurally burns out BEFORE the reaper is allowed to fire, producing the spurious safety-limit error plus a full supervisor recovery cycle. The SubagentStop hook synthesizes the terminal once the window expires, or the next invocation's Step 5.0 reaps it; the supervisor resumes after the task's own threshold.
+- No tasks with `status = "ready"` (and neither case above applies) → proceed to Step 5
 
 #### 4.1 — Select batch (dynamic concurrency by qa_mode)
 

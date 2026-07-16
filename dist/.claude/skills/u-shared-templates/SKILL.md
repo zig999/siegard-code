@@ -13,10 +13,10 @@ Resource bundle: inter-agent envelope contracts. Every envelope ships as a pair 
 | Envelope | Producer | Consumer |
 |---|---|---|
 | `handoff-manifest` | orchestrator-sdd | u-handoff-validator, dev orchestrators |
-| `handoff-receipt` | dev orchestrators | orchestrator-sdd |
+| `handoff-receipt` | NONE YET — event machinery shipped (orch_core `handoff_receipt`, prod-hardening task 08) but no emitter is wired; loop-closure audit not yet derivable | none |
 | `handoff-validation-envelope` | u-handoff-validator | dev orchestrators |
-| `improve-handoff-envelope` | /u-improve | u-spec-triage, orchestrator-sdd |
-| `be-to-fe-handoff` | u-be-developer | u-fe-developer |
+| `improve-handoff-envelope` | NONE — /u-improve writes only improve-scope.json (its SKILL.md forbids other artifacts); reserved contract, unwired | none |
+| `be-to-fe-handoff` | NONE — no agent references this pair; reserved contract, unwired | none |
 | `backlog` | planners | orchestrator-dev |
 | `task_contract` | planners | developers |
 | `delivery` | developers | QA workers |
@@ -27,11 +27,11 @@ Resource bundle: inter-agent envelope contracts. Every envelope ships as a pair 
 | `compliance-finding` | u-spec-compliance | orchestrator-sdd |
 | `security-finding` | u-security-reviewer | orchestrator-review |
 | `architecture-finding` | u-architecture-reviewer | orchestrator-review |
-| `cr` (`cr-template.yaml` + `cr.schema.yaml`) | any agent flagging a spec change | orchestrator-sdd |
+| `cr` (`cr-template.yaml` + `cr.schema.yaml`) | u-be-developer / u-fe-developer (STOP-on-spec-gap protocol) | NO automated consumer — no orchestrator reads `$SESSION_DIR/cr/`; the halt is conveyed by the worker's terminal event, the CR file is for the human operator (see E09 review path) |
 | `component-spec-gate-report` | component-spec-gate | orchestrator-dev |
 | `design-system-gate-report` | design-system gate | orchestrator-dev |
 | `fe-validate-report` | /u-fe-validate | user, orchestrator-dev |
-| `spec-changelog-notify` | orchestrator-sdd | downstream orchestrators |
+| `spec-changelog-notify` | NONE — no agent references this pair; reserved contract, unwired | none |
 | `ui-agent-output` | u-fe-ui | u-fe-developer |
 
 Non-pair files: `delivery-gate.md` (gate checklist consumed by orchestrator-dev).

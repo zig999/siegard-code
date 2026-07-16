@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.22.0",
+  "version": "2.23.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-16T02:04:18Z",
+  "generated_at": "2026-07-16T02:31:51Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,19 +57,19 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "379506583140ead9cf3a1e504b62cf1e803c7fc219a444ea731f1761abc33867"
+      "sha256": "3e39d7c24b9340497cfb516fbb34d3e592c5e6869ade65b60819cd0f438efa39"
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "51114cc3335a054c466650a1fcd6840476b3bde34e10fe65d47faf8c885d6b06"
+      "sha256": "e26029f36570202821e9579c2fa6255359e40a25dc47be3657ac1fd49932a8ef"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "7726884f6c128f689c3e02aa9b752b6ff09725f9e456ed4451f1ea222d9c8b9b"
+      "sha256": "36f7aa5ae216ac212e95b55a22883ea3f85c80c1b04203e91422882858e857b4"
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "53ea64e4f660f6d38f357b24bc553167e511d4ef1408663fb47383dfb4519b68"
+      "sha256": "a84b9b9b3c23f95991d6806d39b7e6a3342d6e465ddafa80cb9c580005d09e9a"
     },
     {
       "path": "agents/orchestrator.md",
@@ -77,7 +77,7 @@
     },
     {
       "path": "agents/reverse-spec/orchestrator-reverse-spec.md",
-      "sha256": "af1f54d28bba886701646fe9defc234363e4e17640771b7ed9f7be1114a88425"
+      "sha256": "1f4ee06eaebd5d60084445839f2e0194dfbd2c89d7c46ac5f895444f64f37321"
     },
     {
       "path": "agents/reverse-spec/u-reverse-spec-analyzer.md",
@@ -149,7 +149,7 @@
     },
     {
       "path": "commands/u-spec.md",
-      "sha256": "c222143f98932b8604186dbef74a029e44130be4398a274eac7f1dff71297ee4"
+      "sha256": "99dd8f2de5990a494dffcb65db0df22d4131d9696d7372a123d78051a62a2a96"
     },
     {
       "path": "commands/u-supervise.md",
@@ -157,7 +157,7 @@
     },
     {
       "path": "hooks/on_stop.py",
-      "sha256": "98bf55de47316de9ddd67fd5622200e9c850c7ef35bf18d40abe80f7e154d767"
+      "sha256": "00541cb7b5a6872dfea8de0a93a21e25715c38cfd83bd9cb4611c4068c2f4646"
     },
     {
       "path": "hooks/on_subagent_stop.py",
@@ -173,7 +173,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "10a59d4a27e266ec02c4eefcb21618db03e1bf2a6f75e142be1bd0c495b69ce2"
+      "sha256": "8d305d20e92bc143894bec5cee72472f20d6b79032f4192787568d96014ca958"
     },
     {
       "path": "lib/sm_runner.py",
@@ -193,7 +193,7 @@
     },
     {
       "path": "scripts/classify_run_status.py",
-      "sha256": "6402223fa1af77c0195c347c1686c20b387e1a31fbad1f14a18cf7e022b1a044"
+      "sha256": "a6f004c8f4f7a83d5079f913d800755fbae54a3535169bc4bd937703970ed056"
     },
     {
       "path": "scripts/dlq_triage.py",
@@ -229,7 +229,7 @@
     },
     {
       "path": "scripts/recover_retry_sequence.py",
-      "sha256": "18debd2778fe0abea37bee0b3bc40ef3f389942fc7b727496341186ee2c913cd"
+      "sha256": "88920fa01c9f711a4288fc6723705081f279c831d947c65f29351861fe4b3452"
     },
     {
       "path": "scripts/requeue_due_tasks.py",
@@ -241,7 +241,7 @@
     },
     {
       "path": "scripts/supervision_advice.py",
-      "sha256": "f8bb0f19ca8ebe54ebe9074096c87c620ba4e8a16fcc0c6137d014215b3f5522"
+      "sha256": "e1b347a2e682353abc56eff248f4e95a17af32d0e765c1667a9f78db44794056"
     },
     {
       "path": "scripts/supervisor_tick.py",
@@ -317,7 +317,7 @@
     },
     {
       "path": "skills/orch-state/scripts/detect_mode.py",
-      "sha256": "ea4f59db59b99f2c2adf02ffc8cdc916074b7062f97f7d83a01a1d0d86942701"
+      "sha256": "fe88643b8c95b2abb67fe48112e5c9d206df585bc112fbe97825590bb11b58b2"
     },
     {
       "path": "skills/orch-state/scripts/reduce.py",
@@ -633,7 +633,7 @@
     },
     {
       "path": "skills/u-shared-templates/SKILL.md",
-      "sha256": "eee34cc4068499d79f86c80f31df071c2a39db748c0f95a812ae730ef4920a52"
+      "sha256": "cdc5b5c0b4013b65cb8f04a912dac3e5c23fdb7496588925f7894033e3f12606"
     },
     {
       "path": "skills/u-shared-templates/architecture-finding.schema.yaml",

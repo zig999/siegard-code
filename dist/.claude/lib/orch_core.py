@@ -1274,13 +1274,36 @@ def _precond_phase_transitioned(data: dict, events: list[Event]) -> str | None:
         return "missing from_phase/to_phase"
     if (from_phase, to_phase) in _RETURN_TRANSITIONS:
         return None
+    # Evidence-scoping boundary (2026-07-15 post-fix audit, 1.3): every piece of
+    # gate evidence must POSTDATE from_phase's latest phase_entered. Unscoped
+    # whole-log lookups let (a) a re-entered phase's forward transition ride on
+    # its FIRST pass's approval — P11's Python guarantee degraded to prompt-trust
+    # exactly on the rework pass — and (b) the review->test human gate match ANY
+    # approve/E18 anywhere in a shared multi-workflow log, one approve satisfying
+    # every future review->test forever. workflow_id narrows the boundary when
+    # both events carry it; seq > boundary covers events that carry no
+    # workflow_id (human_response, escalation).
+    wf = data.get("workflow_id")
+    entered = last_event_where(
+        events,
+        lambda e: e.event_type == EventType.PHASE_ENTERED.value
+        and _evt_data(e).get("phase") == from_phase
+        and (wf is None or _evt_data(e).get("workflow_id") in (None, wf)),
+    )
+    boundary = entered.seq if entered is not None else 0
     approved = last_event_where(
         events,
         lambda e: e.event_type == EventType.PHASE_EXIT_APPROVED.value
-        and _evt_data(e).get("phase") == from_phase,
+        and _evt_data(e).get("phase") == from_phase
+        and e.seq > boundary
+        and (wf is None or _evt_data(e).get("workflow_id") in (None, wf)),
     )
     if approved is None:
-        return f"no phase_exit_approved for {from_phase!r} precedes the transition (P11/P7)"
+        return (
+            f"no phase_exit_approved for {from_phase!r} after its latest "
+            "phase_entered precedes the transition (P11/P7 — a re-entered phase "
+            "needs a FRESH approval; first-pass evidence is void after a return)"
+        )
     ev_seq = data.get("evidence_seq")
     if not isinstance(ev_seq, int) or not any_event_where(events, lambda e: e.seq == ev_seq):
         return f"evidence_seq {ev_seq!r} does not reference a prior event"
@@ -1288,17 +1311,20 @@ def _precond_phase_transitioned(data: dict, events: list[Event]) -> str | None:
         human_ok = last_event_where(
             events,
             lambda e: e.event_type == EventType.HUMAN_RESPONSE.value
-            and _evt_data(e).get("action") == "approve",
+            and _evt_data(e).get("action") == "approve"
+            and e.seq > boundary,
         )
         e18 = last_event_where(
             events,
             lambda e: e.event_type == EventType.ESCALATION.value
-            and str(_evt_data(e).get("code", "")).startswith("E18"),
+            and str(_evt_data(e).get("code", "")).startswith("E18")
+            and e.seq > boundary,
         )
         if human_ok is None and e18 is None:
             return (
                 "review->test requires a human_response action=approve "
-                "(or an E18 auto-approval) in the log (A1-F1)"
+                "(or an E18 auto-approval) after review's latest phase_entered "
+                "(A1-F1 — pre-entry or cross-workflow approvals do not count)"
             )
     return None
 

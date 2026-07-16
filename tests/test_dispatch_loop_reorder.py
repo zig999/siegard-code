@@ -116,3 +116,33 @@ class TestWaitWindowWiring:
                 f"orchestrator-{name}.md must document the waited_seconds output "
                 "field so the LLM does not treat the extra key as an error"
             )
+
+
+class TestInFlightLivenessStopCondition:
+    """test-run cap/threshold inversion (2026-07-15 post-fix audit): a ghost
+    RUNNING task (worker returned without a terminal, still inside its liveness
+    window) made the loop iterate toward the 30-iteration cap — for test-run
+    (1800s window) the cap structurally fired BEFORE the reaper was allowed to,
+    producing a spurious safety-limit error plus a full supervisor recovery
+    cycle. Each orchestrator must instead stop cleanly, deferring to the
+    SubagentStop hook / next Step 5.0 reap once the window expires."""
+
+    def test_each_orchestrator_stops_cleanly_on_in_flight_worker(self):
+        for name, text in _TEXT.items():
+            assert "waiting on in-flight worker liveness window" in text, (
+                f"orchestrator-{name}.md must stop cleanly (blocked) when nothing "
+                "is dispatchable and a running task is inside its liveness window, "
+                "instead of iterating toward the 30-iteration cap"
+            )
+
+    def test_stop_condition_cites_the_reaper_as_authority(self):
+        """The condition is sound ONLY because check_stale.py ran in the same
+        iteration (a running task past its threshold would already be reaped) —
+        the prompt must state that dependency, not restate threshold math."""
+        for name, text in _TEXT.items():
+            idx = text.index("waiting on in-flight worker liveness window")
+            context = text[max(0, idx - 1200):idx]
+            assert "check_stale.py" in context, (
+                f"orchestrator-{name}.md's in-flight stop condition must cite the "
+                "same-iteration check_stale.py pass as its soundness authority"
+            )

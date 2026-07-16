@@ -134,3 +134,57 @@ def test_compute_silent_after_second_transition(tmp_orch):
     d = advice.compute(workflow_id=_WF)
     assert d["recommended"] is False
     assert d["reason"] == "not_first_transition"
+
+
+# ------------------------------------------------- multi-workflow scoping (M4)
+
+def _transition_events(orch_core, wf, n):
+    for i in range(n):
+        orch_core.append_event(
+            agent="orchestrator-sdd", event_type="phase_declared",
+            data={"workflow_id": wf, "phases": [
+                {"name": "sdd", "order": 1, "required": True},
+                {"name": "dev", "order": 2, "required": True}]})
+        orch_core.append_event(
+            agent="orchestrator", event_type="phase_entered",
+            data={"phase": "sdd", "order": 1, "workflow_id": wf})
+        orch_core.append_event(
+            agent="orchestrator-sdd", event_type="phase_exit_approved",
+            data={"phase": "sdd", "criteria_met": ["c"], "next_phase": "dev",
+                  "workflow_id": wf})
+        seq = orch_core.reduce_all().last_seq
+        orch_core.append_event(
+            agent="orchestrator-sdd", event_type="phase_transitioned",
+            data={"from_phase": "sdd", "to_phase": "dev", "evidence_seq": seq,
+                  "workflow_id": wf})
+
+
+def test_prior_workflow_transitions_do_not_suppress_onramp(tmp_orch):
+    """M4 (2026-07-15 post-fix audit): with workflow A's transition already in
+    the shared log, workflow B's FIRST transition must still be advised as the
+    first — a global count reads 2 and the on-ramp never fires again."""
+    import orch_core
+    _transition_events(orch_core, "wf-old", 1)
+    _transition_events(orch_core, "wf-new", 1)
+
+    out = advice.compute(workflow_id="wf-new")
+    assert out["recommended"] is True
+    assert out["reason"] == "first_transition_pending_phases"
+
+
+def test_second_transition_of_same_workflow_still_antinag(tmp_orch):
+    import orch_core
+    _transition_events(orch_core, "wf-new", 2)
+    out = advice.compute(workflow_id="wf-new")
+    assert out["recommended"] is False
+    assert out["reason"] == "not_first_transition"
+
+
+def test_no_workflow_id_keeps_global_count(tmp_orch):
+    """Back-compat: without a workflow_id the count stays global."""
+    import orch_core
+    _transition_events(orch_core, "wf-old", 1)
+    _transition_events(orch_core, "wf-new", 1)
+    out = advice.compute()
+    assert out["recommended"] is False
+    assert out["reason"] == "not_first_transition"

@@ -46,16 +46,28 @@ Check the event log for existing workflow state:
 python3 .claude/skills/orch-state/scripts/detect_mode.py
 ```
 
-Output JSON fields: `mode` (`"new"` | `"resume"`), `workflow_id`, `last_seq`.
+Output JSON fields: `mode` (`"new"` | `"resume"` | `"completed"`), `workflow_id`, `last_seq`.
 
 Additional checks for reverse-engineering context:
 
 | Condition | Mode |
 |-----------|------|
 | No log / empty log | **new** |
-| Log has sdd phase events | **resume** |
+| Log has sdd phase events, workflow unfinished | **resume** |
+| Log has sdd phase events, every required phase COMPLETED | **completed** |
 | `{SPECS_DIR}/_meta/origin-reverse-spec.md` exists, no log | **reverse-eng review** |
 | `{SPECS_DIR}/_meta/merge-pending-review.md` exists, no log | **merge review** |
+
+**If `mode == "completed"`:** the previous workflow already finished — do NOT resume it and do
+NOT re-print its completion report. A new demand needs a fresh log. Output:
+
+```json
+{"status": "blocked", "reason": "previous_workflow_completed",
+ "summary": "workflow <workflow_id> is complete; archive the finished runtime before starting a new one",
+ "suggested_actions": ["run: python3 .claude/scripts/purge.py (orch-cleanup pre-conditions apply)",
+                        "then re-run /u-spec — mode will detect as new"]}
+```
+Stop.
 
 ---
 

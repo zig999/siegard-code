@@ -39,7 +39,14 @@ def _workflow_is_terminal(state) -> bool:
     """
     if not state.phases:
         return False
-    return all(p.status == PhaseStatus.COMPLETED for p in state.phases.values() if p.required)
+    required = [p for p in state.phases.values() if p.required]
+    # Non-empty guard mirrors M3 exactly (2026-07-15 post-fix audit, gap 6a): with
+    # every phase declared required:false, all(<empty>) is vacuously True while M3
+    # still derives "active" — the reap/cleanup backstop would go silent for a
+    # workflow the engine considers live.
+    if not required:
+        return False
+    return all(p.status == PhaseStatus.COMPLETED for p in required)
 
 
 def _detect_orphaned_phase(state) -> dict | None:
