@@ -15,6 +15,7 @@ Its sole purpose is to design, build, and refine agent and skill structures that
 siegard-code/
 ├── dist/              # Distribution root — production artifacts (see below)
 │   └── .claude/       # Copied manually into <target>/.claude/ (see Installation)
+├── releases/          # Versioned install archives (siegard-dist-vX.Y.Z.zip of dist/.claude)
 ├── docs-en/           # End-user documentation (English) for downstream projects
 ├── docs/              # Internal project documentation (diagrams, flow maps)
 ├── extras/            # Reference specs, architecture docs, event schemas — NOT published
@@ -27,7 +28,8 @@ siegard-code/
 
 | Path | Purpose | Write rule |
 |------|----------|------------|
-| `dist/` | Published artifacts consumed by target projects | Only complete, validated artifacts |
+| `dist/` | Published artifacts consumed by target projects | Only complete, validated artifacts; nothing outside `.claude/` (self-containment — see Rules for `./dist`) |
+| `releases/` | Versioned install archives of `dist/.claude` | One zip per release tag, extraction-verified with `verify_install.py` before commit |
 | `docs-en/` | Human-readable docs shipped with the system | Update when commands/flows change |
 | `docs/` | Internal diagrams and flow maps | Freely editable |
 | `extras/` | Reference specs and architecture docs | Read-only during implementation — edit only when architecture changes |
@@ -355,13 +357,17 @@ All production-ready artifacts are located in `./dist`. Its contents are deploye
 ```
 dist/
 └── .claude/
-    ├── agents/        # orchestrator.md + phase orchestrators (orchestrator-sdd.md, etc.)
-    ├── commands/      # Entry-point commands (/u-spec, /u-dev, /u-improve, etc.)
-    ├── hooks/         # on_subagent_stop.py, on_stop.py
-    ├── lib/           # orch_core.py (shared library, no external deps)
-    ├── scripts/       # preflight.py, circuit_breaker.py, dlq_triage.py, gc_orphan_blobs.py
-    ├── settings.json  # Claude Code settings for target projects
-    └── skills/        # orch-log, orch-state, orch-report, phase-*-rules, u-* skills
+    ├── agents/              # orchestrator.md + phase orchestrators (orchestrator-sdd.md, etc.)
+    ├── claude-md-fragments/ # CLAUDE.md fragments the target author pastes at install time
+    ├── commands/            # Entry-point commands (/u-spec, /u-dev, /u-improve, etc.)
+    ├── hooks/               # on_subagent_stop.py, on_stop.py
+    ├── lib/                 # orch_core.py (shared library, no external deps)
+    ├── scripts/             # preflight.py, circuit_breaker.py, verify_install.py, etc.
+    ├── skills/              # orch-log, orch-state, orch-report, phase-*-rules, u-* skills
+    ├── ESCALATION_CODES.md          # Escalation code catalog (E01..E99)
+    ├── claude-md-target-template.md # Template for the target project's CLAUDE.md
+    ├── settings.json                # Claude Code settings for target projects
+    └── siegard-manifest.json        # Versioned inventory (SHA-256 per file) — see Installation
 ```
 
 ### Rules for `./dist`
@@ -370,6 +376,7 @@ dist/
 * Every artifact placed in `./dist` is considered **published** — it must be complete and schema-compliant
 * Do not place work-in-progress artifacts in `./dist`
 * Skills, agents, and commands outside `./dist` are considered **draft** until explicitly promoted
+* **Self-containment:** everything a target project needs MUST live inside `dist/.claude/` — the manual copy takes nothing else. No shipped artifact may reference a path under the lab's `dist/` tree; write references `.claude/`-relative so they resolve inside the copy. Enforced by `tests/test_layer_dist_self_containment.py`. Nothing else may live directly under `dist/` (only `.claude/` and the lab-side `.gitignore`)
 
 ---
 
