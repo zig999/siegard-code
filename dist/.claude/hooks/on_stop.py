@@ -24,6 +24,24 @@ from orch_core import (
 )
 
 
+def _workflow_is_terminal(state) -> bool:
+    """True iff every REQUIRED declared phase is COMPLETED — the same rule M3 uses
+    to derive run_status == "completed" (orch_core._m3_derive_run_status), re-derived
+    here directly from state.phases.
+
+    Deliberately NOT the same as _compute_metrics()'s own `run_status` field below:
+    that field is a TASK-COUNT heuristic ("completed == total_tasks so far"), which
+    can read "completed" mid-workflow — e.g. dev phase's tasks are all terminal but
+    review's tasks haven't been created yet. Gating the quiescence guard on that
+    heuristic would silence exactly the "all tasks terminal, exit never emitted"
+    driverless state this project's own 2026-07-15 workflow audit flagged as
+    dangerous to mask (scenario 2c) — the opposite of what this guard should do.
+    """
+    if not state.phases:
+        return False
+    return all(p.status == PhaseStatus.COMPLETED for p in state.phases.values() if p.required)
+
+
 def _detect_orphaned_phase(state) -> dict | None:
     """
     Returns a diagnostic dict when a phase_entered event exists with no tasks
@@ -410,6 +428,28 @@ def main() -> None:
             return
 
         ensure_dirs()
+
+        # Quiescence guard (recommendation #6, 2026-07-15 workflow audit): once a
+        # workflow is genuinely terminal (every required phase COMPLETED — nothing
+        # wall-clock-driven, like reaping or worker-registry cleanup, can ever newly
+        # apply to it), skip the whole pipeline if the log hasn't grown since the
+        # last time metrics were computed. Without this, a finished workflow whose
+        # .orch/ was never purged pays 3 reduce_all() calls, a full unconditional
+        # log parse, and 5 detectors on EVERY turn, forever, in every session of the
+        # project — the guard here was previously just "does log.jsonl exist".
+        # Runs at least once right after completion (last_seq differs from the
+        # cached snapshot then), so final cleanup/detection still happens exactly
+        # once; only genuinely idle subsequent turns are skipped.
+        probe_state = reduce_all()
+        if _workflow_is_terminal(probe_state):
+            cached_path = METRICS_DIR / "current.json"
+            if cached_path.exists():
+                try:
+                    cached = json.loads(cached_path.read_text(encoding="utf-8"))
+                    if cached.get("last_seq") == probe_state.last_seq:
+                        return
+                except Exception:
+                    pass
 
         # Purge stale worker registry entries from interrupted sessions before
         # computing state — prevents phantom worker_stopped detections on next run.

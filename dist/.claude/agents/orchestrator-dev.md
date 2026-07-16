@@ -757,10 +757,7 @@ python3 .claude/skills/orch-infra/scripts/run_circuit_check.py
 
 If `status == "blocked"`: output `{"status": "error", "last_seq": <last_seq>, "summary": "circuit breaker tripped during dispatch"}` and stop.
 
-Stop conditions:
-- No tasks with `status = "ready"` → proceed to Step 6
-- All dev tasks terminal → proceed to Step 6
-- Iteration ≥ 30 → output `{"status": "error", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached"}` and stop
+**Iteration ≥ 30** → output `{"status": "error", "last_seq": <last_seq>, "summary": "dispatch loop safety limit reached"}` and stop. Checked here, first, so the mutations below never spend an iteration they can't afford.
 
 **DLQ cascade:** for each `pending` or `scheduled` dev task whose any dep has `status = "dlq"`:
 ```bash
@@ -781,17 +778,20 @@ python3 .claude/scripts/check_stale.py
 
 `check_stale.py` emits `task_failed(reason=stale_timeout)` for every `running` task past its tier threshold and prints `{"stale_count": N, "failed": [...]}`. Consume the `failed` list; the emission is performed deterministically in Python (not via a prompt-composed append).
 
-**Retry re-queue:** for each `scheduled` dev task with `next_retry_at <= now` (or null):
+**Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit):**
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type task_retried \
-  --task-id <task_id> \
-  --attempt <task.attempts + 1> \
-  --data '{"phase":"dev","previous_attempt":<task.attempts>,"scheduled_retry_seq":<scheduled_retry_seq>}'
+python3 .claude/scripts/requeue_due_tasks.py --phase dev --workflow-id "<workflow_id>"
 ```
+Promotes every `scheduled` task whose `next_retry_at` is already due to `task_retried` (→ `ready`), and resolves every lingering `failed` task with no schedule yet — a worker-reported failure whose Step 5.5 never ran because a prior turn ended first — by either scheduling its retry or routing it to DLQ, deterministically. Prints `{"retried": [...], "scheduled": [...], "dlq_routed": [...], "earliest_pending_retry_at": <iso|null>}`.
 
-After all syntheses, re-read state.
+Run this — and the two blocks above it — **before** evaluating the stop conditions below. They mutate state that the stop conditions read; checking "no ready tasks" against state captured before these mutations is exactly the bug this fix closes: a due retry that would have been promoted right here instead got silently skipped, and the loop bounced between here and Step 6 until the iteration cap fired a spurious error.
+
+After all syntheses, re-read state (re-run `reduce.py`).
+
+**Stop conditions (evaluated against the state just re-read, i.e. post-mutation):**
+- All dev tasks terminal → proceed to Step 6
+- No tasks with `status = "ready"` or `"running"`, AND `earliest_pending_retry_at` is non-null (from the requeue output above) → nothing to dispatch right now, but a task is legitimately waiting out its backoff, not stuck. Output `{"status": "blocked", "last_seq": <last_seq>, "summary": "waiting on scheduled retry backoff", "earliest_pending_retry_at": "<earliest_pending_retry_at>"}` and stop. **Do not** keep iterating — an empty-batch iteration costs no wall-clock time worth mentioning, so busy-spinning here never lets real time pass; it only burns the 30-iteration budget toward the safety-limit error above for a condition that isn't actually stuck. Re-invoking after `earliest_pending_retry_at` has passed resumes normally: the next Step 5.0 pass promotes it via `requeue_due_tasks.py` before this check is ever reached.
+- No tasks with `status = "ready"` (and the backoff case above does not apply) → proceed to Step 6
 
 #### 5.1 — Select batch
 

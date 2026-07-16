@@ -204,6 +204,98 @@ def test_metrics_overwritten_on_second_run(tmp_path):
     assert m2["tasks_total"] != m1["tasks_total"]
 
 
+# ---------------------------------------------------------------------------
+# Quiescence guard (recommendation #6, 2026-07-15 workflow audit)
+# ---------------------------------------------------------------------------
+
+def _complete_single_phase_workflow(cwd, wf="wf_quiescent"):
+    """Drives a one-phase workflow all the way to phase COMPLETED (not just its
+    task) — the actual _workflow_is_terminal() condition, distinct from
+    _compute_metrics()'s task-count run_status heuristic used elsewhere in this
+    file (e.g. test_metrics_written_after_workflow never transitions the phase)."""
+    _append(cwd, "orchestrator", "phase_declared",
+            data={"workflow_id": wf, "phases": [{"name": "default", "order": 1, "required": True}]})
+    _append(cwd, "orchestrator", "phase_entered", data={"phase": "default", "order": 1, "workflow_id": wf})
+    _append(cwd, "orchestrator", "task_created", "t_001",
+            data={"phase": "default", "deps": [], "tier": "standard", "type": "impl", "spec": "x"})
+    _append(cwd, "orchestrator", "task_claimed", "t_001",
+            data={"phase": "default", "worker_type": "test-worker", "worker_id": "w1"})
+    _emit(cwd, "w1", "completed", "t_001", data={"phase": "default", "artifacts": [], "summary": "done"})
+    _append(cwd, "orchestrator", "phase_exit_criterion_met", data={"phase": "default", "criterion": "c"})
+    exit_ev = _append(cwd, "orchestrator", "phase_exit_approved",
+                      data={"phase": "default", "criteria_met": ["c"], "next_phase": "done",
+                            "workflow_id": wf})
+    _append(cwd, "orchestrator", "phase_transitioned",
+            data={"from_phase": "default", "to_phase": "done",
+                  "evidence_seq": exit_ev["seq"], "workflow_id": wf})
+
+
+def _poison_metrics_file(cwd):
+    """Injects a sentinel that only a SKIPPED hook run would leave intact — a run
+    that reaches _compute_metrics() always overwrites the whole file."""
+    path = Path(cwd) / ".orch" / "metrics" / "current.json"
+    m = json.loads(path.read_text())
+    m["_sentinel"] = "untouched"
+    path.write_text(json.dumps(m))
+    return m
+
+
+def test_quiescence_guard_skips_unchanged_terminal_workflow(tmp_path):
+    """Once every required phase is COMPLETED and the log hasn't grown since the
+    last recorded metrics, the second run must short-circuit before ever reaching
+    _compute_metrics() — proven by the sentinel surviving untouched."""
+    _complete_single_phase_workflow(tmp_path)
+    _run_hook(tmp_path)  # first run: pipeline runs fully, writes real metrics
+    m1 = _read_metrics(tmp_path)
+    assert m1["run_status"] == "completed"
+
+    _poison_metrics_file(tmp_path)
+    _run_hook(tmp_path)  # second run: log unchanged, workflow terminal -> must skip
+    m2 = _read_metrics(tmp_path)
+    assert m2["_sentinel"] == "untouched"
+
+
+def test_quiescence_guard_does_not_skip_when_log_grows(tmp_path):
+    """A completed workflow that gets a NEW event afterward (e.g. a second,
+    namespaced workflow starting in the same shared log) must NOT be skipped —
+    last_seq differs from the cached snapshot."""
+    _complete_single_phase_workflow(tmp_path)
+    _run_hook(tmp_path)
+    _poison_metrics_file(tmp_path)
+
+    _append(tmp_path, "orchestrator", "task_progress", "t_002",
+            data={"phase": "default", "note": "unrelated later event"})
+    _run_hook(tmp_path)
+    m2 = _read_metrics(tmp_path)
+    assert "_sentinel" not in m2  # pipeline ran again, file was fully rewritten
+
+
+def test_quiescence_guard_does_not_mask_all_tasks_terminal_no_transition(tmp_path):
+    """Critical negative case: ALL TASKS are completed but the phase itself never
+    transitioned (still ACTIVE) — the exact 'driverless' state this project's own
+    2026-07-15 workflow audit flagged as dangerous to silently mask (scenario 2c).
+    _compute_metrics()'s own run_status heuristic reads "completed" here (task-count
+    based), but _workflow_is_terminal() must NOT — the guard must keep running the
+    full pipeline on every turn until the phase actually transitions."""
+    _append(tmp_path, "orchestrator", "phase_declared",
+            data={"workflow_id": "wf_2c", "phases": [{"name": "default", "order": 1, "required": True}]})
+    _append(tmp_path, "orchestrator", "phase_entered", data={"phase": "default", "order": 1, "workflow_id": "wf_2c"})
+    _append(tmp_path, "orchestrator", "task_created", "t_001",
+            data={"phase": "default", "deps": [], "tier": "standard", "type": "impl", "spec": "x"})
+    _append(tmp_path, "orchestrator", "task_claimed", "t_001",
+            data={"phase": "default", "worker_type": "test-worker", "worker_id": "w1"})
+    _emit(tmp_path, "w1", "completed", "t_001", data={"phase": "default", "artifacts": [], "summary": "done"})
+
+    _run_hook(tmp_path)
+    m1 = _read_metrics(tmp_path)
+    assert m1["run_status"] == "completed"  # the heuristic, task-count based
+
+    _poison_metrics_file(tmp_path)
+    _run_hook(tmp_path)  # log unchanged, but phase never transitioned -> must NOT skip
+    m2 = _read_metrics(tmp_path)
+    assert "_sentinel" not in m2
+
+
 def test_empty_workflow_run_status(tmp_path):
     """Workflow with no tasks has run_status=empty."""
     _append(tmp_path, "orchestrator", "phase_declared",
