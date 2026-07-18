@@ -33,6 +33,10 @@ Resource bundle: inter-agent envelope contracts. Every envelope ships as a pair 
 | `fe-validate-report` | /u-fe-validate | user, orchestrator-dev |
 | `spec-changelog-notify` | NONE — no agent references this pair; reserved contract, unwired | none |
 | `ui-agent-output` | u-fe-ui | u-fe-developer |
+| `spec-inventory` | spec_inventory.py (u-drift-analysis) | match_drift.py |
+| `code-inventory` | u-reverse-spec-analyzer (code-inventory mode) | match_drift.py (after validate_inventory.py) |
+| `drift-report` | match_drift.py (u-drift-analysis) — rendered to `.md` by render_report.py | user, /u-improve, /u-dev, /u-reverse-spec (scoped), human triage |
+| `drift-verdicts` | u-drift-analyzer (semantic layer) | validate_findings.py → merge_semantic.py |
 
 Non-pair files: `delivery-gate.md` (gate checklist consumed by orchestrator-dev).
 

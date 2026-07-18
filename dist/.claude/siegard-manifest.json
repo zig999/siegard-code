@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.24.0",
+  "version": "2.26.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-16T20:03:55Z",
+  "generated_at": "2026-07-18T21:39:35Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -81,11 +81,15 @@
     },
     {
       "path": "agents/reverse-spec/u-reverse-spec-analyzer.md",
-      "sha256": "4fcc9541781f53ea17b75cefb8bbf1c9bdeaa47e7882c0172f236a23f5c229f4"
+      "sha256": "85c141f16eb41308989169a1c6fe5dda6e13981b32ca28094bfd9e9b058d264c"
     },
     {
       "path": "agents/reverse-spec/u-reverse-spec-writer.md",
       "sha256": "22d86b0b21e4a84d7638e5b6cdbad8e1083a41c6c3ff4e9932d5568fa6b57313"
+    },
+    {
+      "path": "agents/spec/u-drift-analyzer.md",
+      "sha256": "e62434974678ab166606cf8dceb9c9d202ac155eba27246cfd8fc6c6a804b077"
     },
     {
       "path": "agents/spec/u-spec-back.md",
@@ -121,7 +125,7 @@
     },
     {
       "path": "claude-md-target-template.md",
-      "sha256": "a047e5fcb57aec0b21ddcb4c0508779ae048bc443be4938725f9ea05bc58e1a2"
+      "sha256": "2d7098e7211715d7e6d8068f3e2576dfb0db2bd2f7f9d5f5d3c4c8b184f152a9"
     },
     {
       "path": "commands/u-cleanup.md",
@@ -134,6 +138,10 @@
     {
       "path": "commands/u-doc-cleanup.md",
       "sha256": "bd3d6ae2991c4669c8cc002130495def4a665fe819d3a99e7120bf1255349e0b"
+    },
+    {
+      "path": "commands/u-drift.md",
+      "sha256": "1db8f9244374fd636b850c7d1880cfdafe86b356f7dc4d45196c84abc13971a3"
     },
     {
       "path": "commands/u-fe-validate.md",
@@ -149,7 +157,7 @@
     },
     {
       "path": "commands/u-reverse-spec.md",
-      "sha256": "4b4ee3485c34d1bf7e918f3773ab812dfe83b8d7a659edb87f37abd36b82b8f9"
+      "sha256": "264fdc5528856d8fcc7ed9efa94c6599098632c770f75a120ab8079011a6b4ca"
     },
     {
       "path": "commands/u-spec.md",
@@ -568,6 +576,38 @@
       "sha256": "e9b606ef2fad72f1008165b26f173c28ce2a957ed746deb263fdc4e5d69ee311"
     },
     {
+      "path": "skills/u-drift-analysis/SKILL.md",
+      "sha256": "ba5e836c6dda1753217a9f0ed1cc93f9ccb2736b19a86762b5bc7529c52b9ada"
+    },
+    {
+      "path": "skills/u-drift-analysis/scripts/drift_common.py",
+      "sha256": "f09592fa87b4067b1d16b48442cc64ea29277fec5a1429c050ce75ac702a6dcc"
+    },
+    {
+      "path": "skills/u-drift-analysis/scripts/match_drift.py",
+      "sha256": "e87a931861d18ee0c7f8e6fbddbbb8f0efed43eb2cb2849070c60122f4775240"
+    },
+    {
+      "path": "skills/u-drift-analysis/scripts/merge_semantic.py",
+      "sha256": "7aaff29eeca27e52139fcacc76368bd742a816cf4d9a72af68515cda61f9e557"
+    },
+    {
+      "path": "skills/u-drift-analysis/scripts/render_report.py",
+      "sha256": "c4a1363ebec0aa2865a0da441e94fc20aa40cea83fec880f210d2947df5e5768"
+    },
+    {
+      "path": "skills/u-drift-analysis/scripts/spec_inventory.py",
+      "sha256": "9259c67310f42d87abe4f9c1aa9ffc76525d2d0f945a0e072367de85de0a5880"
+    },
+    {
+      "path": "skills/u-drift-analysis/scripts/validate_findings.py",
+      "sha256": "62032f03876c36fd1c47d15715105cc0af5108f71fbf1368889084c9324521f5"
+    },
+    {
+      "path": "skills/u-drift-analysis/scripts/validate_inventory.py",
+      "sha256": "d6fed2978e215dfd7c025559cf5ce9bfd1506069c15659f2643e2219c34feda6"
+    },
+    {
       "path": "skills/u-fe-development/SKILL.md",
       "sha256": "c08c9e7ae0609a090ad88d3ec4fd608677a8dec4cbbd7954855ed9d873d7712b"
     },
@@ -637,7 +677,7 @@
     },
     {
       "path": "skills/u-shared-templates/SKILL.md",
-      "sha256": "cdc5b5c0b4013b65cb8f04a912dac3e5c23fdb7496588925f7894033e3f12606"
+      "sha256": "755ad6665ab273981aed161b750ad3672982a777295a2f7393ee60efe4125e3f"
     },
     {
       "path": "skills/u-shared-templates/architecture-finding.schema.yaml",
@@ -666,6 +706,14 @@
     {
       "path": "skills/u-shared-templates/blocked-report.yaml",
       "sha256": "6fac7d170b37a452d82ae4ccde6dd24a059a13a1d456b2873467c1ae74f4ee46"
+    },
+    {
+      "path": "skills/u-shared-templates/code-inventory.schema.yaml",
+      "sha256": "4aa0d2a96efed4e62f16b4188ba8c51706c594f256f01e90535b7169005949f3"
+    },
+    {
+      "path": "skills/u-shared-templates/code-inventory.yaml",
+      "sha256": "74f191b3f28be9e31bff944ca7a902708b5fb70850b419701957c57bde84d0a3"
     },
     {
       "path": "skills/u-shared-templates/compliance-finding.schema.yaml",
@@ -706,6 +754,22 @@
     {
       "path": "skills/u-shared-templates/design-system-gate-report.yaml",
       "sha256": "8cd2b1c255ad571ec10aa4a3ab6620a5fad9c925da9847b670e23cfed3a8c84b"
+    },
+    {
+      "path": "skills/u-shared-templates/drift-report.schema.yaml",
+      "sha256": "ad7846198088d5fb88ecf0aff7c5fd3e2b98cebea43312465351a0ba8d1b5d79"
+    },
+    {
+      "path": "skills/u-shared-templates/drift-report.yaml",
+      "sha256": "40918da6b0281a5a54c9295366013b2a28e784d3793d9fb50d80b73506801868"
+    },
+    {
+      "path": "skills/u-shared-templates/drift-verdicts.schema.yaml",
+      "sha256": "601058135e2fca1ea80e9a0558374ccc3bf712e5bc23695cec3f8ad89020d6e4"
+    },
+    {
+      "path": "skills/u-shared-templates/drift-verdicts.yaml",
+      "sha256": "06d492d8721643e9fb96de72ca3a9c132753df34a4f2c6326d74e56acfcb77d7"
     },
     {
       "path": "skills/u-shared-templates/fe-validate-report.schema.yaml",
@@ -766,6 +830,14 @@
     {
       "path": "skills/u-shared-templates/spec-changelog-notify.yaml",
       "sha256": "1e664ac63bf48d76d3d571ac26dc8bdd8be1cfedda251f09e1ac1d39c8e160df"
+    },
+    {
+      "path": "skills/u-shared-templates/spec-inventory.schema.yaml",
+      "sha256": "06ffa981a44898caa77d4fbb8a49bc1d876df59475c34ca12477f07e661c43a5"
+    },
+    {
+      "path": "skills/u-shared-templates/spec-inventory.yaml",
+      "sha256": "4c2e1e62854e799ef1e260607010132c986a49092ad9e43a2ab10286c6aed05d"
     },
     {
       "path": "skills/u-shared-templates/task_contract.schema.yaml",

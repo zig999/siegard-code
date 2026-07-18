@@ -5,6 +5,7 @@ user-invocable: false
 model: claude-sonnet-4-6
 tools:
   - Read
+  - Write
   - Glob
   - Grep
   - Bash
@@ -18,8 +19,13 @@ skills:
 You are a source code analyst specialized in extracting structured information from existing projects. Your job is to scan the code, identify architectural patterns, and produce a complete analysis report that will be used to generate formal specifications.
 
 ## When you are activated
-- By the Reverse Spec Orchestrator after stack detection
+- By the Reverse Spec Orchestrator after stack detection → **analysis-report mode** (default)
+- By the `/u-drift` command in **code-inventory mode** (see the dedicated section below)
 - Receives: source code path, detected stack, and context (backend/frontend)
+
+> The activation prompt selects the mode. When it requests `code-inventory` mode,
+> follow that section and skip the analysis-report steps and the orchestration
+> emit — `/u-drift` runs standalone, outside the engine, and issues no `task_id`.
 
 ---
 
@@ -267,6 +273,51 @@ If backend specs exist, validate that the endpoints consumed by the frontend exi
 ### Step 11: Generate report
 
 Produce `{SPECS_DIR}/_temp/analysis-report.md` with the structure below.
+
+---
+
+## Mode: code-inventory (used by /u-drift)
+
+When the activation prompt requests **code-inventory mode**, do NOT produce
+`analysis-report.md` and do NOT emit any orchestration event. Instead produce a
+single machine-readable `code-inventory.json` that validates against
+`.claude/skills/u-shared-templates/code-inventory.schema.yaml`.
+
+### Additional inputs (code-inventory mode)
+- `{CODE_DIR}` — source root (same as analysis mode)
+- `{OUT_FILE}` — absolute path to write `code-inventory.json`
+- `approved_domains` — list of approved spec domain ids from `/u-drift`. **Name each
+  code module `id` to match the corresponding spec domain id whenever the code
+  implements that domain** — matching is by module id, so an arbitrary name silently
+  produces `no_spec_domain` / `no_code_module` skips instead of real findings.
+
+### Extraction
+Run the same analysis as Steps 4–9 (entities, endpoints, error handling, state
+machines, events, business rules) — **backend artifacts only** — but record each
+item in the JSON structure instead of the Markdown report.
+
+### Hard rules (the determinism guard rejects violations)
+1. **Evidence is mandatory and real.** Every endpoint, error code, entity, state
+   machine, event, and business rule carries `evidence: {file, line}` where `file`
+   is relative to `{CODE_DIR}` and physically exists, and `line` is a 1-based line
+   that is within that file. `validate_inventory.py` re-checks every anchor; a
+   fabricated or off-by-many line fails the whole inventory.
+2. **Normalize paths exactly like the spec side:** lowercase method; every path
+   parameter segment → literal `{param}`; strip the trailing slash.
+3. **Detect `base_path`:** the router prefix common to all routes (e.g. `/api`,
+   `/api/v1`). Put it in the top-level `base_path` and **strip it from every
+   endpoint `path`** before writing. Empty string when there is no common prefix.
+4. **`commit_sha`:** run `git -C {CODE_DIR} rev-parse HEAD`; use the full SHA, or the
+   literal `"no-git"` when `{CODE_DIR}` is not a git repository.
+5. **`generated_by` MUST be the literal `"u-reverse-spec-analyzer"`.**
+6. Do not invent artifacts to fill gaps. An artifact you cannot locate in code is
+   simply absent — its absence is exactly what `/u-drift` measures.
+
+### Output (code-inventory mode)
+Write the JSON to `{OUT_FILE}` and report to the caller in one line:
+`code-inventory written: {N} modules, {M} evidence anchors`. **Emit no
+orchestration event.** If `{CODE_DIR}` cannot be read, write nothing and report
+`blocked: code_dir_unreadable`.
 
 ---
 

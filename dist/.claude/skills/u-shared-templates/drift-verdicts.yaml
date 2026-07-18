@@ -1,0 +1,47 @@
+# Template: drift-verdicts
+# Schema: .claude/skills/u-shared-templates/drift-verdicts.schema.yaml
+# Producer: u-drift-analyzer (semantic layer, Release B)
+# Consumer: validate_findings.py -> merge_semantic.py
+# Save to: {SPECS_DIR}/_validation/drift-verdicts.json
+
+generated_by: u-drift-analyzer
+code_dir: "src"
+verdicts:
+  - target: endpoint
+    ref: "post /users"
+    domain: auth
+    verdict: drifted
+    severity: blocking
+    detail: "Spec declares responses [201,409]; code additionally returns 422 on validation failure."
+    spec_evidence:
+      file: "auth/openapi.yaml"
+      anchor: "createUser"
+    code_evidence:
+      file: "src/auth/user.controller.ts"
+      line: 42
+    fix_spec: "Add 422 (VALIDATION_INVALID_FORMAT) to createUser responses."
+    fix_code: "Return 400 instead of 422 if 400 is the intended contract."
+
+  - target: business_rule
+    ref: "BR-01"
+    domain: auth
+    verdict: aligned
+    severity: minor
+    detail: "Unique-email rule is enforced in the service before insert."
+    spec_evidence:
+      file: "auth/back/auth.back.md"
+      anchor: "BR-01"
+    code_evidence:
+      file: "src/auth/user.service.ts"
+      line: 14
+
+  - target: business_rule
+    ref: "password minimum length"
+    domain: auth
+    verdict: missing_in_spec
+    detail: "Code enforces an 8-char minimum password with no corresponding spec BR."
+    severity: minor
+    spec_evidence: null
+    code_evidence:
+      file: "src/auth/user.service.ts"
+      line: 22

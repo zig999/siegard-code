@@ -73,6 +73,7 @@ Canonical phase specification: [`../extras/phases.md`](../extras/phases.md).
 | `/u-dev` | Run an implementation session |
 | `/u-improve` | Capture a structured improvement request |
 | `/u-reverse-spec` | Generate specs from existing source code |
+| `/u-drift` | Audit drift between approved specs and implemented code (read-only report) |
 | `/u-fe-validate` | Frontend code audit against design-system rules |
 | `/u-cleanup` | Garbage-collect orphaned blobs, worktrees, and stale sessions |
 | `/u-doc-cleanup` | Documentation hygiene pass |

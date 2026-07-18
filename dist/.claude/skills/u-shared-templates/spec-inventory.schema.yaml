@@ -1,0 +1,150 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/spec-inventory.schema.yaml"
+title: spec-inventory
+description: >
+  Deterministic inventory of approved specifications, extracted by spec_inventory.py
+  (stdlib, no external deps). Consumed by match_drift.py as the spec side of the
+  spec<->code drift comparison. Only Status:approved domains appear; drafts are
+  reported separately as skipped. spec_content_hash pins the exact spec content the
+  inventory was built from (staleness guard for downstream consumers).
+type: object
+additionalProperties: false
+required:
+  - generated_by
+  - specs_dir
+  - spec_content_hash
+  - domains
+properties:
+  generated_by:
+    type: string
+    const: "spec_inventory.py"
+  specs_dir:
+    type: string
+  spec_content_hash:
+    type: string
+    description: "sha256 over the CRLF-normalized concatenation of every approved spec file, sorted by path."
+  domains:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - endpoints
+        - error_codes
+        - entities
+        - state_machines
+        - events
+        - business_rules
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+          const: "approved"
+        endpoints:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [operation_id, method, path, status_codes]
+            properties:
+              operation_id:
+                type: string
+              method:
+                type: string
+                enum: [get, post, put, patch, delete, head, options]
+              path:
+                type: string
+                description: "Normalized path: params as {param}, no trailing slash, no base_path."
+              status_codes:
+                type: array
+                items:
+                  type: integer
+              spec_anchor:
+                type: string
+                description: "file#section reference into the spec, e.g. auth/openapi.yaml#createUser."
+        error_codes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, http_status]
+            properties:
+              code:
+                type: string
+              http_status:
+                type: integer
+              spec_anchor:
+                type: string
+        entities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, fields]
+            properties:
+              name:
+                type: string
+              fields:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [name, type]
+                  properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+              spec_anchor:
+                type: string
+        state_machines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [entity, states]
+            properties:
+              id:
+                type: string
+              entity:
+                type: string
+              states:
+                type: array
+                items:
+                  type: string
+              spec_anchor:
+                type: string
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              spec_anchor:
+                type: string
+        business_rules:
+          type: array
+          description: "Extracted for completeness; NOT matched structurally (no code-derivable key). Matched only by the semantic layer (Release B)."
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, description]
+            properties:
+              id:
+                type: string
+              uc_ref:
+                type: string
+              description:
+                type: string
+              spec_anchor:
+                type: string

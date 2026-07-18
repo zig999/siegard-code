@@ -1,0 +1,88 @@
+# Template: drift-report
+# Schema: .claude/skills/u-shared-templates/drift-report.schema.yaml
+# Producer: match_drift.py (u-drift-analysis)
+# Consumer: user, /u-improve, /u-dev, /u-reverse-spec (scoped), human triage
+# Save to: {SPECS_DIR}/_validation/drift-report.json (+ drift-report.md derived by render_report.py)
+
+generated_by: match_drift.py
+generated_at: "<YYYY-MM-DDTHH:MM:SSZ>"
+specs_dir: "specs"
+code_dir: "src"
+spec_content_hash: "<sha256-hex>"
+code_commit_sha: "<full-git-sha-or-no-git>"
+
+summary:
+  domains_analyzed: 1
+  aligned: 2
+  drifted: 1
+  missing_in_code: 1
+  missing_in_spec: 1
+  undecidable: 0
+  skipped_draft: 1
+
+findings:
+  - id: DRIFT-001
+    domain: auth
+    status: missing_in_code
+    artifact_type: endpoint
+    artifact_ref: "get /users/{id}"
+    severity: blocking
+    default_action: create_implementation_cr
+    detail: "Spec declares operation getUser but no matching route exists in code."
+    spec_evidence:
+      file: "auth/openapi.yaml"
+      anchor: "getUser"
+    code_evidence: null
+    handoff:
+      kind: implementation_cr
+      target_command: /u-dev
+      summary: "Implement GET /users/{id} (getUser) per auth spec: returns 200 or 404."
+
+  - id: DRIFT-002
+    domain: auth
+    status: missing_in_spec
+    artifact_type: endpoint
+    artifact_ref: "delete /users/{id}"
+    severity: major
+    default_action: update_spec
+    detail: "Code exposes DELETE /users/{id} (deleteUser) with no corresponding spec operation."
+    spec_evidence: null
+    code_evidence:
+      file: "src/auth/user.controller.ts"
+      line: 88
+    handoff:
+      kind: improve_scope
+      target_command: /u-improve
+      summary: "Document deleteUser: DELETE /users/{id} returning 204 or 404 in the auth spec."
+
+  - id: DRIFT-003
+    domain: auth
+    status: drifted
+    artifact_type: endpoint
+    artifact_ref: "post /users"
+    severity: blocking
+    default_action: needs_human
+    detail: "Spec declares status codes [201,400,409]; code returns [201,400,409,422]."
+    spec_evidence:
+      file: "auth/openapi.yaml"
+      anchor: "createUser"
+    code_evidence:
+      file: "src/auth/user.controller.ts"
+      line: 42
+    handoff:
+      kind: human_triage
+      summary: "Reconcile createUser response codes between spec and code."
+      fix_spec: "Add 422 (validation) to createUser responses in auth/openapi.yaml."
+      fix_code: "Remove the 422 path from user.controller.ts if 400 is the contract."
+
+aligned:
+  - domain: auth
+    artifact_type: error_code
+    artifact_ref: "USER_EMAIL_TAKEN"
+  - domain: auth
+    artifact_type: state_machine
+    artifact_ref: "ST User"
+
+skipped:
+  - domain: billing
+    reason: draft_status

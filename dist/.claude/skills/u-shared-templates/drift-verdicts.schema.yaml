@@ -1,0 +1,72 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/drift-verdicts.schema.yaml"
+title: drift-verdicts
+description: >
+  Semantic drift verdicts produced by the u-drift-analyzer worker (Release B). The
+  worker examines ONLY the pairs match_drift.py already matched structurally — aligned
+  endpoints (behavioral drift) and the spec/code business rules (which have no
+  code-derivable key) — and returns a verdict per item with mandatory evidence.
+  validate_findings.py checks every verdict before merge_semantic.py folds it into the
+  drift-report.json. The escape hatch is `undecidable`: the worker never guesses.
+type: object
+additionalProperties: false
+required:
+  - generated_by
+  - code_dir
+  - verdicts
+properties:
+  generated_by:
+    type: string
+    const: "u-drift-analyzer"
+  code_dir:
+    type: string
+  verdicts:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [target, ref, domain, verdict, severity, detail, spec_evidence, code_evidence]
+      properties:
+        target:
+          type: string
+          enum: [endpoint, business_rule]
+        ref:
+          type: string
+          description: "Endpoint key '{method} {path}' or a business-rule id/description."
+        domain:
+          type: string
+        verdict:
+          type: string
+          enum: [aligned, drifted, missing_in_code, missing_in_spec, undecidable]
+        severity:
+          type: string
+          enum: [blocking, major, minor]
+        detail:
+          type: string
+        spec_evidence:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [file, anchor]
+              properties:
+                file:
+                  type: string
+                anchor:
+                  type: string
+        code_evidence:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [file, line]
+              properties:
+                file:
+                  type: string
+                line:
+                  type: integer
+                  minimum: 1
+        fix_spec:
+          type: string
+        fix_code:
+          type: string

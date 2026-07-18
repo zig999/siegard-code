@@ -55,9 +55,11 @@ code-derived content, with no auditable resolution trail.
 
 Inform the user:
 
-> **reverse_eng merge is currently unavailable.**
-> Deterministic conflict-resolution rules have not yet been implemented.
+> **reverse_eng merge (automatic overwrite) is currently unavailable.**
+> Deterministic conflict-resolution *auto-apply* rules have not yet been implemented,
+> so merge will not silently overwrite existing specs.
 > Available alternatives:
+> - **Compare existing specs against the code without overwriting:** run `/u-drift {CODE_DIR}` — it produces a deterministic, evidence-backed `drift-report.json` (missing-in-code / missing-in-spec / drifted) and per-finding follow-up actions. This is the auditable comparison the merge auto-apply was missing; act on its handoffs manually (`/u-improve`, `/u-dev`).
 > - Delete the existing `{SPECS_DIR}/` and re-run `/u-reverse-spec {CODE_DIR}` → triggers **new** mode
 > - If a prior session was interrupted, re-run `/u-reverse-spec {CODE_DIR}` with the existing log → triggers **resume** mode
 

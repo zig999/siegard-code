@@ -1,0 +1,180 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/drift-report.schema.yaml"
+title: drift-report
+description: >
+  Machine-consumable spec<->code drift report, produced by match_drift.py from the two
+  matched inventories. Single source of truth for the human-readable drift-report.md
+  (which render_report.py derives from this file, never hand-authored). Every finding
+  cites evidence and carries a mechanical default_action plus a pre-assembled handoff
+  payload — no free-form recommendation. spec_content_hash + code_commit_sha let
+  consumers detect a stale report before acting on it.
+type: object
+additionalProperties: false
+required:
+  - generated_by
+  - specs_dir
+  - code_dir
+  - spec_content_hash
+  - code_commit_sha
+  - summary
+  - findings
+  - aligned
+  - skipped
+properties:
+  generated_by:
+    type: string
+    const: "match_drift.py"
+  generated_at:
+    type: string
+    description: "ISO-8601 UTC timestamp stamped by the caller after render (scripts have no clock)."
+  specs_dir:
+    type: string
+  code_dir:
+    type: string
+  spec_content_hash:
+    type: string
+  code_commit_sha:
+    type: string
+  summary:
+    type: object
+    additionalProperties: false
+    required:
+      - domains_analyzed
+      - aligned
+      - drifted
+      - missing_in_code
+      - missing_in_spec
+      - undecidable
+      - skipped_draft
+    properties:
+      domains_analyzed:
+        type: integer
+        minimum: 0
+      aligned:
+        type: integer
+        minimum: 0
+      drifted:
+        type: integer
+        minimum: 0
+      missing_in_code:
+        type: integer
+        minimum: 0
+      missing_in_spec:
+        type: integer
+        minimum: 0
+      undecidable:
+        type: integer
+        minimum: 0
+      skipped_draft:
+        type: integer
+        minimum: 0
+  findings:
+    type: array
+    description: "Actionable divergences only. aligned items are listed separately."
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - domain
+        - status
+        - artifact_type
+        - artifact_ref
+        - severity
+        - default_action
+        - detail
+        - spec_evidence
+        - code_evidence
+        - handoff
+      properties:
+        id:
+          type: string
+          pattern: "^DRIFT-[0-9]{3}$"
+        domain:
+          type: string
+        status:
+          type: string
+          enum: [drifted, missing_in_code, missing_in_spec, undecidable]
+        artifact_type:
+          type: string
+          enum: [endpoint, error_code, entity_field, state_machine, event, business_rule, base_path]
+        artifact_ref:
+          type: string
+        severity:
+          type: string
+          enum: [blocking, major, minor]
+        default_action:
+          type: string
+          enum: [create_implementation_cr, update_spec, create_spec, needs_human]
+        detail:
+          type: string
+          description: "Single sentence stating the divergence."
+        spec_evidence:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [file, anchor]
+              properties:
+                file:
+                  type: string
+                anchor:
+                  type: string
+        code_evidence:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [file, line]
+              properties:
+                file:
+                  type: string
+                line:
+                  type: integer
+                  minimum: 1
+        handoff:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              enum: [implementation_cr, improve_scope, reverse_spec_scoped, human_triage]
+            target_command:
+              type: string
+            summary:
+              type: string
+            fix_spec:
+              type: string
+              description: "Present for drifted/needs_human: the spec-side correction payload."
+            fix_code:
+              type: string
+              description: "Present for drifted/needs_human: the code-side correction payload."
+  aligned:
+    type: array
+    description: "Artifacts present on both sides by key (structurally aligned). Release B may reclassify a subset to drifted."
+    items:
+      type: object
+      additionalProperties: false
+      required: [domain, artifact_type, artifact_ref]
+      properties:
+        domain:
+          type: string
+        artifact_type:
+          type: string
+          enum: [endpoint, error_code, entity_field, state_machine, event, business_rule]
+        artifact_ref:
+          type: string
+  skipped:
+    type: array
+    description: "Domains excluded from analysis, with reason (e.g. draft status)."
+    items:
+      type: object
+      additionalProperties: false
+      required: [domain, reason]
+      properties:
+        domain:
+          type: string
+        reason:
+          type: string
+          enum: [draft_status, no_spec_domain, no_code_module, parse_failed]

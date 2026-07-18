@@ -1,0 +1,61 @@
+# Template: code-inventory
+# Schema: .claude/skills/u-shared-templates/code-inventory.schema.yaml
+# Producer: u-reverse-spec-analyzer (code-inventory mode)
+# Consumer: match_drift.py (after validate_inventory.py passes)
+# Save to: {SPECS_DIR}/_validation/code-inventory.json (emitted as JSON, YAML shown here for the pair test)
+
+generated_by: u-reverse-spec-analyzer
+code_dir: "src"
+commit_sha: "<full-git-sha-or-no-git>"
+base_path: "/api/v1"
+modules:
+  - id: auth
+    endpoints:
+      - operation_id: createUser
+        method: post
+        path: "/users"
+        status_codes: [201, 400, 409]
+        evidence:
+          file: "src/auth/user.controller.ts"
+          line: 42
+      - operation_id: deleteUser
+        method: delete
+        path: "/users/{id}"
+        status_codes: [204, 404]
+        evidence:
+          file: "src/auth/user.controller.ts"
+          line: 88
+    error_codes:
+      - code: USER_EMAIL_TAKEN
+        http_status: 409
+        evidence:
+          file: "src/auth/user.service.ts"
+          line: 17
+    entities:
+      - name: User
+        fields:
+          - name: id
+            type: string
+          - name: email
+            type: string
+          - name: lastLoginAt
+            type: Date
+        evidence:
+          file: "src/auth/user.entity.ts"
+          line: 5
+    state_machines:
+      - entity: User
+        states: [pending, active, blocked]
+        evidence:
+          file: "src/auth/user.status.enum.ts"
+          line: 1
+    events:
+      - name: user.created
+        evidence:
+          file: "src/auth/user.service.ts"
+          line: 55
+    business_rules:
+      - description: "Rejects creation when email already exists in the repository."
+        evidence:
+          file: "src/auth/user.service.ts"
+          line: 14

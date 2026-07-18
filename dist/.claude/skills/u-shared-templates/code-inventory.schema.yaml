@@ -1,0 +1,190 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "u-shared-templates/code-inventory.schema.yaml"
+title: code-inventory
+description: >
+  Inventory of implemented artifacts extracted from source code by the
+  u-reverse-spec-analyzer running in code-inventory mode. Consumed by match_drift.py
+  as the code side of the spec<->code drift comparison. Every item carries a
+  file:line evidence anchor that validate_inventory.py verifies physically resolves.
+  base_path is the router prefix stripped from every endpoint path before comparison.
+  commit_sha pins the exact code revision (staleness guard for downstream consumers).
+type: object
+additionalProperties: false
+required:
+  - generated_by
+  - code_dir
+  - commit_sha
+  - base_path
+  - modules
+properties:
+  generated_by:
+    type: string
+    const: "u-reverse-spec-analyzer"
+  code_dir:
+    type: string
+  commit_sha:
+    type: string
+    description: "Full git commit SHA of code_dir at analysis time, or the literal 'no-git' when not a repository."
+  base_path:
+    type: string
+    description: "Router prefix common to all endpoints (e.g. /api/v1), stripped before matching. Empty string when none."
+  modules:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - endpoints
+        - error_codes
+        - entities
+        - state_machines
+        - events
+        - business_rules
+      properties:
+        id:
+          type: string
+        endpoints:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [operation_id, method, path, status_codes, evidence]
+            properties:
+              operation_id:
+                type: string
+              method:
+                type: string
+                enum: [get, post, put, patch, delete, head, options]
+              path:
+                type: string
+                description: "Normalized path: params as {param}, no trailing slash, base_path already stripped."
+              status_codes:
+                type: array
+                items:
+                  type: integer
+              evidence:
+                type: object
+                additionalProperties: false
+                required: [file, line]
+                properties:
+                  file:
+                    type: string
+                    description: "Path relative to code_dir. Must physically exist."
+                  line:
+                    type: integer
+                    minimum: 1
+                    description: "1-based line number. Must be <= the file's line count."
+        error_codes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, http_status, evidence]
+            properties:
+              code:
+                type: string
+              http_status:
+                type: integer
+              evidence:
+                type: object
+                additionalProperties: false
+                required: [file, line]
+                properties:
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                    minimum: 1
+        entities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, fields, evidence]
+            properties:
+              name:
+                type: string
+              fields:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [name, type]
+                  properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+              evidence:
+                type: object
+                additionalProperties: false
+                required: [file, line]
+                properties:
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                    minimum: 1
+        state_machines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [entity, states, evidence]
+            properties:
+              entity:
+                type: string
+              states:
+                type: array
+                items:
+                  type: string
+              evidence:
+                type: object
+                additionalProperties: false
+                required: [file, line]
+                properties:
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                    minimum: 1
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, evidence]
+            properties:
+              name:
+                type: string
+              evidence:
+                type: object
+                additionalProperties: false
+                required: [file, line]
+                properties:
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                    minimum: 1
+        business_rules:
+          type: array
+          description: "Validation/guard logic found in code. Matched only by the semantic layer (Release B)."
+          items:
+            type: object
+            additionalProperties: false
+            required: [description, evidence]
+            properties:
+              description:
+                type: string
+              evidence:
+                type: object
+                additionalProperties: false
+                required: [file, line]
+                properties:
+                  file:
+                    type: string
+                  line:
+                    type: integer
+                    minimum: 1

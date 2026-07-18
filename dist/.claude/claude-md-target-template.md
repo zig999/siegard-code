@@ -267,7 +267,7 @@ design_system:
 | `/u-improve`     | Incremental change to an existing spec or behavior                 |
 | `/u-reverse-spec`| Generate specs from existing code (reverse engineering)            |
 
-**Utility commands (ad-hoc, not phase entry points):** `/u-fe-validate` (frontend spec-gate check), `/u-doc-cleanup` (strip historical noise from docs), `/u-cleanup` (runtime `.orch/` cleanup), `/u-orchestrator` (inspect derived phase/task state from the log).
+**Utility commands (ad-hoc, not phase entry points):** `/u-drift` (audit spec↔code drift, read-only report under `specs/_validation/`), `/u-fe-validate` (frontend spec-gate check), `/u-doc-cleanup` (strip historical noise from docs), `/u-cleanup` (runtime `.orch/` cleanup), `/u-orchestrator` (inspect derived phase/task state from the log).
 
 ### Retry policy (`.orch/config.json`)
 

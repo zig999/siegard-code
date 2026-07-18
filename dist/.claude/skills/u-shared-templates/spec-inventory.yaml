@@ -1,0 +1,50 @@
+# Template: spec-inventory
+# Schema: .claude/skills/u-shared-templates/spec-inventory.schema.yaml
+# Producer: spec_inventory.py (u-drift-analysis)
+# Consumer: match_drift.py
+# Save to: {SPECS_DIR}/_validation/spec-inventory.json (emitted as JSON, YAML shown here for the pair test)
+
+generated_by: spec_inventory.py
+specs_dir: "specs"
+spec_content_hash: "<sha256-hex>"
+domains:
+  - id: auth
+    title: Authentication
+    status: approved
+    endpoints:
+      - operation_id: createUser
+        method: post
+        path: "/users"
+        status_codes: [201, 400, 409]
+        spec_anchor: "auth/openapi.yaml#createUser"
+      - operation_id: getUser
+        method: get
+        path: "/users/{id}"
+        status_codes: [200, 404]
+        spec_anchor: "auth/openapi.yaml#getUser"
+    error_codes:
+      - code: USER_EMAIL_TAKEN
+        http_status: 409
+        spec_anchor: "_global/error-codes.md#USER_EMAIL_TAKEN"
+    entities:
+      - name: User
+        fields:
+          - name: id
+            type: string
+          - name: email
+            type: string
+        spec_anchor: "auth/back/auth.back.md#data-model"
+    state_machines:
+      - id: ST-01
+        entity: User
+        states: [pending, active, blocked]
+        spec_anchor: "auth/back/auth.back.md#state-machine"
+    events:
+      - id: EV-01
+        name: user.created
+        spec_anchor: "auth/back/auth.back.md#domain-events"
+    business_rules:
+      - id: BR-01
+        uc_ref: UC-01
+        description: "Email must be unique across all users."
+        spec_anchor: "auth/back/auth.back.md#business-rules"
