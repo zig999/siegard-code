@@ -362,6 +362,17 @@ class EventType(str, Enum):
     DISPATCH_DECISION = "dispatch_decision"
     CONTEXT_BUDGET_EVALUATED = "context_budget_evaluated"
     OPERATION_MODE_DECLARED = "operation_mode_declared"
+    # COST_PROJECTED (R11a): emitted right after triage, BEFORE the first dispatch,
+    # carrying the worker count and wall-clock the chosen pipeline implies. AUDIT-ONLY
+    # — no reducer handler.
+    #
+    # Why it exists: the operator only ever learned the price after paying it. The
+    # E99 confirmation gate did show `estimated_task_contracts`, but `/u-improve`
+    # sets bypass_e99 and skips that gate entirely — and /u-improve is the only
+    # usable entry point on a non-greenfield repository, so in practice no estimate
+    # was ever surfaced. Measured: a 3-item type-level change spent 56 min of sdd
+    # across 10 workers, discovered at the end.
+    COST_PROJECTED = "cost_projected"
 
     # Management and operations (9)
     CIRCUIT_BREAKER_TRIPPED = "circuit_breaker_tripped"

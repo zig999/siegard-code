@@ -56,6 +56,61 @@ from scope import affected_domains  # noqa: E402
 
 _STATUS_INVALID_RE = re.compile(r"status:\s*INVALID", re.IGNORECASE)
 _RESPONSIBLE_RE = re.compile(r"^\s*responsible:\s*['\"]?([\w-]+)['\"]?\s*$", re.MULTILINE)
+_TIMESTAMP_RE = re.compile(
+    r"^\s*timestamp:\s*['\"]?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)['\"]?\s*$",
+    re.MULTILINE,
+)
+
+# Spec artifacts a domain verdict is a judgement about. If any of them changed
+# after the verdict was written, the verdict describes a state that no longer
+# exists on disk.
+_SPEC_GLOBS = ("*.spec.md", "openapi.yaml", "back/*.back.md", "front/*.md")
+
+
+def _verdict_is_stale(result_yaml: Path, domain_dir: Path) -> dict | None:
+    """Was this INVALID verdict written BEFORE the specs it judges were last edited?
+
+    R08 — the repair loop dispatches on the *recorded state* of the artifact, not
+    on the *current condition* of the source. Measured cost of the difference: a
+    `spec-back-repair-1` ran 6.4 minutes and changed zero files, because the two
+    blocking issues it was sent to fix had already been resolved on disk by an
+    earlier session that never rewrote the validation artifact. The trigger was
+    "the file says INVALID", not "the condition still holds".
+
+    Re-running each individual issue check is not possible deterministically —
+    they are produced by an LLM validator. Staleness is, and it is exactly the
+    case that burned the time: when the specs are newer than the verdict, the
+    correct action is to re-run the *validator* (one worker) rather than a repair
+    pipeline that assumes the findings are current.
+
+    Returns None when the verdict is current or staleness cannot be established
+    (missing timestamp, unreadable files) — never guess a verdict is stale.
+    """
+    try:
+        text = result_yaml.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = _TIMESTAMP_RE.search(text)
+    if not m:
+        return None
+    try:
+        from datetime import datetime, timezone
+        verdict_at = datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+    newer: list[str] = []
+    for pattern in _SPEC_GLOBS:
+        for spec in sorted(domain_dir.glob(pattern)):
+            try:
+                if spec.stat().st_mtime > verdict_at:
+                    newer.append(spec.name)
+            except OSError:
+                continue
+    if not newer:
+        return None
+    return {"verdict_timestamp": m.group(1), "specs_changed_since": newer[:10]}
 
 
 def _defect_origin(result_yaml: Path) -> str | None:
@@ -87,6 +142,7 @@ def evaluate(workflow_id: str | None = None) -> dict:
     invalid: list[str] = []
     origins: dict[str, str | None] = {}
     out_of_scope: list[str] = []
+    stale: dict[str, dict] = {}
     if val_dir.exists():
         for report in sorted(val_dir.glob("*-validation.md")):
             try:
@@ -102,13 +158,19 @@ def evaluate(workflow_id: str | None = None) -> dict:
                 out_of_scope.append(domain)
                 continue
             invalid.append(domain)
-            origins[domain] = _defect_origin(
-                val_dir / f"{domain}-validation-result.yaml"
-            )
+            result_yaml = val_dir / f"{domain}-validation-result.yaml"
+            origins[domain] = _defect_origin(result_yaml)
+            # R08: an INVALID verdict older than the specs it judges cannot be
+            # trusted to describe them. Revalidate; do not repair on a guess.
+            staleness = _verdict_is_stale(
+                result_yaml, project_dir / specs_dir / "domains" / domain)
+            if staleness:
+                stale[domain] = staleness
     return {
         "invalid_domains": invalid,
         "defect_origins": origins,
         "out_of_scope_invalid": out_of_scope,
+        "stale_verdicts": stale,
         "scoped": scope is not None,
     }
 

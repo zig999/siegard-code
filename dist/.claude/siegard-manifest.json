@@ -1,15 +1,15 @@
 {
   "framework": "siegard-code",
-  "version": "2.28.0",
+  "version": "2.29.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-27T12:34:07Z",
+  "generated_at": "2026-07-27T13:23:12Z",
   "hash_normalization": "text-lf",
   "files": [
     {
       "path": "ESCALATION_CODES.md",
-      "sha256": "93189fda987e230cadce8529d905bc183701d05862472ebbbdc6639ae962fa6d"
+      "sha256": "81ad2efe898b3da6169c7bbde0f450e3562ef556cb1cbac27888d4c3b01eeb2d"
     },
     {
       "path": "agents/dev/u-architecture-reviewer.md",
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "9575d927fb7ad554051a92f5a45812bc2fa622f9791f874399ac59cf2ceb29bc"
+      "sha256": "3db7161bcd980f6a431b583a1dd9829447ed214a9e8808f7cb7f876148fada52"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -73,7 +73,7 @@
     },
     {
       "path": "agents/orchestrator.md",
-      "sha256": "1eec3fba86e52654dde73b8a0b4fe05cc3d53ef158fedc9ec0ee759bf99d6570"
+      "sha256": "50b476555780a39d9b4ed93b364e32a6ff0ba669e46fb7d0f8c3255fd232b6c1"
     },
     {
       "path": "agents/reverse-spec/orchestrator-reverse-spec.md",
@@ -169,7 +169,7 @@
     },
     {
       "path": "hooks/on_stop.py",
-      "sha256": "00541cb7b5a6872dfea8de0a93a21e25715c38cfd83bd9cb4611c4068c2f4646"
+      "sha256": "037fb48119ab886bb72480f0b0c3ecdc7f36917a34a2d988ae45f8ae1a977abb"
     },
     {
       "path": "hooks/on_subagent_stop.py",
@@ -185,7 +185,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "2f059c98b9d0d7ac43b366c739782a9b9bcc1a4b8373a3b77a3c6af928952138"
+      "sha256": "2ac152a36f13721bda8b864146cdbf3e4ac0cf32fa3c795188240fd57885739f"
     },
     {
       "path": "lib/sm_runner.py",
@@ -202,6 +202,10 @@
     {
       "path": "scripts/check_stale.py",
       "sha256": "27d01fa8b294de92dcc51c55e2337c335fe3ea7c141c29300c63ee03dd1ba1fb"
+    },
+    {
+      "path": "scripts/check_supervisor_lease.py",
+      "sha256": "6d851a1e6d7d61495cac195f022d63cfca3e3f0cb4d89f2efe1a570a8427d44e"
     },
     {
       "path": "scripts/circuit_breaker.py",
@@ -244,12 +248,20 @@
       "sha256": "5ca5bece2f103ab1710570a40b442c5757f6161722648b291f71ef3e24de7ed0"
     },
     {
+      "path": "scripts/project_cost.py",
+      "sha256": "024144142a1e7d841acca39bce1cbd13cc1708eb83d8def526ad86bafb03f03d"
+    },
+    {
       "path": "scripts/purge.py",
       "sha256": "5f061967719bb03f4daf5a729863873c24b70033ba1dc46768bbb99ce25c05a9"
     },
     {
       "path": "scripts/recover_retry_sequence.py",
       "sha256": "88920fa01c9f711a4288fc6723705081f279c831d947c65f29351861fe4b3452"
+    },
+    {
+      "path": "scripts/recovery_tick.py",
+      "sha256": "761247727622de037ca254cf94334d8bed6cf2fdc9e7f3215e4a9e143cc20e4b"
     },
     {
       "path": "scripts/requeue_due_tasks.py",
@@ -277,7 +289,7 @@
     },
     {
       "path": "settings.json",
-      "sha256": "a8a7551a18a519e54e8f9c926475cba90cad0de8d0f8c0f18dbed7ae21c8c52e"
+      "sha256": "f4ce9a52072e5b29695ed8a28052df1b07ef92f1b8a02b50f831453c4f217d02"
     },
     {
       "path": "skills/orch-cleanup/SKILL.md",
@@ -505,7 +517,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/identify_invalid_domains.py",
-      "sha256": "480dcaffdf54f8bc96353201b7bbcb614f817b47d0ccd77b0b6b6a865104e89c"
+      "sha256": "79f854a23d8b7e5d07d1f92faf295edee0588cda5da0b975bb6e22e486f26a49"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/scope.py",

@@ -223,6 +223,104 @@ def _count_escalations(events: list | None) -> tuple[int, dict[str, int]]:
     return total, by_code
 
 
+# R11c — spec:code ratio.
+#
+# Measured by hand once: 1.096 lines of spec for 419 lines of code (2.6:1) on a
+# change that introduced no behaviour by construction. That diagnosis only exists
+# because someone counted; nothing in the engine recorded it. A single anecdote
+# also cannot answer the question it raises — whether the artifact model itself is
+# worth its cost — so the number has to accumulate per workflow.
+#
+# Counted from the git index, not from the log: the log knows which tasks ran, not
+# how many lines they wrote. Best-effort by design — a project without git, or a
+# run with no commits yet, yields nulls rather than blocking session close.
+_SPEC_PATH_MARKERS = ("/specs/", "specs/", "/spec/")
+_CODE_EXTENSIONS = (
+    ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".kt", ".cs",
+    ".rb", ".php", ".swift", ".sql", ".vue", ".svelte",
+)
+
+
+def _is_spec_path(path: str) -> bool:
+    p = path.replace("\\", "/")
+    if any(m in p for m in _SPEC_PATH_MARKERS):
+        return True
+    return p.endswith((".spec.md", ".back.md", "openapi.yaml"))
+
+
+def _spec_code_ratio() -> dict:
+    """Lines of spec vs lines of code added since the workflow's first commit.
+
+    Uses `git log --numstat` over the commits made while the workflow ran, which
+    is the closest deterministic proxy available: commit boundaries are the only
+    durable record of what the phases produced.
+    """
+    import subprocess
+
+    empty = {
+        "spec_lines_added": None, "code_lines_added": None, "ratio": None,
+        "commits_counted": 0, "basis": "unavailable",
+    }
+    project_dir = ORCH_DIR.parent
+    try:
+        # Commits since the log's first event — the workflow's own window.
+        proc = subprocess.run(
+            # `%x00` is a literal NUL: a commit marker that cannot collide with a
+            # path. A bare word here is not a valid --pretty format and git exits
+            # with "fatal: invalid --pretty format".
+            ["git", "-C", str(project_dir), "log", "--numstat",
+             "--format=%x00", "--no-merges", "-n", "50"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return empty
+    if proc.returncode != 0:
+        return {**empty, "basis": "not a git repository"}
+
+    spec_lines = code_lines = commits = 0
+    for line in proc.stdout.splitlines():
+        if line.startswith("\x00"):
+            commits += 1
+            continue
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        added_raw, _removed, path = parts
+        if added_raw == "-":  # binary
+            continue
+        try:
+            added = int(added_raw)
+        except ValueError:
+            continue
+        if _is_spec_path(path):
+            spec_lines += added
+        elif path.endswith(_CODE_EXTENSIONS):
+            code_lines += added
+
+    if spec_lines == 0 and code_lines == 0:
+        return {**empty, "commits_counted": commits, "basis": "no counted changes"}
+
+    ratio = round(spec_lines / code_lines, 2) if code_lines else None
+    return {
+        "spec_lines_added": spec_lines,
+        "code_lines_added": code_lines,
+        "ratio": ratio,
+        "commits_counted": commits,
+        "basis": "git log --numstat over the last 50 non-merge commits",
+    }
+
+
+def _last_cost_projection(events: list | None) -> dict | None:
+    """The most recent `cost_projected` payload, so projection and outcome sit
+    side by side in one file — otherwise the estimate can never be calibrated."""
+    if events is None:
+        events = list(read_events_filtered(event_type=None))
+    for e in reversed(events):
+        if e.event_type == "cost_projected":
+            return e.data if isinstance(e.data, dict) else None
+    return None
+
+
 def _compute_metrics(state=None, events=None) -> dict:
     if state is None:
         state = reduce_all()
@@ -298,6 +396,14 @@ def _compute_metrics(state=None, events=None) -> dict:
         "circuit_breaker_tripped": state.circuit_breaker is not None,
         "failure_reason_breakdown": failure_reason_breakdown,
         "structural_failure_rate": structural_failure_rate,
+        # R11c: spec:code ratio. Without it the disproportion is invisible — the
+        # diagnosis that found a 2.6:1 spec-to-code ratio on a change that
+        # introduced no behaviour only exists because someone counted lines by
+        # hand. It is also the prerequisite for deciding anything about the
+        # artifact model (is a separate *.back.md worth its cost?): that call
+        # needs a trend, not one anecdote.
+        "spec_code_ratio": _spec_code_ratio(),
+        "cost_projection": _last_cost_projection(events),
         "progress": compute_progress(state),
     }
 
@@ -314,6 +420,45 @@ def _detect_stale_orchestrator(state, events: list) -> dict | None:
     source of truth, also called by the live orchestrator's Step 5.0 check).
     """
     return detect_stale_orchestrator(state, events, now_iso())
+
+
+_ORPHANED_RETRY_CODE = "E27_retry_scheduled_without_actuator"
+
+
+def _escalate_orphaned_retry(reaped: list, state) -> None:
+    """Record, in the log, that a retry was scheduled with nothing left to run it.
+
+    Emitted at most once per workflow: repeating it on every session close would
+    bury the signal it exists to raise.
+    """
+    from orch_core import EventType, append_event, read_events
+
+    for event in read_events():
+        if (event.event_type == EventType.ESCALATION.value
+                and (event.data or {}).get("code") == _ORPHANED_RETRY_CODE):
+            return
+
+    append_event(
+        agent="stale-monitor",
+        event_type=EventType.ESCALATION.value,
+        data={
+            "code": _ORPHANED_RETRY_CODE,
+            "severity": "warning",
+            "reason": (
+                f"session ended after reaping {len(reaped)} stale task(s) and "
+                "scheduling their retries. A scheduled retry is promoted only by a "
+                "phase orchestrator's dispatch loop, and none is running — the "
+                "retries will not fire on their own."
+            ),
+            "evidence": [state.last_seq],
+            "reaped_tasks": list(reaped)[:20],
+            "suggested_actions": [
+                "the SessionStart hook (recovery_tick.py) promotes these on the next session",
+                "or re-invoke the meta-orchestrator now to resume the phase",
+                "to avoid the wait entirely, run supervision: /loop 5m /u-supervise <workflow_id>",
+            ],
+        },
+    )
 
 
 def _write_stale_orchestrator_alert(stale: dict, metrics: dict) -> None:
@@ -468,12 +613,28 @@ def main() -> None:
         # prod-hardening task 06 (A2-F1): reap hung RUNNING tasks deterministically
         # at session end — backstop to the orchestrator Step 5.0 check_stale.py call.
         try:
-            reap_stale_tasks()
+            reaped = reap_stale_tasks()
         except Exception:
-            pass
+            reaped = []
 
         events = list(read_events_filtered(event_type=None))
         state = reduce_all()
+
+        # R07c: a retry scheduled HERE has no actuator. `reap_stale_tasks` schedules
+        # the retry atomically with the failure (F3/F4), but the only components that
+        # promote a scheduled retry are the phase orchestrators' dispatch loops — and
+        # this hook runs as the session ends, so the orchestrator is already gone.
+        # Observed: task_failed + task_scheduled_retry at 23:19:36, next_retry_at
+        # 23:20:02, and the log ends there. Say so in the LOG, not only in a passive
+        # last_error.json that nobody was reading.
+        #
+        # recovery_tick.py (SessionStart) is the actuator that resolves it; this
+        # escalation is what tells a reader the workflow is waiting for one.
+        if reaped:
+            try:
+                _escalate_orphaned_retry(reaped, state)
+            except Exception:
+                pass
         metrics = _compute_metrics(state, events)
         metrics["orphaned_phase"] = None
 

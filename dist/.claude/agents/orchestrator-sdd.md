@@ -315,6 +315,29 @@ Extract and hold from `triage.json`:
 - `ui_task`: bool — **derived** from `stack` (`ui_task = stack in {fe, fullstack}`). Gates the front leg in Step 4 standard. If absent, default to `true` (conservative: run the front leg).
 - `requirement`: task description (passed to workers as context)
 
+**Project the cost and record it — ALWAYS, before the first domain dispatch (R11a):**
+
+```bash
+PROJ=$(python3 .claude/scripts/project_cost.py \
+  --triage "$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>/triage.json" --json-only)
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type cost_projected \
+  --data "$(echo "$PROJ" | python3 -c "import json,sys; p=json.load(sys.stdin); print(json.dumps({'phase':'sdd','workflow_id':'<workflow_id>','mode':p['mode'],'workers':p['workers'],'wall_clock_minutes':p['wall_clock_minutes'],'concurrency':p['concurrency'],'breakdown':p['breakdown'],'basis':p['basis']}))")"
+```
+
+Then include `workers` and `wall_clock_minutes` in the progress panel and in the E99 gate reason.
+
+> **Unconditional on purpose.** The E99 confirmation gate already displayed
+> `estimated_task_contracts`, but `bypass_e99` is set for every `/u-improve` — and `/u-improve` is
+> the only usable entry point on a populated repository (see `/u-spec`'s entry guard), so in
+> practice the operator never saw a number before committing to the run. Measured: a change of
+> three type-level items spent **56 min of sdd across 10 workers**, discovered afterwards. Emitting
+> the projection here, before Step 3, means the price is in the log whether or not a gate is shown.
+>
+> `cost_projected` is audit-only (no reducer handler), so emitting it can never affect task state.
+
 **Triage routing (S4-S6, via state machine):**
 
 ```bash
@@ -559,7 +582,28 @@ billing        | spec-writer     | pending
 
 ### Step 3 — Human confirmation gate
 
-> **If `bypass_e99 == true`** (trigger is `u-improve`): skip directly to Step 4.
+> **If `bypass_e99 == true`** (trigger is `u-improve`): skip directly to Step 4 — **unless the
+> projection from Step 0.5 crosses the cost threshold (R11b).**
+>
+> **Cost threshold:** `workers >= 8` (≈48 min at the measured ~6 min/worker), or
+> `sdd_cost_confirm_workers` in `.orch/config.json` when set. Below it, an `/u-improve` proceeds
+> unattended as before; at or above it, ask once:
+>
+> ```bash
+> python3 .claude/skills/orch-log/scripts/append.py \
+>   --agent orchestrator-sdd \
+>   --event-type escalation \
+>   --data '{"code":"E99_human_confirmation_required","severity":"info","phase":"sdd","reason":"sdd projection: <workers> workers, ~<wall_clock_minutes> min in <mode> mode (<breakdown>). This is above the confirm threshold, so it is being surfaced before the first dispatch rather than after.","evidence":[<cost_projected seq>],"options":["confirm_proceed","abort"],"suggested_actions":["confirm_proceed — run it","abort — then narrow the /u-improve description so triage scopes to fewer specs (fan-out in targeted mode is per affected_specs ENTRY, not per domain)"]}'
+> ```
+>
+> Then resolve it exactly like the gate below (`confirm_proceed` → Step 4; `abort` → blocked; no
+> response yet → `escalated` and stop). One escalation per workflow: if an
+> `E99_human_confirmation_required` already exists for this workflow, do not re-ask.
+>
+> **Why this exists.** `bypass_e99` was suppressing the *only* surface that showed the price, and
+> `/u-improve` is the only usable entry point on a populated repository — so the operator
+> systematically discovered the cost after paying it. This restores the choice without restoring the
+> gate on every small change.
 
 **Check for pending confirmation first:**
 
@@ -1498,7 +1542,32 @@ Store result as `repair_cycles`.
 python3 .claude/skills/phase-sdd-rules/scripts/identify_invalid_domains.py --workflow-id <workflow_id>
 ```
 
-Store `invalid_domains` and `defect_origins` from the output. `defect_origins` maps each INVALID domain to the pipeline stage its blocking issues point at, derived from the machine-readable `{domain}-validation-result.yaml` (`responsible` fields): `"back"` when ALL blocking issues belong to `u-spec-back`, `null` otherwise (mixed/front/writer/missing/unparseable).
+Store `invalid_domains`, `defect_origins` and **`stale_verdicts`** from the output.
+
+**Step R2.1 — revalidate a stale verdict instead of repairing on it (R08).** A domain listed in
+`stale_verdicts` has an INVALID verdict written *before* its spec files were last edited
+(`specs_changed_since` names them): the verdict judges a state that is no longer on disk, so its
+blocking issues may already be resolved. For each such domain create ONLY a validator task — not a
+repair pipeline:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<workflow_id>_<domain>_spec-validator-revalidate-<repair_n> \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"spec-validator","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","validation_mode":"<incremental_back if triage.ui_task else final_complete>","revalidate_reason":"stale_verdict","specs_changed_since":[<specs_changed_since>]}'
+```
+
+Remove those domains from `invalid_domains` for this cycle and return to Step 5 — the fresh verdict
+decides whether a repair is needed at all. If the revalidation still says INVALID, the next R2 pass
+sees a current verdict and repairs normally.
+
+> **Measured cost of skipping this.** A `spec-back-repair-1` ran **6.4 minutes and changed zero
+> files**: the two blocking issues it was dispatched to fix had already been resolved on disk by an
+> earlier session that never rewrote the validation artifact. The resulting commit touched only
+> `_validation/**` and the manifest — nothing under `domains/**`, which was the entire point of the
+> dispatch. The trigger was "the artifact says INVALID", never "the condition still holds". One
+> validator run costs less than a repair pipeline and answers the actual question. `defect_origins` maps each INVALID domain to the pipeline stage its blocking issues point at, derived from the machine-readable `{domain}-validation-result.yaml` (`responsible` fields): `"back"` when ALL blocking issues belong to `u-spec-back`, `null` otherwise (mixed/front/writer/missing/unparseable).
 
 `--workflow-id` scopes the repair-target set (fix F1): on an `/u-improve`, a stale INVALID report in an untouched domain is returned under `out_of_scope_invalid` and NEVER enters `invalid_domains` — this workflow's repair loop must not dispatch workers for domains it did not touch. For u-spec / greenfield the scan stays global.
 

@@ -401,6 +401,28 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{"phase":"<next_phase>","order":<order>,"evidence_seq":<evidence_seq>,"workflow_id":"<workflow_id>"}'
 ```
 
+**Then record whether anything is watching this phase (R07a — advisory):**
+
+```bash
+python3 .claude/scripts/check_supervisor_lease.py --workflow-id "<workflow_id>"
+```
+
+If `leased == false`, append the advisory once per workflow (skip when an
+`E28_no_supervisor_lease` escalation already exists for it):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator \
+  --event-type escalation \
+  --data '{"code":"E28_no_supervisor_lease","severity":"info","phase":"<next_phase>","reason":"<advice from the check>","evidence":[<phase_entered seq>],"workflow_id":"<workflow_id>","suggested_actions":["attended: /loop 5m /u-supervise <workflow_id>","unattended: /schedule /u-supervise <workflow_id>","no action needed if you are driving the phases yourself — recovery_tick.py recovers a stall at the next session"]}'
+```
+
+Then continue. **This never blocks phase entry.** Requiring a lease would break the attended mode,
+where the operator drives each phase and is the supervisor — the mode every measured workflow used.
+The point is that the log states plainly whether a stall would be caught in minutes (supervisor
+running) or at the next session (`recovery_tick.py`); previously it recorded neither, and two stalls
+cost 63 min and 20 min of wall clock with nothing indicating anyone should look.
+
 Re-read state (re-run Step 2). `current_phase` is now set.
 
 ---
