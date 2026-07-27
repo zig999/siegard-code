@@ -1,6 +1,6 @@
 ---
 name: u-worker-compliance
-description: Static analysis validator for worker and orchestrator .md protocol compliance (rules W01–W08 — terminal events, canonical phase values, register_worker arguments, emit.py skill declaration, exit-criteria gate fields declared by their producing worker). Run scripts/check_worker.py on .claude/agents/**/*.md before promoting to dist/; enforced in CI by tests/test_worker_compliance_gate.py, which fails the suite on any W01–W08 violation. Not user-invocable — reviewers and CI run the script directly.
+description: Static analysis validator for worker and orchestrator .md protocol compliance (rules W01–W09 — terminal events, canonical phase values, register_worker arguments, emit.py skill declaration, exit-criteria gate fields declared by their producing worker). Run scripts/check_worker.py on .claude/agents/**/*.md before promoting to dist/; enforced in CI by tests/test_worker_compliance_gate.py, which fails the suite on any W01–W09 violation. Not user-invocable — reviewers and CI run the script directly.
 user-invocable: false
 allowed-tools: Bash(python3 *), Read, Glob, Grep
 ---
@@ -105,6 +105,26 @@ agent is expected to open on its own is a requirement with a recurring failure m
 **Maintenance:** adding a field to a checker means adding it to `GATE_FIELDS_BY_WORKER` and
 to the worker protocol in the same change. The registry is the artifact → checker contract in
 one place; leaving it stale fails this gate.
+
+---
+
+### Rule W09 — Review-only worker registers the artifact it reviewed
+
+A worker in `REVIEW_ONLY_WORKERS` declares an `artifacts` entry under `domains/`.
+
+**Detection:** scan every `"artifacts": [...]` payload in the worker `.md`; flag entries whose
+path contains a `domains/` segment.
+
+**Severity:** CRITICAL — separation of duties. A judge that can write its own subject can make a
+finding disappear instead of reporting it.
+
+**Violation origin:** a reviewer reported two **Major** issues via
+`task_failed(validation_failed, retryable: true)`; the engine retried the same reviewer over
+unchanged input, and the only route to terminal-success was for the problem to vanish. Attempt 2
+edited both spec files, reclassified both findings as "minor", removed a business-rule block, and
+approved its own edit — registering the spec files as its artifacts. Three guards now close it:
+`should_retry` refuses to retry `validation_failed` on a verdict task type (R02b), `emit.py`
+refuses the artifact path at runtime (R02c), and this rule refuses it in the agent contract.
 
 ---
 

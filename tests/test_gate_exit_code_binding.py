@@ -126,18 +126,18 @@ class TestOrchestratorsBindToTheExitCode:
         )
         assert "non-zero" in window
 
-    @pytest.mark.parametrize("phase", ["dev", "review", "test"])
+    @pytest.mark.parametrize("phase", PHASES)
     def test_verdict_is_captured_mechanically(self, phase):
-        """dev/review/test run independent checkers, so they use the loop idiom.
+        """The verdict must arrive as a single unambiguous signal.
 
-        sdd is excluded on purpose: its step is order-dependent (manifest
-        generation must not run on a blocked precondition), so it checks `$?`
-        per stage and stops at the first failure instead of looping.
+        R01b first introduced a shell loop over the checkers; R01a superseded it
+        with evaluate_exit_criteria.py, which both evaluates and records. Either
+        way the orchestrator must not be interpreting per-checker JSON.
         """
         text = (dist / "agents" / f"{ORCHESTRATOR_BY_PHASE[phase]}.md").read_text(
             encoding="utf-8")
-        assert "GATE_FAILED" in text
-        assert "GATE_FAILED: none" in text, (
+        assert "evaluate_exit_criteria.py" in text
+        assert "verdict: all_met" in text, (
             "the orchestrator needs one unambiguous permitting state"
         )
 
@@ -166,4 +166,96 @@ class TestOrchestratorsBindToTheExitCode:
         window = text[idx:idx + 1400]
         assert "P7" in window and "P11" in window, (
             "tie the rule to the invariants it protects, or it reads as style"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# R01a — the orchestrators no longer compose the per-criterion events.
+#
+# The breach was an LLM hand-writing `phase_exit_criterion_met` over a checker
+# that had blocked. Removing the hand-written path removes the breach: the
+# events now come from evaluate_exit_criteria.py, which derives the criteria set
+# from exit-criteria.json and writes `checker_exit` as evidence.
+# ─────────────────────────────────────────────────────────────────────────────
+
+EVALUATOR = dist / "scripts" / "evaluate_exit_criteria.py"
+
+
+class TestEmissionMovedOutOfTheOrchestrators:
+    def test_evaluator_is_shipped(self):
+        assert EVALUATOR.is_file()
+
+    @pytest.mark.parametrize("phase", PHASES)
+    def test_orchestrator_no_longer_emits_criteria_by_hand(self, phase):
+        text = (dist / "agents" / f"{ORCHESTRATOR_BY_PHASE[phase]}.md").read_text(
+            encoding="utf-8")
+        assert "--event-type phase_exit_criterion_met" not in text, (
+            f"{ORCHESTRATOR_BY_PHASE[phase]} still composes phase_exit_criterion_met "
+            "by hand — that is the path that recorded a met criterion over a blocked "
+            "checker in production"
+        )
+
+    @pytest.mark.parametrize("phase", PHASES)
+    def test_orchestrator_calls_the_evaluator(self, phase):
+        text = (dist / "agents" / f"{ORCHESTRATOR_BY_PHASE[phase]}.md").read_text(
+            encoding="utf-8")
+        assert "evaluate_exit_criteria.py" in text
+        assert f"--phase {phase}" in text
+
+    @pytest.mark.parametrize("phase", PHASES)
+    def test_orchestrator_branches_on_the_evaluator_exit_code(self, phase):
+        text = (dist / "agents" / f"{ORCHESTRATOR_BY_PHASE[phase]}.md").read_text(
+            encoding="utf-8")
+        idx = text.index("evaluate_exit_criteria.py")
+        window = text[idx:idx + 2000]
+        for token in ("exit 0", "exit 3", "exit 1"):
+            assert token in window, f"{phase}: evaluator branch missing '{token}'"
+
+    @pytest.mark.parametrize("phase", PHASES)
+    def test_orchestrator_still_owns_phase_exit_approved(self, phase):
+        """Approval encodes policy (the human gate in sdd/review) — it stays with
+        the orchestrator on purpose. Only the measurement moved."""
+        text = (dist / "agents" / f"{ORCHESTRATOR_BY_PHASE[phase]}.md").read_text(
+            encoding="utf-8")
+        assert "--event-type phase_exit_approved" in text
+
+    def test_sdd_records_after_the_commit_gate(self):
+        """`sdd_artifacts_committed` is a declared criterion, so the single
+        recording point must come after the commit that makes it satisfiable."""
+        text = (dist / "agents" / "orchestrator-sdd.md").read_text(encoding="utf-8")
+        commit_at = text.index("check_sdd_artifacts_committed.py")
+        eval_at = text.rindex("evaluate_exit_criteria.py")
+        assert commit_at < eval_at
+
+    def test_sdd_passes_the_mode_so_criteria_follow_the_manifest(self):
+        text = (dist / "agents" / "orchestrator-sdd.md").read_text(encoding="utf-8")
+        assert "--mode <effective_mode>" in text
+        assert "applies_to_modes" in text
+
+
+class TestCheckerExitEvidenceIsEnforced:
+    def test_validator_rejects_nonzero_checker_exit(self):
+        sys.path.insert(0, str(dist / "lib"))
+        import orch_core
+        with pytest.raises(orch_core.EventValidationError):
+            orch_core._validate_event_data("phase_exit_criterion_met", {
+                "phase": "test", "criterion": "all_tests_passed", "checker_exit": 1,
+            })
+
+    def test_validator_accepts_absent_field_for_history(self):
+        sys.path.insert(0, str(dist / "lib"))
+        import orch_core
+        orch_core._validate_event_data("phase_exit_criterion_met", {
+            "phase": "test", "criterion": "all_tests_passed",
+        })  # must not raise
+
+    def test_evaluator_always_writes_the_evidence_field(self):
+        src = EVALUATOR.read_text(encoding="utf-8")
+        assert '"checker_exit"' in src and '"checker"' in src
+
+    def test_evaluator_emission_is_all_or_nothing(self):
+        src = EVALUATOR.read_text(encoding="utf-8")
+        assert "if not failing and not dry_run:" in src, (
+            "a partial emission would leave the log asserting progress the phase "
+            "has not made"
         )

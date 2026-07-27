@@ -162,15 +162,49 @@ def test_protected_task_type_left_failed_for_own_escalation(tmp_orch):
 
 
 def test_unprotected_spec_validator_would_be_rescheduled(tmp_orch):
-    """Contrast case proving the protection above is load-bearing, not a no-op."""
+    """Contrast case proving the protection above is load-bearing, not a no-op.
+
+    Uses `internal_error` rather than `validation_failed`: since R02b, a
+    `validation_failed` on a verdict task type (`spec-reviewer`/`spec-validator`)
+    is never retried at all — it is a judgement about the input, not a fault in
+    the worker (see the next test). `internal_error` is a genuine worker failure,
+    which is the case this contrast is about.
+    """
     import orch_core
     _seed_phase(orch_core, phase="sdd")
-    _create_claim_fail(orch_core, "sv1", phase="sdd", task_type="spec-validator", attempt=2)
+    _create_claim_fail(orch_core, "sv1", phase="sdd", task_type="spec-validator",
+                       attempt=2, reason="internal_error")
 
     out = requeue_mod.requeue(now=_NOW, phase="sdd")
     assert out["scheduled"] == ["sv1"]
     state = orch_core.reduce_all()
     assert state.tasks["sv1"].status == orch_core.TaskStatus.SCHEDULED
+
+
+def test_validation_failed_on_a_verdict_task_type_goes_to_dlq(tmp_orch):
+    """R02b — a verdict is not a transient failure, so it is never rescheduled.
+
+    Retrying the same judge over unchanged input cannot change the input; it can
+    only pressure the judge to change its mind. In production that is exactly what
+    happened: a reviewer reported two Major issues as
+    `task_failed(validation_failed, retryable=true)`, was retried, and attempt 2
+    edited the spec files under review, downgraded both findings to "minor", and
+    approved its own edit.
+
+    DLQ is deliberately loud: under the R02a contract a reviewer reports its
+    verdict via `task_completed`, so arriving here means a worker broke its
+    contract, and that should surface rather than self-heal.
+    """
+    import orch_core
+    _seed_phase(orch_core, phase="sdd")
+    _create_claim_fail(orch_core, "sr1", phase="sdd", task_type="spec-reviewer",
+                       attempt=1, reason="validation_failed")
+
+    out = requeue_mod.requeue(now=_NOW, phase="sdd")
+    assert out["scheduled"] == []
+    assert out["dlq_routed"] == ["sr1"]
+    state = orch_core.reduce_all()
+    assert state.tasks["sr1"].status == orch_core.TaskStatus.DLQ
 
 
 # ---------------------------------------------------------------- wait window

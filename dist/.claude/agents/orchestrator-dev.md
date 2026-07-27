@@ -1112,58 +1112,33 @@ The end state (HEAD on `main`, clean tree, no unmerged `feat/TC-*` branch, no le
 > testable code, not in prompts). Observed in production in the test phase: a criterion recorded as
 > met while its checker returned `met: false` / exit 1, and the workflow transitioned anyway.
 
-Run all six and capture the verdict mechanically — do not decide from the printed JSON:
+**Do not run the checkers by hand and do not compose the per-criterion events (R01a).**
+`evaluate_exit_criteria.py` reads `phase-dev-rules/exit-criteria.json`, runs every declared
+checker, and — only when all of them exit 0 — appends each `phase_exit_criterion_met` itself,
+carrying `checker` and `checker_exit: 0` as execution evidence. Emission is all-or-nothing: a
+partial set would leave the log asserting progress the phase has not made.
 
 ```bash
-GATE_FAILED=""
-for c in check_all_impl_tasks_terminal check_all_deliveries_qa_ready \
-         check_no_open_prohibitions check_all_branches_integrated \
-         check_acceptance_criteria_covered check_spec_requirements_covered; do
-  ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-dev-rules/scripts/$c.py \
-    || GATE_FAILED="$GATE_FAILED $c"
-done
-echo "GATE_FAILED:${GATE_FAILED:- none}"
+python3 .claude/scripts/evaluate_exit_criteria.py --phase dev --workflow-id "<workflow_id>"
 ```
 
-`GATE_FAILED: none` is the only state that permits emitting the criteria below. Anything else means
-at least one criterion is NOT met: emit none of them, and name the failing checkers from
-`GATE_FAILED` in the E08 `reason`.
+Branch on the **exit code**:
+
+- **exit 0** (`verdict: all_met`) → every criterion is already recorded in the log. Continue below;
+  do NOT re-emit them.
+- **exit 3** (`verdict: blocked`) → at least one criterion is NOT met and **nothing was emitted**. Route
+  to the E08 branch and name `failing[]` from the output in the escalation `reason`.
+- **exit 1** → the evaluator itself failed. Report its JSON error and stop; do not emit anything.
+
+> `_validate_event_data` rejects a `phase_exit_criterion_met` whose `checker_exit` is non-zero
+> (R01c), so the production breach — criterion recorded as met over a checker that returned
+> `met: false` / exit 1 — can no longer be written even by hand.
 
 `check_spec_requirements_covered` (Rec A) blocks dev exit when a `UC-NN`/`FEAT-NN` defined in a spec the backlog references is covered by no Task Contract — the planner-under-scoped-a-requirement leak. It self-scopes to standard/greenfield flows (improve/synthesized backlogs return `met: true`, reason recorded in evidence).
 
-If all six return `"met": true`:
+With `verdict: all_met` recorded, emit the phase approval:
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"dev","criterion":"all_impl_tasks_terminal"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"dev","criterion":"all_deliveries_qa_ready"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"dev","criterion":"no_open_prohibitions"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"dev","criterion":"all_branches_integrated_to_main"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"dev","criterion":"acceptance_criteria_covered"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-dev \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"dev","criterion":"spec_requirements_covered"}'
-
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-dev \
   --event-type phase_exit_approved \

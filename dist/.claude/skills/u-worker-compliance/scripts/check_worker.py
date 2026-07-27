@@ -269,6 +269,42 @@ def _check_w08_gate_fields_declared(content: str, path: Path) -> list[Violation]
 
 
 # ---------------------------------------------------------------------------
+# W09 — a review-only worker must not register the artifact it reviewed
+#
+# Origin: a reviewer that had reported two Major issues was retried over
+# unchanged input, edited the two spec files under review, downgraded its own
+# findings to "minor", approved the result, and registered both spec files as
+# its artifacts. Nothing reviewed that change. emit.py now refuses such a path
+# at runtime (R02c); this rule refuses the same thing in the agent's own
+# documented contract, so the definition can never invite it.
+# ---------------------------------------------------------------------------
+
+REVIEW_ONLY_WORKERS: frozenset[str] = frozenset({"u-spec-reviewer"})
+_REVIEWED_ARTIFACT_MARKER = "domains/"
+
+
+def _check_w09_review_only_artifacts(content: str, path: Path) -> list[Violation]:
+    if path.stem not in REVIEW_ONLY_WORKERS:
+        return []
+    violations: list[Violation] = []
+    for m in re.finditer(r'"artifacts"\s*:\s*\[([^\]]*)\]', content):
+        entry = m.group(1)
+        if _REVIEWED_ARTIFACT_MARKER in entry.replace("\\", "/"):
+            violations.append(Violation(
+                rule="W09",
+                severity="critical",
+                detail=(
+                    f"{path.stem} is a review-only worker but its contract registers an "
+                    f"artifact under '{_REVIEWED_ARTIFACT_MARKER}' — that is the artifact "
+                    "under review, not a review output. Separation of duties: report the "
+                    "issues and let the writer apply them"
+                ),
+                line=content[: m.start()].count("\n") + 1,
+            ))
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Single file validation
 # ---------------------------------------------------------------------------
 
@@ -289,6 +325,7 @@ def check_file(path: Path) -> FileResult:
     violations.extend(_check_w04_default_phase(content, path))
     violations.extend(_check_w05_register_worker_phase(content, path))
     violations.extend(_check_w08_gate_fields_declared(content, path))
+    violations.extend(_check_w09_review_only_artifacts(content, path))
 
     return FileResult(
         file=str(path),

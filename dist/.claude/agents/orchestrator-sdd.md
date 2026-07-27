@@ -1159,9 +1159,61 @@ For each task in the batch:
   "
   ```
 
-#### 5.5 — Retry decisions
+#### 5.5 — Verdict routing and retry decisions
 
-Re-read state once. For each task with `status == "failed"`:
+**First: route reviewer verdicts (R02a).** A reviewer's verdict is a successful completion carrying
+`verdict` in its `task_completed` data — `approved`, `revision_needed`, or `rejected`. For each
+`spec-reviewer` task that completed in this batch:
+
+- `verdict == "approved"` → nothing to do; its dependents are unblocked normally.
+- `verdict ∈ {"revision_needed", "rejected"}` → the **writer** revises, the reviewer does not
+  re-run over unchanged input. Count the revision cycles already spent for this domain, then:
+
+```bash
+# Revision cycles already attempted for this domain (workflow-scoped).
+python3 -c "
+import sys, re, json; sys.path.insert(0,'.claude/lib')
+from orch_core import read_events
+wf, dom = '<workflow_id>', '<domain>'
+pat = re.compile(rf'sdd_{re.escape(wf)}_{re.escape(dom)}_spec-\w+-revision-(\d+)\$')
+ids = [e.task_id for e in read_events() if e.task_id and pat.match(e.task_id)]
+n = max((int(pat.match(t).group(1)) for t in ids), default=0)
+print(json.dumps({'revision_cycles': n}))
+"
+```
+
+**If `revision_cycles >= 2`:** stop revising and escalate `E05_rejection_cycle_limit` — two rounds
+of writer revision that still fail review is a human decision, not a third machine attempt.
+
+**Otherwise** create the pair (`revision_n = revision_cycles + 1`), chained by `deps`:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<workflow_id>_<domain>_spec-writer-revision-<revision_n> \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"spec-writer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","revision_cycle":<revision_n>,"repair_context":"<the reviewer report path from its task_completed artifacts>"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<workflow_id>_<domain>_spec-reviewer-revision-<revision_n> \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_<domain>_spec-writer-revision-<revision_n>"],"tier":"standard","type":"spec-reviewer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","revision_cycle":<revision_n>}'
+```
+
+The revision writer receives the reviewer's report as `repair_context` and MUST read it first — it
+is the list of issues to apply. A **fresh** reviewer task then re-judges the revised artifact.
+
+> **Why the writer and not the reviewer.** In production a reviewer expressed REVISION NEEDED as
+> `task_failed(validation_failed, retryable: true)`. No writer task was ever created; the engine
+> retried the same reviewer over the same input, and the only path to terminal-success was for the
+> problem to go away — so attempt 2 edited `mwo-catalog.spec.md` and `openapi.yaml`, reclassified
+> both **Major** findings as "minor", removed a business-rule block, and approved its own edit.
+> `should_retry` now refuses to retry `validation_failed` on a verdict task type (R02b) and
+> `emit.py` refuses to let a reviewer register a file under `domains/` (R02c). This routing is the
+> corrective action those two guards leave room for.
+
+**Then: retry decisions.** Re-read state once. For each task with `status == "failed"`:
 
 ```python
 import sys; sys.path.insert(0, '.claude/lib')
@@ -1260,24 +1312,14 @@ Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<
 **Sequencing (mandatory):**
 - If `check_all_domains_validated.py` or `check_error_codes_synced.py` returns `blocked` → do NOT generate; fall through to the "any criterion not met" handling below (Validation Repair Loop / E08).
 - If `generate_handoff_manifest.py` returns `blocked` (e.g., a compliance `block_handoff` or `handoff_allowed:false` signal) → treat as criterion-not-met → same fall-through (no new escalation code).
-- Only when all four steps return `"status": "ok"` (exit code 0), emit:
+**The precondition run above enforces ORDERING only — it records nothing.** The manifest must not
+be generated over blocked specs, which is why these run first and stop at the first non-zero `$?`.
+The authoritative evaluation and the per-criterion recording happen once, in the
+**Artifact commit gate** below, after the commit — because `sdd_artifacts_committed` is itself a
+declared criterion and cannot be evaluated before the commit exists (R01a).
 
-```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"handoff_manifest_approved"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"all_domains_validated"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"error_codes_synced"}'
-```
+If any stage here returns `blocked`, fall through to the Validation Repair Loop / E08 now and do
+not proceed to the commit.
 
 Set `criteria_met = ["handoff_manifest_approved", "all_domains_validated", "error_codes_synced"]`.
 
@@ -1300,24 +1342,11 @@ Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<
 
 `check_all_domains_validated.py` is NOT run in targeted mode — replaced by `check_all_improve_reviewers_completed.py` (invoke with `ORCH_WORKFLOW_ID=<workflow_id>` so it scopes to this workflow's `sdd_<workflow_id>_improve_*_spec-reviewer` tasks), which verifies that every improve spec-reviewer task reached `completed`.
 
-Sequencing is identical to standard mode: spec-side criteria → generate manifest → manifest gate; any `blocked` falls through to the "criterion not met" handling. Only when all four steps return `status: ok`, emit:
+Sequencing is identical to standard mode: spec-side criteria → generate manifest → manifest gate; any `blocked` falls through to the "criterion not met" handling.
 
-```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"handoff_manifest_approved"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"all_improve_reviewers_completed"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"error_codes_synced"}'
-```
+As in standard mode, this run enforces ordering only; the recording happens once in the
+**Artifact commit gate** below, with `--mode targeted` so `applies_to_modes` selects
+`all_improve_reviewers_completed` instead of `all_domains_validated`.
 
 Set `criteria_met = ["handoff_manifest_approved", "all_improve_reviewers_completed", "error_codes_synced"]`.
 
@@ -1337,16 +1366,31 @@ git -C "$ORCH_PROJECT_DIR" commit -m "spec(sdd): handoff artifacts for <workflow
 python3 .claude/skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py
 ```
 
-If `check_sdd_artifacts_committed.py` returns `blocked` (an artifact untracked or with uncommitted changes) → fall through to the "criterion not met" handling; do NOT approve the exit. When it returns `ok`, emit the criterion and append it to `criteria_met` (both modes):
+If `check_sdd_artifacts_committed.py` returns `blocked` (an artifact untracked or with uncommitted changes) → fall through to the "criterion not met" handling; do NOT approve the exit.
+
+**Record every criterion here, via the evaluator, not by hand (R01a).** This is the single
+recording point for the phase: `evaluate_exit_criteria.py` reads
+`phase-sdd-rules/exit-criteria.json`, runs each criterion that applies to `<effective_mode>`
+(`applies_to_modes` selects `all_domains_validated` for `standard` and
+`all_improve_reviewers_completed` for `targeted`), and — only when all of them exit 0 — appends
+each `phase_exit_criterion_met` itself with `checker` and `checker_exit: 0` as execution evidence.
+Emission is all-or-nothing.
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"sdd_artifacts_committed"}'
+python3 .claude/scripts/evaluate_exit_criteria.py --phase sdd \
+  --workflow-id "<workflow_id>" --mode <effective_mode>
 ```
 
-Append `"sdd_artifacts_committed"` to the `criteria_met` list determined above.
+- **exit 0** (`verdict: all_met`) → every criterion, `sdd_artifacts_committed` included, is now in
+  the log. Do NOT re-emit any of them; continue to `phase_exit_approved`.
+- **exit 3** (`verdict: blocked`) → nothing was emitted. Fall through to the Validation Repair Loop
+  / E08, naming `failing[]` in the escalation `reason`.
+- **exit 1** → the evaluator itself failed; report its JSON error and stop.
+
+> Re-running the read-only precondition checks costs little; hand-composing the events is what
+> produced the production breach. `_validate_event_data` now also rejects a
+> `phase_exit_criterion_met` whose `checker_exit` is non-zero (R01c), so a criterion cannot be
+> recorded as met over a checker that blocked — by the evaluator or by anyone.
 
 ---
 

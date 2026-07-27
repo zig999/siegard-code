@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.27.0",
+  "version": "2.28.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-27T12:17:19Z",
+  "generated_at": "2026-07-27T12:34:07Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,19 +57,19 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "45962bf03bfee64f5bc042be905596d36f9a579cd8367522e967df41a6debc35"
+      "sha256": "117c727e5d36d1c0fa1787a06172b95e8507582d0ec415f4fa499ad0348875bd"
     },
     {
       "path": "agents/orchestrator-review.md",
-      "sha256": "5bebc375f9a585ab6ebbd4fd16062c9492562ff4b214e1b3f83343ce85c53c8d"
+      "sha256": "9700cacc84db11ba6b014c3d29a6fdba7fddab5eaf620460f506c210d45a9abc"
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "fc30f23b59a2a18d3d141024eae1e1e97c25d67e8f97323403cebe6ff06f15f3"
+      "sha256": "9575d927fb7ad554051a92f5a45812bc2fa622f9791f874399ac59cf2ceb29bc"
     },
     {
       "path": "agents/orchestrator-test.md",
-      "sha256": "a3936810da5f9672d86aa0990852f08613e4e958cbe3252f600cba39ca3731a3"
+      "sha256": "0ceb73e25ad2d1ff3dae0193e7de2c3c6c2322624bbe9ab37380adb1a6aebf98"
     },
     {
       "path": "agents/orchestrator.md",
@@ -105,7 +105,7 @@
     },
     {
       "path": "agents/spec/u-spec-reviewer.md",
-      "sha256": "b0428c0ec2cb93cc8b7cf937882a3b89de1a9abf8ef29023c05ae54d90cad50b"
+      "sha256": "c143257c6c52c7a8c36e62b733731aa460aa3060c1aa695778cdaf17e3f04649"
     },
     {
       "path": "agents/spec/u-spec-triage.md",
@@ -185,7 +185,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "e0b058598792c489a483ec74f749d887789a0c305809b2c18fc02be70a4e4b0d"
+      "sha256": "2f059c98b9d0d7ac43b366c739782a9b9bcc1a4b8373a3b77a3c6af928952138"
     },
     {
       "path": "lib/sm_runner.py",
@@ -218,6 +218,10 @@
     {
       "path": "scripts/evaluate_circuit.py",
       "sha256": "ce011b3e41a85b56a6546a02548aa714ab42ce0dbe49daf279440147f1f198e4"
+    },
+    {
+      "path": "scripts/evaluate_exit_criteria.py",
+      "sha256": "bdd59d28245e048307fe74d68119743378de2ef6b7f381646bb216bd4349043f"
     },
     {
       "path": "scripts/fix_stuck_improve.py",
@@ -321,7 +325,7 @@
     },
     {
       "path": "skills/orch-report/scripts/emit.py",
-      "sha256": "7516747778ac46670faa24ca78f15613ff1d2a87986a8a1f039245693cd16ee5"
+      "sha256": "9235ee8e55fa99dda273bd37647fa5cbfe6602d0082ea75a9a1f63581af8a57c"
     },
     {
       "path": "skills/orch-state/SKILL.md",
@@ -993,11 +997,11 @@
     },
     {
       "path": "skills/u-worker-compliance/SKILL.md",
-      "sha256": "8bf15a4ad3d4a0059dcc31421c2821a1b8bc80f1968bb9474c2583f82aab4d53"
+      "sha256": "edeb0f44ff967938e62402c325c36bbb1aa4eee467de35ce6b476d32ab5b12cb"
     },
     {
       "path": "skills/u-worker-compliance/scripts/check_worker.py",
-      "sha256": "e93715bbb30cb5f7ceb2cd06adfdd0cc72e69af6b215e2eaa459024c21e7ca70"
+      "sha256": "2d0c87aeeba4947378a7bef3838b5d057501dc36f2714b7c2645f005663871e0"
     }
   ]
 }

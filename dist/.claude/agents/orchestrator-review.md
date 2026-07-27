@@ -1008,45 +1008,31 @@ python3 .claude/skills/phase-review-rules/scripts/check_no_orphan_placeholders.p
 > recorded as met while its checker returned `met: false` / exit 1, and the workflow transitioned
 > anyway.
 
-Capture the verdict mechanically rather than deciding from the printed JSON:
+**Do not run the checkers by hand and do not compose the per-criterion events (R01a).**
+`evaluate_exit_criteria.py` reads `phase-review-rules/exit-criteria.json`, runs every declared
+checker, and — only when all of them exit 0 — appends each `phase_exit_criterion_met` itself,
+carrying `checker` and `checker_exit: 0` as execution evidence. Emission is all-or-nothing: a
+partial set would leave the log asserting progress the phase has not made.
 
 ```bash
-GATE_FAILED=""
-for c in check_all_qa_verdicts_approved check_no_open_critical_findings \
-         check_documentation_verified check_no_orphan_placeholders; do
-  ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-review-rules/scripts/$c.py \
-    || GATE_FAILED="$GATE_FAILED $c"
-done
-echo "GATE_FAILED:${GATE_FAILED:- none}"
+python3 .claude/scripts/evaluate_exit_criteria.py --phase review --workflow-id "<workflow_id>"
 ```
 
-`GATE_FAILED: none` is the only state that permits emitting the criteria below. Anything else means
-at least one criterion is NOT met: emit none of them, and name the failing checkers from
-`GATE_FAILED` in the E08 `reason`.
+Branch on the **exit code**:
 
-If all four return `"met": true`:
+- **exit 0** (`verdict: all_met`) → every criterion is already recorded in the log. Continue below;
+  do NOT re-emit them.
+- **exit 3** (`verdict: blocked`) → at least one criterion is NOT met and **nothing was emitted**. Route
+  to the E08 branch and name `failing[]` from the output in the escalation `reason`.
+- **exit 1** → the evaluator itself failed. Report its JSON error and stop; do not emit anything.
+
+> `_validate_event_data` rejects a `phase_exit_criterion_met` whose `checker_exit` is non-zero
+> (R01c), so the production breach — criterion recorded as met over a checker that returned
+> `met: false` / exit 1 — can no longer be written even by hand.
+
+With `verdict: all_met` recorded, emit the phase approval:
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-review \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"review","criterion":"all_qa_verdicts_approved"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-review \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"review","criterion":"no_open_critical_findings"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-review \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"review","criterion":"documentation_verified"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-review \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"review","criterion":"no_orphan_placeholders"}'
-
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type phase_exit_approved \
