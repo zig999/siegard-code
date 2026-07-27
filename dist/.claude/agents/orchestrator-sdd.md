@@ -1157,28 +1157,25 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='sdd', spawn_contex
 
 #### 5.2.5 — Evaluate context budget per task (WORKER_CONTEXT_BUDGET)
 
-Before spawning each worker, estimate context size and emit `context_budget_evaluated`. Heuristic estimate:
+**Do not estimate by hand.** The estimate is derived from the files each worker actually reads:
 
-- Base prompt (orchestrator spawn template): ~1500 tokens
-- Task spec + Requirement (`triage.requirement`): ~estimate by `len(triage.requirement) // 4`
-- Spec file at `<task.spec>` if path resolves to a file: `~estimate by file size // 4` (use `wc -c` divided by 4); skip if path is `triage.json` (already counted)
-- Worker skill content loaded by the sub-agent: treat as fixed `~18000` tokens. A spec
-  worker does not load one skill — it pulls its capability SKILL.md **plus** the templates
-  it reads by path (`u-spec-templates`) **plus** the globals (`u-spec-globals`: conventions,
-  error-codes, glossary). The old `~6000` figure counted a single skill and understated a
-  real spawn ~3× (fix F6 — honest sizing, not a raised gate).
+```bash
+python3 .claude/scripts/estimate_spawn_context.py \
+  --worker <selected_worker> --phase sdd \
+  --spec-file "<task.spec if it resolves to a file, else omit>" \
+  --requirement-chars <len(triage.requirement)>
+```
 
-Sum all four into `estimated_tokens`. Apply policy (thresholds unchanged — per the
-project rule, a budget ceiling is raised only when backed by actual measurement, so the
-more honest estimate simply moves borderline tasks into `monitor`, which still proceeds):
+Branch on the **exit code**:
 
-| Condition | Action |
-|-----------|--------|
-| `estimated_tokens < 30000` | proceed (`mitigation: "none"`) |
-| `30000 <= estimated_tokens < 60000` | proceed but record `mitigation: "monitor"` |
-| `estimated_tokens >= 60000` | DO NOT spawn — emit `task_failed` with `reason: "context_budget_exceeded", retryable: false` and skip task |
+- **0** → proceed. Take `mitigation` (`none` | `monitor`) from the output verbatim.
+- **3** → `mitigation: blocked`. Do NOT spawn: emit `task_failed` with
+  `reason: "context_budget_exceeded"`, `retryable: false`, and remove the task from the batch
+  before Step 5.3.
+- **1** → the estimator itself failed; report its JSON error and treat the task as `monitor`
+  rather than blocking on a broken measurement.
 
-Emit one event per task:
+Emit one event per task, using the script's numbers:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -1186,10 +1183,35 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --event-type context_budget_evaluated \
   --task-id <task_id> \
   --attempt <attempt> \
-  --data '{"phase":"sdd","estimated_tokens":<N>,"threshold_warn":30000,"threshold_block":60000,"mitigation":"<none|monitor|blocked>"}'
+  --data '{"phase":"sdd","estimated_tokens":<estimated_tokens>,"threshold_warn":<threshold_warn>,"threshold_block":<threshold_block>,"mitigation":"<mitigation>","breakdown":<breakdown>}'
 ```
 
-If any task in the batch was blocked (`mitigation: "blocked"`), remove it from the batch list before proceeding to Step 5.3.
+Carrying `breakdown` matters: it separates the part an operator can act on (the spec file) from the
+part they cannot (base prompt, worker inputs). A total is not actionable; a total plus its parts is.
+
+> **Why this replaced a prose heuristic.** The previous instruction said to "treat as fixed ~18000
+> tokens" the skill content a spec worker loads. Measured against the files the workers actually
+> read: `u-spec-back` 2,437 · `u-spec-validator` 2,869 · `u-spec-reviewer` 3,535 ·
+> `u-spec-writer` 6,668 — the constant was 3–7× too high, and too high is the direction that
+> **blocks work**. Across four measured workflows that is 461,759 phantom tokens, **40% of the
+> 1,149,494 reported**; the `u-spec-back` spawn recorded at 57,213 (95% of the ceiling) is really
+> 41,650 (69%), and 26,419 once the spec file is section-scoped (R16).
+>
+> The 18,000 came from correct reasoning with unmeasured arithmetic: fix F6 rightly observed that a
+> worker loads its capability SKILL.md *plus* templates *plus* globals, and assumed bundle-scale
+> loading. Bundle-scale would be 30–35k (the `u-spec-templates` bundle alone is ~27k tokens);
+> path-scoped reading is 2–7k. 18,000 matched neither. The spec agents declare only `orch-report`
+> in `skills:` — everything else is read by path, file by file — which is one grep away, and is the
+> same failure class R04 exists to prevent: a verifiable claim about the system asserted without
+> opening the files.
+>
+> The script therefore carries **no constant for worker inputs**. It parses each worker's own
+> Expected Inputs and sums the real file sizes, so the estimate follows a worker that changes
+> instead of drifting away from it.
+>
+> Thresholds are unchanged (30k warn / 60k block). Correcting the estimate is not raising the gate:
+> the ceiling now governs real context instead of 40% invented context, and the project rule that a
+> ceiling moves only on measurement still applies to the ceiling itself.
 
 #### 5.3 — Spawn batch in parallel
 

@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.32.0",
+  "version": "2.33.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-27T15:10:32Z",
+  "generated_at": "2026-07-27T15:52:29Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -17,7 +17,7 @@
     },
     {
       "path": "agents/dev/u-be-developer.md",
-      "sha256": "44d9ebfcc3efa31f7879729c26a406355a1d0b2be961b6060c17afada642ad36"
+      "sha256": "5c78fa837a79758efe7e1ee4dc98c6aa60dec3a964c4aa98f19709104c4856dd"
     },
     {
       "path": "agents/dev/u-be-planner.md",
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "f7018b99b00bcca6d8f0ddd359fee983f957f5c8fd3ad8586e8b31bd5f8a4691"
+      "sha256": "47e34beec18cc1f3d49ea330a149108b5f487e6e9c2684ac12117a3237c9050c"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -218,6 +218,10 @@
     {
       "path": "scripts/dlq_triage.py",
       "sha256": "0217218639ccfff072f5597ae8889ae598bb300ceaae258fbf6be7ec04e479ee"
+    },
+    {
+      "path": "scripts/estimate_spawn_context.py",
+      "sha256": "f4107785689b8bc7f26aabbd5500d41e120e24d9e570c882df0bda8ad508a538"
     },
     {
       "path": "scripts/evaluate_circuit.py",
