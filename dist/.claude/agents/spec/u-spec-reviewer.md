@@ -37,6 +37,10 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 - `.claude/skills/u-spec-review/SKILL.md` — review checklists and criteria
 - (If resubmission) Previous review report
 
+> **Reads whole files by design — do NOT section-scope this worker (R16).** Step 2 checks **completeness** — "all sections filled per template" — and the Changelog. A worker verifying that nothing is missing cannot be handed a subset: the sections it did not load are exactly the ones it is supposed to notice are absent.
+> Other spec workers load only the sections they need; this one is a deliberate exception,
+> and the exception is the point rather than an oversight.
+
 ## Execution Process
 
 ### Step 1: OpenAPI Review

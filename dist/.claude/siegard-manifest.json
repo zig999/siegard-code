@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.31.0",
+  "version": "2.32.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-27T14:54:52Z",
+  "generated_at": "2026-07-27T15:10:32Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -93,19 +93,19 @@
     },
     {
       "path": "agents/spec/u-spec-back.md",
-      "sha256": "a8e532d2d4a69a215f28252db56c021c7756c086e7689ba9e4aa203578c3fc15"
+      "sha256": "68c03432a0ce3c0b4e243eb42efa2f336b893285dad06f54f45df5ebe5bc365d"
     },
     {
       "path": "agents/spec/u-spec-compliance.md",
-      "sha256": "ba158916155957419f08d266ae0d817d24a936f9d6211dd682b9751273341f25"
+      "sha256": "d051df7ad8414d33b1cc9633e08d91c1dc818dc0c432a327da208f6fad9530ba"
     },
     {
       "path": "agents/spec/u-spec-front.md",
-      "sha256": "a5d113487fcf6ea0fda49f8ef3f34f0cbf945898c9f6ab34df72b37fd9953a90"
+      "sha256": "c7ecabd65ce727809c326f46a8ef14e9185c29e6b8aad56bbc61ff7ae496eda9"
     },
     {
       "path": "agents/spec/u-spec-reviewer.md",
-      "sha256": "2a999c464263772b4816b0739351df61cbb3473241699f3a99e32d0dddbd3213"
+      "sha256": "b5cdad66be9246346430887ea78fda04142cd23491ccb2575c3051994cccaca7"
     },
     {
       "path": "agents/spec/u-spec-triage.md",
@@ -113,7 +113,7 @@
     },
     {
       "path": "agents/spec/u-spec-validator.md",
-      "sha256": "07ce484f3a078d5aee457893d2faf6114fa8ffc198a6bcd1ee7a3f3b7b48c532"
+      "sha256": "f757bc520e06f5cc70355e5ee0a7ac2c254d396af7a5bf2c188c0c0c11672120"
     },
     {
       "path": "agents/spec/u-spec-writer.md",
@@ -929,7 +929,7 @@
     },
     {
       "path": "skills/u-spec-templates/SKILL.md",
-      "sha256": "2ad9886168574d2367fe777f77603edb66cf184979f399ccac8715f8edb332c7"
+      "sha256": "7ffad8ae3e8a232665aceee13f0ceaa0f44f720a9e3b443b9bf5ae18173515ef"
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.back.md",
@@ -982,6 +982,10 @@
     {
       "path": "skills/u-spec-templates/TEMPLATE.spec.md",
       "sha256": "c5c2d653db750b8805f1958e54089f57226c4ea7b5b94c4b49d95abf9675adb7"
+    },
+    {
+      "path": "skills/u-spec-templates/scripts/read_spec_sections.py",
+      "sha256": "d5e9f4af5cd84cd42d971627f93bd84bb16b67e170ea4944f5266f6b5c76a8da"
     },
     {
       "path": "skills/u-spec-triage-rules/SKILL.md",

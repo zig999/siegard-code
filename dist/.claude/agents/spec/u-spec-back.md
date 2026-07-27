@@ -30,17 +30,39 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 
 ## Expected Inputs
 - `domains/{domain}/openapi.yaml` — **APPROVED** by the Spec Reviewer
-- `domains/{domain}/{domain}.spec.md` — **APPROVED** by the Spec Reviewer
+- `domains/{domain}/{domain}.spec.md` — **APPROVED** by the Spec Reviewer — read **§Use Cases, §Business Rules, §State Machine, §Error Behaviors** only (measured -20% of the file; see the section-scoped read below)
 - `.claude/skills/u-spec-globals/conventions.md` — naming standards
 - `.claude/skills/u-spec-templates/TEMPLATE.back.md` — template to fill
 - `.claude/skills/u-spec-back-writing/SKILL.md` — quality checklist for backend spec writing
 - `CLAUDE.md` — project stack configuration
 
+
+> **Load these by section, not whole-file (R16).** Every spec worker used to carry every section of
+> every artifact: measured 51,701 and 57,213 estimated tokens against a 60,000 block threshold —
+> 86–95% of the ceiling. That ceiling is also why `targeted` mode is capped at one concurrent worker,
+> so context pressure is not only cost.
+>
+> ```bash
+> python3 .claude/skills/u-spec-templates/scripts/read_spec_sections.py \
+>   --file "$SPECS_DIR/domains/{domain}/{domain}.spec.md" --sections "Use Cases,Business Rules,State Machine,Error Behaviors"
+> ```
+>
+> The output always carries the **complete section index** — every section's number and title, marked
+> `requested` or `omitted` — so you always know what exists. If a section you omitted turns out to be
+> needed, re-run with it added; that is the intended escape hatch, not a failure. `--all` loads
+> everything when a task genuinely needs it.
+>
+> Nothing is deleted from the artifacts. The `.back.md` is not redundant with the `.spec.md` —
+> measured textual similarity between their same-named sections is 7–11%, so it is a second layer,
+> not a copy. Reading less of it is the available saving; removing it was never one.
+
 ## Execution Process
 
 ### Step 1: Analyze approved spec
 1. Read the complete `openapi.yaml` — understand endpoints, schemas, security
-2. Read the complete `.spec.md` — understand UCs, business rules, state machine
+2. Read the `.spec.md` sections listed in Expected Inputs (§Use Cases, §Business Rules,
+   §State Machine, §Error Behaviors) — understand UCs, business rules, state machine. The section
+   index in the output shows what you did not load; request more if a step below needs it
 3. Identify all entities and their lifecycles
 4. Identify required external integrations
 

@@ -30,14 +30,34 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 ## Expected Inputs
 - **Requirement (UI intent)** — injected by the Orchestrator into this agent's activation prompt (the `Requirement:` line; origin: `triage.requirement`). Used by the front-phase control-traceability check (Mode 1b, step 5b) as the authoritative declaration of which screen controls/fields were requested.
 - `domains/{domain}/openapi.yaml` (one per domain in the requirement)
-- `domains/{domain}/{domain}.spec.md` (one per domain)
-- `domains/{domain}/back/{domain}.back.md` (when available — back phase)
+- `domains/{domain}/{domain}.spec.md` (one per domain) — read **§Use Cases, §Business Rules, §State Machine, §Error Behaviors** only (measured -20% of the file; see the section-scoped read below)
+- `domains/{domain}/back/{domain}.back.md` (when available — back phase) — read **§Business Rules, §State Machine, §Domain Events** only (measured -15% of the file; see the section-scoped read below)
 - `front/front.md` (when available — front phase)
 - `front/features/{feature}.feature.spec.md` — all feature specs for the requirement (front phase)
 - `front/components/{name}.component.spec.md` — all component specs referenced in §7 of feature specs (front phase, if any)
 - `front/_flows/{flow}.flow.md` — all flows for the requirement (front phase)
 - `.claude/skills/u-spec-globals/error-codes.md`
 - `.claude/skills/u-spec-validation/SKILL.md` — cross-validation rules
+
+
+> **Load these by section, not whole-file (R16).** Every spec worker used to carry every section of
+> every artifact: measured 51,701 and 57,213 estimated tokens against a 60,000 block threshold —
+> 86–95% of the ceiling. That ceiling is also why `targeted` mode is capped at one concurrent worker,
+> so context pressure is not only cost.
+>
+> ```bash
+> python3 .claude/skills/u-spec-templates/scripts/read_spec_sections.py \
+>   --file "$SPECS_DIR/domains/{domain}/back/{domain}.back.md" \
+>   --sections "Business Rules,State Machine,Domain Events"
+> ```
+>
+> The output always carries the **complete section index** — every section's number and title, marked
+> `requested` or `omitted` — so you always know what exists. If a section you omitted turns out to be
+> needed, re-run with it added; that is the intended escape hatch, not a failure. `--all` loads
+> everything when a task genuinely needs it.
+>
+> Your §Evidence re-execution check is unaffected: `verify_evidence.py` reads the spec file from disk
+> itself, so a scoped read never narrows what gets verified.
 
 ## Execution Process
 

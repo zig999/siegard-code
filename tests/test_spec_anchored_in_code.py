@@ -314,15 +314,15 @@ class TestValidatorReExecutesEvidence:
 
     def test_exit_two_is_a_blocking_issue_owned_by_spec_back(self):
         text = VALIDATOR.read_text(encoding="utf-8")
-        idx = text.index("verify_evidence.py")
-        window = text[idx:idx + 1800]
+        idx = text.index("## Evidence re-execution")
+        window = text[idx:idx + 2200]
         assert "exit 2" in window and "blocking" in window
         assert "u-spec-back" in window
 
     def test_unverified_is_a_warning_not_a_blocker(self):
         text = VALIDATOR.read_text(encoding="utf-8")
-        idx = text.index("verify_evidence.py")
-        window = text[idx:idx + 1800]
+        idx = text.index("## Evidence re-execution")
+        window = text[idx:idx + 2200]
         assert "warnings" in window
 
     def test_behavior_rule_makes_it_non_optional(self):

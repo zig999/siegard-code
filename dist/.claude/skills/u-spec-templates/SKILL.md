@@ -1,12 +1,49 @@
 ---
 name: u-spec-templates
-description: Canonical TEMPLATE.* artifacts for SDD spec writers — domain spec, back spec, front spec, feature spec, flow, component spec, decisions, design-system rules and design-system bundle. Consumed by u-spec-writer, u-spec-back, and u-spec-front, which read templates by path. Resource bundle — no scripts. Not user-invocable.
+description: Canonical TEMPLATE.* artifacts for SDD spec writers — domain spec, back spec, front spec, feature spec, flow, component spec, decisions, design-system rules and design-system bundle. Consumed by u-spec-writer, u-spec-back, and u-spec-front, which read templates by path. Also ships scripts/read_spec_sections.py, which loads only the sections a worker needs while always returning the full section index (R16). Not user-invocable.
 user-invocable: false
+allowed-tools: Bash(python3 *), Read
 ---
 
 # u-spec-templates
 
-Resource bundle: canonical templates consumed by SDD spec agents. Templates are read by path (`.claude/skills/u-spec-templates/<file>`); the directory listing is authoritative.
+Canonical templates consumed by SDD spec agents, read by path (`.claude/skills/u-spec-templates/<file>`); the directory listing is authoritative.
+
+## scripts/read_spec_sections.py
+
+Loads the sections a worker needs and returns the **complete section index** either way, so partial
+loading never becomes partial awareness.
+
+```bash
+python3 .claude/skills/u-spec-templates/scripts/read_spec_sections.py \
+  --file "$SPECS_DIR/domains/<domain>/back/<domain>.back.md" \
+  --sections "Business Rules,State Machine"        # numbers, §N, or title text
+# --index-only : titles and line counts, no bodies
+# --all        : explicit opt-out of scoping
+# exit 2       : a selector matched nothing (reported, never silently dropped)
+```
+
+Sections are level-2 headings; the shipped templates number them (`## 4. State Machine (ST)`), and
+unnumbered ones (`## Changelog`) are addressable by title. The preamble before the first heading is
+always included — it carries the artifact's identity and version.
+
+**Measured effect** (`troubleshooting-engine`, the domain that consumed 57,213 of a 60,000 token
+budget):
+
+| Worker | Artifact | Whole file | Scoped |
+|---|---|---:|---:|
+| `u-spec-back` | `.spec.md` | 1046 | 833 (−20%) |
+| `u-spec-front` | `.spec.md` | 1046 | 259 (−75%) |
+| `u-spec-validator` | `.spec.md` | 1046 | 833 (−20%) |
+| `u-spec-validator` | `.back.md` | 1374 | 1168 (−15%) |
+| `u-spec-reviewer` | `.spec.md` | 1046 | 1046 (0% — by design) |
+
+The back/validator saving is modest because §Business Rules is the largest section (763 of 1374
+lines in that `.back.md`) and those workers genuinely need it. `u-spec-front` is the large win: it
+needs UI-facing states and errors, not backend enforcement detail.
+
+`u-spec-reviewer` and `u-spec-compliance` read whole files deliberately — one checks completeness,
+the other scans for gaps, and both are defeated by a subset.
 
 ## Index
 
