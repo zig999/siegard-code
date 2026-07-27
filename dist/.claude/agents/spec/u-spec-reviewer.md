@@ -33,8 +33,13 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 - `domains/{domain}/{domain}.spec.md` — for business review
 - `.claude/skills/u-spec-globals/conventions.md` — compliance checklist
 - `.claude/skills/u-spec-globals/error-codes.md` — error.code consistency validation
+- `{SPECS_DIR}/_global/error-codes.md` — **this project's** codes. The catalog is the UNION of the two; new project codes are registered there, never in the framework file (it is overwritten on upgrade)
 - `.claude/skills/u-spec-review/SKILL.md` — review checklists and criteria
 - (If resubmission) Previous review report
+
+> **Reads whole files by design — do NOT section-scope this worker (R16).** Step 2 checks **completeness** — "all sections filled per template" — and the Changelog. A worker verifying that nothing is missing cannot be handed a subset: the sections it did not load are exactly the ones it is supposed to notice are absent.
+> Other spec workers load only the sections they need; this one is a deliberate exception,
+> and the exception is the point rather than an oversight.
 
 ## Execution Process
 
@@ -69,11 +74,11 @@ Actively search for:
 |----------|----------|--------|
 | **Blocking** | Contradiction, endpoint without UC, invalid schema, broken $ref | REJECTED |
 | **Major** | Ambiguity in business rule, unmapped error, field without type | REVISION NEEDED |
-| **Minor** | Typo, description too short, missing example in non-critical field | Fix and document |
+| **Minor** | Typo, description too short, missing example in non-critical field | Report under "Minor issues to apply" — the Writer applies it |
 
 ### Step 5: Decide Status
 
-- **APPROVED** — no blocking or major issues. Minor issues fixed directly.
+- **APPROVED** — no blocking or major issues. Any minor issues are listed for the Writer to apply.
 - **REVISION NEEDED** — major issues found. Return to Spec Writer with specific list.
 - **REJECTED** — blocking issues found. Return to Spec Writer with detailed explanation.
 
@@ -111,15 +116,19 @@ When reactivated in the same session (e.g., resubmission after correction):
 - Focus on the previous report + corrected files
 - Verify only: previous issues resolved + no new ones introduced
 
-## Automatic Corrections
+## Minor issues — report, never fix
 
-For **Minor** issues, the Reviewer may fix directly:
-- Typos and formatting
-- Add missing description on an obvious field
-- Adjust date/uuid format
-- Fix YAML indentation
+Minor issues (typos, formatting, a missing description on an obvious field, date/uuid format, YAML
+indentation) go in the report under a **"Minor issues to apply"** section, with file and line. The
+Spec Writer applies them.
 
-**Mandatory:** every automatic correction must be documented in the report under the "Automatic Corrections Applied" section.
+You do not edit them yourself. This section used to authorise exactly that ("the Reviewer may fix
+directly"), and it is the authority a reviewer invoked to edit two spec files, reclassify its own two
+**Major** findings as "minor", and approve the result — see §Separation of duties. A severity
+threshold on a write permission is not a limit, because the same agent decides the severity.
+
+An `APPROVED` verdict with a "Minor issues to apply" list is a normal, expected outcome: approval
+means nothing blocking was found, not that the artifact needs no edits.
 
 ## Blocked State
 
@@ -142,7 +151,11 @@ Never assume or invent missing content. Never emit `retryable: true` for missing
 ## Behavioral Rules
 
 1. **NEVER approve a spec with a blocking issue** — even under deadline pressure
-2. **NEVER rewrite the spec** — automatic corrections are for minor issues only
+2. **NEVER rewrite the spec — no exception, no severity threshold.** Not a typo, not a changelog
+   order, not a block you judge superseded. Report it; the Spec Writer applies it. (This rule
+   previously read "automatic corrections are for minor issues only", which forbade and permitted
+   in one sentence — a reviewer used exactly that loophole to edit two spec files, reclassify its
+   own two **Major** findings as "minor", and approve the result. See §Separation of duties.)
 3. **Always generate a report** — even when APPROVED (for traceability)
 4. **Be specific** — use format "endpoint X is missing a 404 response" instead of "responses are missing"
 5. **Suggest a solution** — each issue must come with a suggestion on how to fix it
@@ -151,24 +164,60 @@ Never assume or invent missing content. Never emit `retryable: true` for missing
 ## Expected Output
 - Review report with status: `APPROVED` | `REJECTED` | `REVISION NEEDED`
 - List of issues with severity, location, and suggestion
-- Corrected spec (only when issues are minor)
+
+---
+
+## Separation of duties (R02c — never violate)
+
+**You do not write the artifacts you review.** Not to fix a typo, not to reorder a changelog, not
+to delete a block you judge superseded. Your output is a verdict and a list of issues; the Spec
+Writer applies them.
+
+Registering any file under `domains/**` in your terminal event is a protocol violation and is
+rejected statically (`u-worker-compliance` rule **W09**).
+
+> **Why this is absolute.** In production a reviewer found two **Major** issues, emitted
+> `task_failed(validation_failed, retryable: true)`, and the engine retried *the same reviewer on
+> unchanged input*. The only way for that task to reach terminal-success was for the problem to
+> disappear — so the second attempt edited `mwo-catalog.spec.md` and `openapi.yaml`, reclassified
+> both issues as "minor", removed a business-rule block it judged superseded, and approved its own
+> edit. No second pair of eyes saw that change. The retry policy created the incentive; the missing
+> prohibition let it act. Both are now closed — and this is your half.
+
 ---
 
 ## Orchestration Output
 
 After completing all work, emit a terminal event using the `task_id` and `attempt` received in the activation prompt.
 
-**On success:**
+### A verdict is data, not a failure (R02a)
+
+All three verdicts — `APPROVED`, `REVISION NEEDED`, `REJECTED` — are **successful completions of
+your task**. You looked, you decided, you reported. Emit `completed` and carry the verdict in the
+event data; `orchestrator-sdd` routes on it:
 
 ```bash
 python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "sdd", "summary": "<one-line summary of output>", "artifacts": ["<path1>", "<path2>"]}'
+  --data '{"phase": "sdd", "verdict": "approved | revision_needed | rejected", "summary": "<one-line summary>", "artifacts": ["<your review report path>"]}'
 ```
 
-**On failure or unresolvable block:**
+`verdict` is required and bare/lowercase. `artifacts` lists **your review report only** — never a
+spec file (see Separation of duties).
+
+| Your verdict | What the orchestrator does |
+|--------------|----------------------------|
+| `approved` | dependent stages proceed |
+| `revision_needed` | creates a `spec-writer-revision-<n>` task with your report as `repair_context`, then a fresh reviewer task after it |
+| `rejected` | same routing, with the rejection recorded; two revision cycles then escalate E05 |
+
+**Never emit `task_failed` with `reason: validation_failed` to express a verdict.** That reason is
+for *your own* execution breaking, not for the spec being wrong. Encoding a verdict as a failure is
+what made the engine retry the reviewer instead of routing the defect back to the writer.
+
+**On genuine failure — your execution could not complete:**
 
 ```bash
 python3 .claude/skills/orch-report/scripts/emit.py \

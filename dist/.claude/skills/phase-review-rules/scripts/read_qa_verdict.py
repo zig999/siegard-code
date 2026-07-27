@@ -47,6 +47,55 @@ _VERDICT_RE = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# fix F7 — revision supersession. SHARED, not copied (R14a).
+#
+# A QA task ID is `review_{dev_task_id}`, and a dev revision appends `_r{n}`
+# (orchestrator-review "return_to_dev"), so a re-reviewed target yields
+# `review_<base>` then `review_<base>_r1`. Both complete, so a gate that reads
+# every completed task still reads the OLD (pre-revision, often rejected)
+# artifact and blocks with a spurious E08.
+#
+# F7 fixed that in check_all_qa_verdicts_approved.py in v2.6.0 and was never
+# ported to check_documentation_verified.py, which kept iterating
+# `state.tasks.values()` unscoped — so the same defect stayed live in a sibling
+# gate for four minor versions, and a downstream project hand-patched its own
+# copy. A third copy would repeat the mistake: both gates now import from here.
+# ---------------------------------------------------------------------------
+
+_REV_SUFFIX_RE = re.compile(r"_r(\d+)$")
+_ALL_REV_SUFFIXES_RE = re.compile(r"(?:_r\d+)+$")
+
+
+def target_and_revision(task_id: str) -> tuple[str, int]:
+    """(base target, revision number). rev 0 when there is no `_r{n}` suffix.
+    Nested suffixes (`_r1_r2`) collapse to the base; revision is the last number."""
+    m = _REV_SUFFIX_RE.search(task_id)
+    if not m:
+        return task_id, 0
+    base = _ALL_REV_SUFFIXES_RE.sub("", task_id)
+    return base, int(m.group(1))
+
+
+def drop_superseded(tasks: list) -> tuple[list, list]:
+    """Return (kept, superseded_ids). Within each base target keep only the tasks
+    at the highest revision; older revisions were replaced and no longer gate."""
+    max_rev: dict[str, int] = {}
+    parsed = []
+    for t in tasks:
+        base, rev = target_and_revision(t.task_id)
+        parsed.append((t, base, rev))
+        if rev > max_rev.get(base, -1):
+            max_rev[base] = rev
+    kept, superseded = [], []
+    for t, base, rev in parsed:
+        if rev == max_rev[base]:
+            kept.append(t)
+        else:
+            superseded.append(t.task_id)
+    return kept, superseded
+
+
 def extract_verdict(content: str) -> str:
     """Returns the canonical verdict for a QA artifact's text.
 

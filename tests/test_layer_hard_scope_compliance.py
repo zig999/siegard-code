@@ -24,7 +24,24 @@ SDD_SCRIPTS = (
 # Every entry needs a reason — an empty reason is a test failure.
 # Empty today: every spec-tree scanner is scope-aware (v2.7.0). Adding an
 # entry here is a conscious, justified decision.
-GLOBAL_SCAN_ALLOWLIST: dict[str, str] = {}
+GLOBAL_SCAN_ALLOWLIST: dict[str, str] = {
+    "check_spec_drift_reviewed.py": (
+        "R04d drift criterion. Its glob computes a content hash over the WHOLE "
+        "approved spec surface, because that hash is what /u-drift pins in its "
+        "report and what makes the report detectably stale. Scoping the hash to "
+        "the touched domains would make it change whenever the scope changed, so "
+        "an unrelated /u-improve would invalidate a perfectly current report — "
+        "the opposite of what F1 protects. It gates nothing per-domain and "
+        "repairs nothing: it answers 'is this report still about these specs?'."
+    ),
+    "check_spec_entry.py": (
+        "R10 entry guard. Its whole question is 'does this repository already hold "
+        "ANY domain spec?', so a scoped scan would answer the wrong question — and "
+        "it runs in /u-spec Initial Validation, before triage.json exists, so no "
+        "scope is derivable yet. It gates nothing per-domain and repairs nothing: "
+        "it only classifies the entry point as greenfield or not."
+    ),
+}
 
 _GLOB_RE = re.compile(r"\.r?glob\(")
 _SCOPE_IMPORT_RE = re.compile(r"^from scope import |^import scope\b", re.MULTILINE)

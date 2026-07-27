@@ -118,12 +118,14 @@ def _parse_build_errors(stdout: str, stderr: str, project_dir: Path) -> list[dic
     return errors
 
 
-def _invoke_parser(framework: str, input_path: Path, project_dir: Path) -> dict:
+def _invoke_parser(framework: str, input_path: Path, project_dir: Path,
+                   test_command: str = "") -> dict:
     proc = subprocess.run(
         [sys.executable, str(_PARSE_SCRIPT),
          "--framework", framework,
          "--input", str(input_path),
-         "--project-dir", str(project_dir)],
+         "--project-dir", str(project_dir),
+         "--test-command", test_command],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if proc.returncode != 0:
@@ -206,14 +208,16 @@ def main() -> None:
 
     resolved_framework = args.framework
     if resolved_framework == "auto":
-        resolved_framework = detect_framework(project_dir)
+        # R09b: the command itself is the strongest signal — it names the
+        # runner and its `cd <dir>` reveals where the manifest lives.
+        resolved_framework = detect_framework(project_dir, args.test_cmd)
     test_cmd = _ensure_json_reporter(args.test_cmd, resolved_framework)
 
     rc, out, err, elapsed = _run(test_cmd, project_dir, args.timeout_tests)
     tests_stdout_path.write_text(out, encoding="utf-8")
     tests_stderr_path.write_text(err, encoding="utf-8")
 
-    parsed = _invoke_parser(resolved_framework, tests_stdout_path, project_dir)
+    parsed = _invoke_parser(resolved_framework, tests_stdout_path, project_dir, test_cmd)
 
     if "_warning" in parsed:
         tests_result = "degraded"

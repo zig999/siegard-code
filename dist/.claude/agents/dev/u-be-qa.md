@@ -743,6 +743,24 @@ Compact reminder contents:
 
 After completing all work, emit a terminal event using the `task_id` and `attempt` received in the activation prompt.
 
+### Gate fields — required in the QA artifact frontmatter before the terminal event
+
+The review phase has deterministic exit criteria that parse the frontmatter of the artifact
+you register. Emitting `completed` without these fields blocks the phase with an `E08`
+escalation and costs a human round-trip — the work is done, only the record is missing.
+
+| Field | Values | Read by |
+|-------|--------|---------|
+| `verdict` | `approved` \| `rejected` (bare, unquoted) | `check_all_qa_verdicts_approved.py` |
+| `documentation_verified` | `true` \| `false` (bare boolean) | `check_documentation_verified.py` |
+| `escalation_required` | `true` \| `false` | `orchestrator-review` approval gate |
+
+Write `documentation_verified: true` **only** after confirming every mandatory documentation
+item was delivered; write `false` otherwise. Never omit the field — absent is not `false`, it
+is unverifiable, and the gate treats it as a block rather than a rejection.
+
+> Full template and field semantics: `.claude/skills/u-be-templates/qa-report.md`.
+
 **On success:**
 
 ```bash

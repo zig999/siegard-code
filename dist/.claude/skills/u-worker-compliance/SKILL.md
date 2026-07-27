@@ -1,6 +1,6 @@
 ---
 name: u-worker-compliance
-description: Static analysis validator for worker and orchestrator .md protocol compliance (rules W01–W06 — terminal events, canonical phase values, register_worker arguments, emit.py skill declaration). Run scripts/check_worker.py on .claude/agents/**/*.md before promoting to dist/; enforced in CI by tests/test_worker_compliance_gate.py, which fails the suite on any W01–W06 violation. Not user-invocable — reviewers and CI run the script directly.
+description: Static analysis validator for worker and orchestrator .md protocol compliance (rules W01–W09 — terminal events, canonical phase values, register_worker arguments, emit.py skill declaration, exit-criteria gate fields declared by their producing worker). Run scripts/check_worker.py on .claude/agents/**/*.md before promoting to dist/; enforced in CI by tests/test_worker_compliance_gate.py, which fails the suite on any W01–W09 violation. Not user-invocable — reviewers and CI run the script directly.
 user-invocable: false
 allowed-tools: Bash(python3 *), Read, Glob, Grep
 ---
@@ -84,6 +84,47 @@ Worker YAML frontmatter `skills:` list does not include `orch-report`.
 **Detection:** parse frontmatter block; check `skills` list for `orch-report` entry.
 
 **Violation:** emit.py may not be available in the worker's context.
+
+---
+
+### Rule W08 — Gate field not declared in the producing worker's protocol
+
+A field that a phase exit-criteria checker reads from a worker artifact is never named in
+that worker's own `.md`.
+
+**Detection:** `GATE_FIELDS_BY_WORKER` in `scripts/check_worker.py` maps each producing
+worker to the `(field, checker)` pairs it owns; the rule requires a word-boundary mention of
+each field in the worker file. Workers absent from the registry are not checked.
+
+**Violation:** the worker can finish its work correctly and still block the phase. Origin:
+`documentation_verified` was required by `check_documentation_verified.py` and documented
+only in the qa-report template — the QA worker delivered the review, omitted the field, and
+the phase blocked with `E08` after the fact. A requirement reachable only through a file the
+agent is expected to open on its own is a requirement with a recurring failure mode.
+
+**Maintenance:** adding a field to a checker means adding it to `GATE_FIELDS_BY_WORKER` and
+to the worker protocol in the same change. The registry is the artifact → checker contract in
+one place; leaving it stale fails this gate.
+
+---
+
+### Rule W09 — Review-only worker registers the artifact it reviewed
+
+A worker in `REVIEW_ONLY_WORKERS` declares an `artifacts` entry under `domains/`.
+
+**Detection:** scan every `"artifacts": [...]` payload in the worker `.md`; flag entries whose
+path contains a `domains/` segment.
+
+**Severity:** CRITICAL — separation of duties. A judge that can write its own subject can make a
+finding disappear instead of reporting it.
+
+**Violation origin:** a reviewer reported two **Major** issues via
+`task_failed(validation_failed, retryable: true)`; the engine retried the same reviewer over
+unchanged input, and the only route to terminal-success was for the problem to vanish. Attempt 2
+edited both spec files, reclassified both findings as "minor", removed a business-rule block, and
+approved its own edit — registering the spec files as its artifacts. Three guards now close it:
+`should_retry` refuses to retry `validation_failed` on a verdict task type (R02b), `emit.py`
+refuses the artifact path at runtime (R02c), and this rule refuses it in the agent contract.
 
 ---
 

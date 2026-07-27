@@ -33,8 +33,9 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 ## Expected Inputs
 - **Requirement (UI intent)** — injected by the Orchestrator into this agent's spawn prompt (the `Requirement:` line; origin: `triage.requirement`, which carries the user's request / `u-ui-brief` output). **Authoritative source for screen scope and for which controls/fields each screen exposes.** The brief is never handed to this agent as a file (see `u-ui-brief` — *Handoff envelope*); its intent reaches you only through this Requirement text. When the Requirement is silent on a control, treat it as *not requested* — never as *infer a default*.
 - `domains/{domain}/openapi.yaml` — **APPROVED** (one for each domain involved in the features)
-- `domains/{domain}/{domain}.spec.md` — **APPROVED** (one for each domain)
+- `domains/{domain}/{domain}.spec.md` — **APPROVED** (one for each domain) — read **§Use Cases, §State Machine, §Error Behaviors** only (measured -75% of the file; see the section-scoped read below)
 - `.claude/skills/u-spec-globals/error-codes.md` — to map errors to UI messages
+- `{SPECS_DIR}/_global/error-codes.md` — **this project's** codes. The catalog is the UNION of the two; new project codes are registered there, never in the framework file (it is overwritten on upgrade)
 - `.claude/skills/u-spec-templates/TEMPLATE.front.md` — global frontend spec template
 - `.claude/skills/u-spec-templates/TEMPLATE.feature.spec.md` — feature spec template (1 feature = 1 URL)
 - `.claude/skills/u-spec-templates/TEMPLATE.component.spec.md` — component spec template (shared components)
@@ -52,6 +53,26 @@ This split is binding for every screen you specify:
 - **The Requirement (UI intent) defines SCREEN SCOPE** — which screens exist and **which controls and fields each screen exposes**: filters, search inputs, sort controls, pagination, bulk actions, columns, secondary CTAs.
 
 A GET-collection endpoint authorizes a list feature; it does **not** by itself authorize a filter, search, sort, or pagination control. Materialize such a control **only when the Requirement declares it**. If the Requirement is silent on a control, omit it — do not infer it from the endpoint's query parameters, from `.spec.md` invariants, or from conventional "data table" patterns. When the data would support a control the Requirement does not mention and you judge it likely intended, do **not** add it: record an open question in place (`<!-- TO CONFIRM: filter-by-status supported by endpoint but not in UI intent -->`) for the Spec Validator to resolve.
+
+
+> **Load these by section, not whole-file (R16).** Every spec worker used to carry every section of
+> every artifact: measured 51,701 and 57,213 estimated tokens against a 60,000 block threshold —
+> 86–95% of the ceiling. That ceiling is also why `targeted` mode is capped at one concurrent worker,
+> so context pressure is not only cost.
+>
+> ```bash
+> python3 .claude/skills/u-spec-templates/scripts/read_spec_sections.py \
+>   --file "$SPECS_DIR/domains/{domain}/{domain}.spec.md" --sections "Use Cases,State Machine,Error Behaviors"
+> ```
+>
+> The output always carries the **complete section index** — every section's number and title, marked
+> `requested` or `omitted` — so you always know what exists. If a section you omitted turns out to be
+> needed, re-run with it added; that is the intended escape hatch, not a failure. `--all` loads
+> everything when a task genuinely needs it.
+>
+> Nothing is deleted from the artifacts. The `.back.md` is not redundant with the `.spec.md` —
+> measured textual similarity between their same-named sections is 7–11%, so it is a second layer,
+> not a copy. Reading less of it is the available saving; removing it was never one.
 
 ## Execution Process
 

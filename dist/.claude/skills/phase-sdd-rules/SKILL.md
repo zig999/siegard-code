@@ -93,6 +93,7 @@ Evaluated by `orchestrator-sdd.md` at the end of each cycle.
 | `handoff_manifest_approved` | `scripts/check_handoff_manifest_approved.py` | `handoff-manifest.yaml` exists and `Status: approved` |
 | `all_domains_validated` | `scripts/check_all_domains_validated.py` | No `INVALID` status in `_validation/` (scoped to the change's domains on `/u-improve` via `--workflow-id`) |
 | `error_codes_synced` | `scripts/check_error_codes_synced.py` | All `error.code` values in in-scope specs are in `error-codes.md` (scoped to touched domains on `/u-improve` via `--workflow-id`) |
+| `spec_drift_reviewed` | `scripts/check_spec_drift_reviewed.py` | **Opt-in (R04d).** With `sdd_policy.drift_check` = `warn`/`required` in `.orch/config.json`, a current `/u-drift` report must exist for the approved specs. OFF by default — vacuously met |
 
 See `exit-criteria.json` for the machine-readable declaration.
 
@@ -181,6 +182,32 @@ python3 .claude/skills/phase-sdd-rules/scripts/scope.py --workflow-id <wid>
 domain" (never "empty scope"), keeping greenfield and legacy triage on prior
 behavior. Also exposes `domain_of_validation_file(filename)` used by the gate and
 the handoff scan to map a `_validation/` artifact back to its domain.
+
+---
+
+## scripts/check_spec_entry.py
+
+Entry guard for `/u-spec` (R10). Answers one question — does `{SPECS_DIR}/domains/`
+already hold a spec? — and projects what a full fan-out would cost. Consumed by the
+`/u-spec` command in Initial Validation, **before** any event is appended.
+
+```bash
+python3 .claude/skills/phase-sdd-rules/scripts/check_spec_entry.py \
+  --specs-dir <dir> [--project-dir <dir>]
+# exit 0 → {"entry":"greenfield",     "domain_count":0, "domains":[], "projected":{...}}
+# exit 3 → {"entry":"non_greenfield", "domain_count":N, "domains":[...], "projected":{...}}
+```
+
+Pairs with `scope.py`: that script returns `scoped: false` for the `u-spec` trigger **by
+design**, so `orchestrator-sdd` dispatches the pipeline for every scanned domain. Correct
+on an empty repository; on a populated one it turns an addition into a full re-spec that
+outruns the per-session subagent spawn budget. This guard is what distinguishes the two
+cases, and it is the only thing that did.
+
+`projected.wall_clock_minutes` uses `WALL_CLOCK_MINUTES_PER_WORKER = 6` — measured across
+three real workflows (5.6 / 5.9 / 6.9 min per dispatched worker, over differing modes,
+domain counts and change sizes). Its purpose is to make the price visible before it is
+paid rather than after.
 
 ---
 
@@ -330,3 +357,41 @@ Fail-closed: no domains, a missing required backend artifact, a `handoff_allowed
 `fe`} but no front artifacts on disk — `stack_mismatch_front_expected_but_missing`, fix P0-1) yields
 `status: blocked` **without** writing the manifest. The orchestrator treats a blocked generation as
 criterion-not-met (Validation Repair Loop / E08).
+
+
+---
+
+## scripts/check_spec_drift_reviewed.py
+
+Exit criterion `spec_drift_reviewed` (R04d) — connects `/u-drift` to the phase boundary.
+
+`/u-drift` does what the spec pipeline structurally cannot: it matches approved specs against
+the code by exact keys and reports what diverged, with evidence per finding. It runs standalone
+and has to be remembered, which is why a spec once declared three method signatures that do not
+exist and another cited a `grep` nobody ran.
+
+```bash
+python3 .claude/skills/phase-sdd-rules/scripts/check_spec_drift_reviewed.py [--workflow-id <wid>]
+```
+
+Policy in `.orch/config.json`:
+
+```json
+{"sdd_policy": {"drift_check": "off" | "warn" | "required"}}
+```
+
+| Policy | Missing / stale report | Critical findings |
+|---|---|---|
+| `off` (default) | criterion vacuously met | not evaluated |
+| `warn` | reported, does not block | reported, does not block |
+| `required` | **blocks** the phase exit | **blocks** the phase exit |
+
+**Opt-in by design, not as a shortcut.** `/u-drift` costs an LLM code-inventory pass. Making it
+mandatory on every sdd phase would add an agent and several minutes to every workflow — including
+the ones whose measured problem already is that the pipeline costs more than the change it
+specifies. A gate that worsens that gets switched off wholesale; one the operator enables for the
+handoffs that matter gets used.
+
+"Reviewed" means the report exists **and** its `spec_content_hash` still matches the specs on
+disk. A report generated before the specs changed describes a state that no longer exists — the
+same staleness class R08 handles for validation verdicts.

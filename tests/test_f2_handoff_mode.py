@@ -28,11 +28,33 @@ _COND = re.compile(
 
 
 class TestOrchestratorWiring:
-    def test_back_pass_and_repair_validators_carry_conditional_mode(self):
-        # Step 4 back-pass + repair-cycle spec-validator dispatches — exactly two.
-        assert len(_COND.findall(ORCH)) == 2, (
-            "both the Step-4 back-pass and the repair-cycle spec-validator dispatch "
-            "must set validation_mode conditionally on triage.ui_task"
+    def test_every_back_leg_validator_dispatch_carries_conditional_mode(self):
+        """Three dispatch sites, each needing the same F2 conditional:
+
+          1. Step 4 back-pass
+          2. repair-cycle (`spec-validator-repair-N`)
+          3. R08 stale-verdict revalidation (`spec-validator-revalidate-N`)
+
+        The third is new: a stale INVALID verdict — one written before the specs it
+        judges were last edited — is answered by re-running the validator instead
+        of dispatching a repair pipeline over findings nobody re-checked. It is a
+        back-leg validator like the other two, so a back-only workflow must reach
+        `final_complete` here as well or the repaired domain hands off with a
+        spurious E08 (the original F2 defect).
+        """
+        assert len(_COND.findall(ORCH)) == 3, (
+            "the Step-4 back-pass, the repair-cycle, and the R08 revalidation "
+            "spec-validator dispatches must all set validation_mode conditionally "
+            "on triage.ui_task"
+        )
+
+    def test_revalidation_dispatch_is_one_of_them(self):
+        """Pin the R08 site specifically, so a count change cannot mask its loss."""
+        idx = ORCH.index("spec-validator-revalidate-")
+        window = ORCH[idx:idx + 900]
+        assert _COND.search(window), (
+            "the stale-verdict revalidation task must carry the conditional "
+            "validation_mode, not a hardcoded one"
         )
 
     def test_front_pass_validator_is_final_complete(self):

@@ -134,6 +134,12 @@ runtime_dir: {e.g. docs/runtime/logs}
 # root (E17_suite_parser_degraded) — the suite then falls back to per-worker local test-gate.
 test_command: {e.g. npx vitest run --reporter=json}
 build_command: {e.g. npm run build}   # empty string "" skips build step; must be root-runnable (see note above)
+# test_framework — OPTIONAL override, highest precedence (R09c). Set it when detection is
+# ambiguous: the repo declares both runners, or the manifest sits somewhere the sweep does not
+# reach. Left absent, run_suite.py resolves the runner from test_command and then from the
+# nearest package.json. Output carrying the jest/vitest reporter shape is parsed either way —
+# this field only fixes the LABEL and the auto-added reporter flag.
+test_framework: {vitest|jest}   # optional — omit unless detection is ambiguous
 
 # --- Backend config (u-be-developer, u-be-qa, u-be-standards) ---
 # All fields are optional. Agents use stated defaults when absent.

@@ -262,6 +262,24 @@ python3 .claude/scripts/check_stale.py
 
 `check_stale.py` reaps `running` test tasks past their tier threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The Step 4.4 reaper remains the post-batch reaping point.
 
+**Subagent spawn budget (R12).** The host caps subagent spawns per session; once it is gone every
+further dispatch fails identically, so this is a session-level stop condition, not a task failure.
+Check it here, **before** selecting or claiming a batch — a claim followed by a failed spawn
+produces `worker_exited_without_terminal` on a task that never ran, spending one of its two
+structural retry attempts on a condition no retry inside this session can change.
+
+```bash
+python3 .claude/scripts/check_spawn_budget.py --since-seq <log_seq_at_spawn> --workflow-id "<workflow_id>"
+```
+
+Branch on the **exit code**: `0` (ok) → continue · `3` (low) → emit `E24_spawn_budget_exhausted`
+(`severity: warning`) once per invocation, then continue · `4` (exhausted) → emit
+`E24_spawn_budget_exhausted` (`severity: critical`) and output
+`{"status": "blocked", "last_seq": <last_seq>, "summary": "subagent spawn budget exhausted — resume in a fresh session"}`
+without claiming anything. Non-terminal tasks are left untouched; the next invocation resumes them.
+See `orchestrator-sdd` Step 5.0 for the full escalation payloads.
+
+
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0):**
 ```bash
 python3 .claude/scripts/requeue_due_tasks.py --phase test --workflow-id "<workflow_id>" --wait-window 90
@@ -347,8 +365,11 @@ Emit all Agent tool calls in a **single response turn**.
   Set these as shell env vars before any emit.py call.
   nesting_depth: <nesting_depth + 1>
   Delivery artifact to test: <task.spec>
-  Test report path: <session_dir>/test-reports/<task_id>-report.md
-  Emit task_completed with artifacts: [<session_dir>/test-reports/<task_id>-report.md] when done.
+  Test report path (JSON — the gated artifact): <session_dir>/test-reports/<task_id>-report.json
+  It MUST validate against u-shared-templates/test-report.schema.yaml.
+  Emit task_completed with artifacts: [<session_dir>/test-reports/<task_id>-report.json] when done.
+  A human-readable <task_id>-report.md may be written alongside it, but MUST NOT be the
+  registered artifact — the exit-criteria checker parses the JSON.
   Emit task_failed with retryable: false if the delivery artifact is missing or test environment is broken.
   Emit task_failed with retryable: true if tests failed due to a transient environment issue.
 
@@ -433,30 +454,43 @@ Return to 4.0.
 
 ### Step 5 — Exit criteria evaluation
 
+> **GATE_EXIT_CODE_IS_BINDING (R01b).** Every checker is fail-closed: it prints its JSON **and**
+> exits non-zero when the criterion is not met. The exit code — not your reading of the JSON — is
+> the decision. Emitting `phase_exit_criterion_met` for a criterion whose checker exited non-zero
+> is a protocol violation (P7: critical guarantees live outside the LLM; P11: exit criteria live in
+> testable code, not in prompts).
+>
+> This is not hypothetical. In production this phase emitted `phase_exit_criterion_met` for
+> `all_tests_passed` while the checker, run against the registered artifact, returned
+> `met: false` / exit 1 — and the workflow transitioned to `done`. The green light was
+> prompt-trusted, so the gate guaranteed nothing.
+
+**Do not run the checkers by hand and do not compose the per-criterion events (R01a).**
+`evaluate_exit_criteria.py` reads `phase-test-rules/exit-criteria.json`, runs every declared
+checker, and — only when all of them exit 0 — appends each `phase_exit_criterion_met` itself,
+carrying `checker` and `checker_exit: 0` as execution evidence. Emission is all-or-nothing: a
+partial set would leave the log asserting progress the phase has not made.
+
 ```bash
-ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-test-rules/scripts/check_all_test_tasks_terminal.py
-ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-test-rules/scripts/check_all_tests_passed.py
-ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-test-rules/scripts/check_no_critical_failures.py
+python3 .claude/scripts/evaluate_exit_criteria.py --phase test --workflow-id "<workflow_id>"
 ```
 
-**All criteria met** — no human gate required (tests are deterministic):
+Branch on the **exit code**:
+
+- **exit 0** (`verdict: all_met`) → every criterion is already recorded in the log. Continue below;
+  do NOT re-emit them.
+- **exit 3** (`verdict: blocked`) → at least one criterion is NOT met and **nothing was emitted**. Go to
+  §Criteria not met and name `failing[]` from the output in the escalation `reason`.
+- **exit 1** → the evaluator itself failed. Report its JSON error and stop; do not emit anything.
+
+> `_validate_event_data` rejects a `phase_exit_criterion_met` whose `checker_exit` is non-zero
+> (R01c), so the production breach — criterion recorded as met over a checker that returned
+> `met: false` / exit 1 — can no longer be written even by hand.
+
+**All criteria met** — no human gate required (tests are deterministic). The criteria are
+already in the log; emit only the approval and the transition:
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-test \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"test","criterion":"all_test_tasks_terminal"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-test \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"test","criterion":"all_tests_passed"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-test \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"test","criterion":"no_critical_failures"}'
-
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-test \
   --event-type phase_exit_approved \
@@ -572,6 +606,7 @@ Stop.
 | `E04_critical_task_dlq` | critical | Non-retryable test task failure |
 | `E08_exit_criteria_not_met` | warning | Tasks terminal but criteria not satisfied |
 | `E99_human_test_intervention_required` | warning | Test failures require human decision |
+| `E24_spawn_budget_exhausted` | warning / critical | Per-session subagent spawn budget nearly (exit 3) or fully (exit 4) spent — `check_spawn_budget.py`. Exhausted means stop dispatching and resume in a fresh session; nothing was claimed, so no task state needs repair |
 
 ---
 

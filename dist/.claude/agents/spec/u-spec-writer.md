@@ -33,6 +33,7 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 ## Expected Inputs
 - `.claude/skills/u-spec-globals/conventions.md` — standards to follow
 - `.claude/skills/u-spec-globals/error-codes.md` — existing codes to reuse
+- `{SPECS_DIR}/_global/error-codes.md` — **this project's** codes. The catalog is the UNION of the two; new project codes are registered there, never in the framework file (it is overwritten on upgrade)
 - `.claude/skills/u-spec-globals/glossary.md` — domain terms
 - `.claude/skills/u-spec-templates/TEMPLATE.spec.md` — template to fill
 - `.claude/skills/u-spec-writing/SKILL.md` — spec writing expertise

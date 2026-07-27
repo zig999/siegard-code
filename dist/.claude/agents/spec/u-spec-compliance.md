@@ -98,6 +98,10 @@ Apply only the rules relevant to the declared regulations. Do not flag items out
 
 ---
 
+> **Reads whole files by design — do NOT section-scope this worker (R16).** It scans for regulatory gaps (PII handling, data classification, retention). A gap hides in whichever section was not read, so a subset turns a compliance scan into a sample.
+> Other spec workers load only the sections they need; this one is a deliberate exception,
+> and the exception is the point rather than an oversight.
+
 ## Execution Process
 
 ### Step 1 — Read CLAUDE.md

@@ -309,11 +309,36 @@ Extract and hold from `triage.json`:
 - `trigger`: `u-spec | u-improve`
 - `type`: `spec_change_required | implementation_only`
 - `mode_hint`: `full | fast-track:minor | fast-track:patch`
+- `consumer_scope`: `public | internal` — blast radius from `classify_consumer_scope.py`. Combined with compatibility it produced `mode_hint`; a **breaking** change with `internal` reach yields `fast-track:minor` instead of `full` (R13)
+- `consumer_scope_rationale`: why, verbatim from the classifier — surface it at the gate
 - `affected_specs`: list (used in Step 4 Targeted)
 - `greenfield`: bool
 - `stack`: `fe | be | fullstack` — authoritative front/back/both decision from `classify_stack.py`. If absent (legacy triage), derive it from `ui_task` (`fullstack` when `ui_task` is true/absent, else `be`).
 - `ui_task`: bool — **derived** from `stack` (`ui_task = stack in {fe, fullstack}`). Gates the front leg in Step 4 standard. If absent, default to `true` (conservative: run the front leg).
 - `requirement`: task description (passed to workers as context)
+
+**Project the cost and record it — ALWAYS, before the first domain dispatch (R11a):**
+
+```bash
+PROJ=$(python3 .claude/scripts/project_cost.py \
+  --triage "$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>/triage.json" --json-only)
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type cost_projected \
+  --data "$(echo "$PROJ" | python3 -c "import json,sys; p=json.load(sys.stdin); print(json.dumps({'phase':'sdd','workflow_id':'<workflow_id>','mode':p['mode'],'workers':p['workers'],'wall_clock_minutes':p['wall_clock_minutes'],'concurrency':p['concurrency'],'breakdown':p['breakdown'],'basis':p['basis']}))")"
+```
+
+Then include `workers` and `wall_clock_minutes` in the progress panel and in the E99 gate reason.
+
+> **Unconditional on purpose.** The E99 confirmation gate already displayed
+> `estimated_task_contracts`, but `bypass_e99` is set for every `/u-improve` — and `/u-improve` is
+> the only usable entry point on a populated repository (see `/u-spec`'s entry guard), so in
+> practice the operator never saw a number before committing to the run. Measured: a change of
+> three type-level items spent **56 min of sdd across 10 workers**, discovered afterwards. Emitting
+> the projection here, before Step 3, means the price is in the log whether or not a gate is shown.
+>
+> `cost_projected` is audit-only (no reducer handler), so emitting it can never affect task state.
 
 **Triage routing (S4-S6, via state machine):**
 
@@ -512,8 +537,20 @@ python3 .claude/skills/phase-sdd-rules/scripts/scope.py --workflow-id <workflow_
 - `scoped == true`  → dispatch the pipeline ONLY for domains in the intersection
   of the scanned list and `domains`. Untouched domains are left as-is (they keep
   their last validation-result and are NOT re-dispatched, re-validated, or
-  re-gated — the Step-6 gate is scoped to the same set). Record the skipped
-  domains with a `task_skipped` event (`reason: unaffected_domain_out_of_change_scope`).
+  re-gated — the Step-6 gate is scoped to the same set). Record the excluded
+  domains with ONE `task_skipped` event — this record is what makes the F1
+  scoping auditable, so emit it even when the excluded list is long:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_skipped \
+  --task-id sdd_<workflow_id>_out_of_scope_domains \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"unaffected_domain_out_of_change_scope","skipped_domains":[<scanned domains NOT in scope.py domains>],"in_scope_domains":[<the intersection>]}'
+```
+
+  Skip the event only when the excluded list is empty (every scanned domain is in scope).
+
 - `scoped == false` → dispatch for ALL scanned domains (prior behavior; u-spec /
   greenfield must build every domain).
 
@@ -547,7 +584,50 @@ billing        | spec-writer     | pending
 
 ### Step 3 — Human confirmation gate
 
-> **If `bypass_e99 == true`** (trigger is `u-improve`): skip directly to Step 4.
+> **If `bypass_e99 == true`** (trigger is `u-improve`): skip directly to Step 4 — **unless the
+> projection from Step 0.5 crosses the cost threshold (R11b), or the reach axis downgraded a
+> breaking change (R13).**
+>
+> **Reach-downgrade disclosure (R13).** When the compatibility axis said breaking but
+> `consumer_scope == internal`, the phase is about to run `targeted` — skipping cross-domain
+> validation and compliance — on a change that modifies an existing contract. That is the intended
+> saving (10 workers → 5 on the measured case), and it is also the one decision the operator cannot
+> reconstruct afterwards from a cheaper log. Ask once:
+>
+> ```bash
+> python3 .claude/skills/orch-log/scripts/append.py \
+>   --agent orchestrator-sdd \
+>   --event-type escalation \
+>   --data '{"code":"E99_human_confirmation_required","severity":"info","phase":"sdd","reason":"reach downgrade: a breaking change is running the TARGETED pipeline because every consumer is in-repo and updated by this change (<consumer_scope_rationale>). Cross-domain validation and compliance are SKIPPED. Projected: <workers> workers, ~<wall_clock_minutes> min instead of the full pipeline.","evidence":[<cost_projected seq>],"options":["confirm_proceed","force_full_pipeline","abort"],"suggested_actions":["confirm_proceed — nothing outside this change consumes it","force_full_pipeline — something does; run the standard pipeline"]}'
+> ```
+>
+> Resolve it exactly like the gate below. One escalation per workflow — if an
+> `E99_human_confirmation_required` already exists for this workflow, do not re-ask.
+>
+> A downgrade *reduces* the worker count, so it can never trip the R11b cost threshold on its own.
+> Without this disclosure the cheaper pipeline would be chosen silently, which is the mirror image of
+> the defect R11 exists to fix: cost invisible before the decision, now correctness invisible before
+> the decision.
+>
+> **Cost threshold:** `workers >= 8` (≈48 min at the measured ~6 min/worker), or
+> `sdd_cost_confirm_workers` in `.orch/config.json` when set. Below it, an `/u-improve` proceeds
+> unattended as before; at or above it, ask once:
+>
+> ```bash
+> python3 .claude/skills/orch-log/scripts/append.py \
+>   --agent orchestrator-sdd \
+>   --event-type escalation \
+>   --data '{"code":"E99_human_confirmation_required","severity":"info","phase":"sdd","reason":"sdd projection: <workers> workers, ~<wall_clock_minutes> min in <mode> mode (<breakdown>). This is above the confirm threshold, so it is being surfaced before the first dispatch rather than after.","evidence":[<cost_projected seq>],"options":["confirm_proceed","abort"],"suggested_actions":["confirm_proceed — run it","abort — then narrow the /u-improve description so triage scopes to fewer specs (fan-out in targeted mode is per affected_specs ENTRY, not per domain)"]}'
+> ```
+>
+> Then resolve it exactly like the gate below (`confirm_proceed` → Step 4; `abort` → blocked; no
+> response yet → `escalated` and stop). One escalation per workflow: if an
+> `E99_human_confirmation_required` already exists for this workflow, do not re-ask.
+>
+> **Why this exists.** `bypass_e99` was suppressing the *only* surface that showed the price, and
+> `/u-improve` is the only usable entry point on a populated repository — so the operator
+> systematically discovered the cost after paying it. This restores the choice without restoring the
+> gate on every small change.
 
 **Check for pending confirmation first:**
 
@@ -558,8 +638,35 @@ If found, look for a subsequent `human_response` event:
   overriding the triage stack decision → apply the **Stack correction** below, then proceed to Step 4
   (treated as confirmation).
 - If `human_response.data.action == "confirm_proceed"`: confirmation received → skip to Step 4.
+- If `human_response.data.action == "force_full_pipeline"`: the human is overriding the **reach**
+  classification → apply the **Reach correction** below, then proceed to Step 4.
 - If `human_response.data.action == "abort"`: human aborted → output `{"status": "blocked", "last_seq": <last_seq>, "summary": "aborted by human at confirmation gate"}` and stop.
 - If no `human_response` after the escalation: confirmation still pending → output `{"status": "escalated", "last_seq": <last_seq>, "summary": "awaiting human confirmation"}` and stop.
+
+**Reach correction (`force_full_pipeline`) — R13:**
+
+The classifier judged this change's consumers to be in-repo; the human says otherwise. Rewrite
+`triage.json` deterministically (the `human_response` event is the append-only audit record of the
+override), setting `consumer_scope: "public"` and `mode_hint: "full"`, then use the corrected values
+for the rest of this invocation so Step 4 builds the standard pipeline:
+
+```bash
+python3 - "<workflow_id>" <<'PYEOF'
+import json, os, sys
+from pathlib import Path
+p = Path(os.environ.get("ORCH_PROJECT_DIR", ".")) / ".orch" / "sessions" / sys.argv[1] / "triage.json"
+t = json.loads(p.read_text(encoding="utf-8"))
+t["consumer_scope"] = "public"
+t["consumer_scope_rationale"] = "operator override at the E99 gate (force_full_pipeline)"
+t["mode_hint"] = "full"
+p.write_text(json.dumps(t, indent=2) + "\n", encoding="utf-8")
+print(json.dumps({"consumer_scope": "public", "mode_hint": "full"}))
+PYEOF
+```
+
+Set the in-memory `mode_hint` to `full` and re-derive `effective_mode` before continuing. This is the
+escape hatch that makes the reach downgrade safe to have: the cheap path is the default, and one word
+restores the expensive one.
 
 **Stack correction (`force_fullstack` | `force_backend_only`):**
 
@@ -615,7 +722,7 @@ execution_policy:
   pipeline:                {triage.execution_policy.pipeline}
   regression_test_required: {triage.execution_policy.regression_test_required}
 
-Options: confirm_proceed | force_fullstack | force_backend_only | abort
+Options: confirm_proceed | force_fullstack | force_backend_only | force_full_pipeline | abort
 ```
 
 Emit escalation. The meta-orchestrator surfaces only `code` + `reason` + `options` to the human (via
@@ -629,7 +736,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{
     "code": "E99_human_confirmation_required",
     "severity": "info",
-    "reason": "SDD confirmation before first dispatch. trigger={trigger}; stack={triage.stack} (confidence={triage.stack_confidence}); domains={triage.domains}; front leg: {will run | SKIPPED (back-only)}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}.{ When stack_confidence==low, append: ' ⚠ low-confidence stack: ' + triage.stack_confidence_hint} If the stack is wrong, correct it here: force_fullstack (add the front leg) or force_backend_only (drop it) — no need to abort.",
+    "reason": "SDD confirmation before first dispatch. trigger={trigger}; stack={triage.stack} (confidence={triage.stack_confidence}); domains={triage.domains}; front leg: {will run | SKIPPED (back-only)}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}.{ When stack_confidence==low, append: ' ⚠ low-confidence stack: ' + triage.stack_confidence_hint} consumer_scope={triage.consumer_scope} ({triage.consumer_scope_rationale}).{ When the compatibility axis said breaking but consumer_scope==internal, append: ' ⚠ REACH DOWNGRADE: a breaking change is running the TARGETED pipeline because every consumer is in-repo and updated by this change — cross-domain validation and compliance are SKIPPED. If anything outside this change consumes it, use force_full_pipeline.'} If the stack is wrong, correct it here: force_fullstack (add the front leg) or force_backend_only (drop it). If the reach classification is wrong, force_full_pipeline. No need to abort.",
     "options": ["confirm_proceed", "force_fullstack", "force_backend_only", "abort"],
     "evidence": [],
     "suggested_actions": ["confirm_proceed — start spec worker dispatch with stack={triage.stack}", "force_fullstack — override to fullstack and run the front leg", "force_backend_only — override to back-only and skip the front leg", "abort — stop the workflow"]
@@ -724,7 +831,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_skipped \
   --task-id sdd_<workflow_id>_front_skip \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"ui_task_false_back_only","skipped_steps":["spec-front","spec-validator-front"]}'
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"ui_task_false_back_only","superseded_standard_steps":["spec-front","spec-validator-front"]}'
 ```
 
 Finally, create the cross-domain compliance task. Its deps depend on whether the front leg ran:
@@ -820,15 +927,30 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 No cross-domain compliance task is created in Targeted mode (scope is limited to the affected files only).
 
-**Per DECLARATIVE_TRUNCATION, log a `task_skipped` event for the standard pipeline steps that are skipped in targeted mode (spec-writer, spec-back, spec-validator, spec-front, spec-validator-front, spec-compliance):**
+**Per DECLARATIVE_TRUNCATION, log a `task_skipped` event for the standard pipeline steps targeted mode replaces.**
+
+`superseded_standard_steps` MUST be **derived from what you just created**, never copied as a
+literal (R03). Targeted mode does not skip the domain worker — it dispatches it under a different
+task ID, once per affected spec. Build the list as:
+
+- always superseded: `spec-writer`, `spec-validator`, `spec-validator-front`, `spec-compliance`
+- plus the domain worker type you did **not** use: `spec-front` when `domain_task_type` is
+  `spec-back`, `spec-back` when it is `spec-front`
+- plus `spec-reviewer` **only if** no reviewer task was created (never the case today)
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_skipped \
   --task-id sdd_<workflow_id>_targeted_pipeline_skip \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"targeted_mode_step_not_in_scope","skipped_steps":["spec-writer","spec-back","spec-validator","spec-front","spec-validator-front","spec-compliance"]}'
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"targeted_mode_step_not_in_scope","superseded_standard_steps":[<derived per the rule above>],"steps_dispatched_instead":[<"<domain_task_type>" when domain_worker_required else omitted>,"spec-reviewer"],"affected_spec_count":<len(affected_specs)>}'
 ```
+
+> **Why derived and not literal.** The previous literal listed `spec-back` as skipped while the
+> same phase dispatched three `spec-back` tasks (`improve_01/02/03_spec-back`). P1 says the log is
+> the truth and P3 says corrections happen through new events — an event that misdescribes what the
+> log records two events later breaks both, in the one place where they are supposed to be
+> unbreakable. `steps_dispatched_instead` makes the substitution explicit instead of implied.
 
 Re-read state after all `task_created` events. Proceed to Step 5 (dispatch loop, unchanged).
 
@@ -880,6 +1002,39 @@ python3 .claude/scripts/check_stale.py
 ```
 
 `check_stale.py` reaps `running` sdd tasks past their task-type threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The post-batch reaper at Step 5.4 remains the primary reaping point.
+
+**Subagent spawn budget (R12).** The host caps subagent spawns per session. An SDD fan-out can
+spend it mid-pipeline, and once it is gone every further dispatch fails identically — so this is
+a session-level stop condition, not a task failure. Check it here, before selecting a batch:
+
+```bash
+python3 .claude/scripts/check_spawn_budget.py --since-seq <log_seq_at_spawn> --workflow-id "<workflow_id>"
+```
+
+Branch on the **exit code**:
+
+- **0** (`ok`) → continue.
+- **3** (`low`) → emit `E24_spawn_budget_exhausted` with `severity: warning` **once per invocation**
+  (skip if an `E24` escalation already exists after `log_seq_at_spawn`), then continue dispatching.
+  The point is to warn while the run can still be finished or handed over deliberately:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type escalation \
+  --data '{"code":"E24_spawn_budget_exhausted","phase":"sdd","severity":"warning","reason":"subagent spawn budget nearly spent: <spawned>/<budget> used, <remaining> left — the remaining sdd tasks may not fit in this session","evidence":[<last_seq>],"suggested_actions":["let the current batch finish, then re-invoke in a fresh session — the log resumes exactly where it stopped","reduce fan-out: an /u-improve scoped to the domains actually touched dispatches far fewer workers"]}'
+```
+
+- **4** (`exhausted`) → **stop dispatching.** Emit `E24_spawn_budget_exhausted` with
+  `severity: critical` and output
+  `{"status": "blocked", "last_seq": <last_seq>, "summary": "subagent spawn budget exhausted — resume in a fresh session"}`.
+  Do NOT select a batch, and do NOT claim any task: a claim followed by a failed spawn produces
+  `worker_exited_without_terminal` on a task that never ran, spending one of its two structural
+  retry attempts on a condition no retry inside this session can change. Non-terminal tasks stay
+  exactly as they are and the next invocation resumes them normally.
+
+> Ordering matters: this check runs **before** 5.1/5.2 for that reason. Reaching `exhausted` after
+> claiming is the failure mode observed in production, not a hypothetical.
 
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0), workflow-scoped:**
 ```bash
@@ -1002,28 +1157,25 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='sdd', spawn_contex
 
 #### 5.2.5 — Evaluate context budget per task (WORKER_CONTEXT_BUDGET)
 
-Before spawning each worker, estimate context size and emit `context_budget_evaluated`. Heuristic estimate:
+**Do not estimate by hand.** The estimate is derived from the files each worker actually reads:
 
-- Base prompt (orchestrator spawn template): ~1500 tokens
-- Task spec + Requirement (`triage.requirement`): ~estimate by `len(triage.requirement) // 4`
-- Spec file at `<task.spec>` if path resolves to a file: `~estimate by file size // 4` (use `wc -c` divided by 4); skip if path is `triage.json` (already counted)
-- Worker skill content loaded by the sub-agent: treat as fixed `~18000` tokens. A spec
-  worker does not load one skill — it pulls its capability SKILL.md **plus** the templates
-  it reads by path (`u-spec-templates`) **plus** the globals (`u-spec-globals`: conventions,
-  error-codes, glossary). The old `~6000` figure counted a single skill and understated a
-  real spawn ~3× (fix F6 — honest sizing, not a raised gate).
+```bash
+python3 .claude/scripts/estimate_spawn_context.py \
+  --worker <selected_worker> --phase sdd \
+  --spec-file "<task.spec if it resolves to a file, else omit>" \
+  --requirement-chars <len(triage.requirement)>
+```
 
-Sum all four into `estimated_tokens`. Apply policy (thresholds unchanged — per the
-project rule, a budget ceiling is raised only when backed by actual measurement, so the
-more honest estimate simply moves borderline tasks into `monitor`, which still proceeds):
+Branch on the **exit code**:
 
-| Condition | Action |
-|-----------|--------|
-| `estimated_tokens < 30000` | proceed (`mitigation: "none"`) |
-| `30000 <= estimated_tokens < 60000` | proceed but record `mitigation: "monitor"` |
-| `estimated_tokens >= 60000` | DO NOT spawn — emit `task_failed` with `reason: "context_budget_exceeded", retryable: false` and skip task |
+- **0** → proceed. Take `mitigation` (`none` | `monitor`) from the output verbatim.
+- **3** → `mitigation: blocked`. Do NOT spawn: emit `task_failed` with
+  `reason: "context_budget_exceeded"`, `retryable: false`, and remove the task from the batch
+  before Step 5.3.
+- **1** → the estimator itself failed; report its JSON error and treat the task as `monitor`
+  rather than blocking on a broken measurement.
 
-Emit one event per task:
+Emit one event per task, using the script's numbers:
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
@@ -1031,10 +1183,35 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --event-type context_budget_evaluated \
   --task-id <task_id> \
   --attempt <attempt> \
-  --data '{"phase":"sdd","estimated_tokens":<N>,"threshold_warn":30000,"threshold_block":60000,"mitigation":"<none|monitor|blocked>"}'
+  --data '{"phase":"sdd","estimated_tokens":<estimated_tokens>,"threshold_warn":<threshold_warn>,"threshold_block":<threshold_block>,"mitigation":"<mitigation>","breakdown":<breakdown>}'
 ```
 
-If any task in the batch was blocked (`mitigation: "blocked"`), remove it from the batch list before proceeding to Step 5.3.
+Carrying `breakdown` matters: it separates the part an operator can act on (the spec file) from the
+part they cannot (base prompt, worker inputs). A total is not actionable; a total plus its parts is.
+
+> **Why this replaced a prose heuristic.** The previous instruction said to "treat as fixed ~18000
+> tokens" the skill content a spec worker loads. Measured against the files the workers actually
+> read: `u-spec-back` 2,437 · `u-spec-validator` 2,869 · `u-spec-reviewer` 3,535 ·
+> `u-spec-writer` 6,668 — the constant was 3–7× too high, and too high is the direction that
+> **blocks work**. Across four measured workflows that is 461,759 phantom tokens, **40% of the
+> 1,149,494 reported**; the `u-spec-back` spawn recorded at 57,213 (95% of the ceiling) is really
+> 41,650 (69%), and 26,419 once the spec file is section-scoped (R16).
+>
+> The 18,000 came from correct reasoning with unmeasured arithmetic: fix F6 rightly observed that a
+> worker loads its capability SKILL.md *plus* templates *plus* globals, and assumed bundle-scale
+> loading. Bundle-scale would be 30–35k (the `u-spec-templates` bundle alone is ~27k tokens);
+> path-scoped reading is 2–7k. 18,000 matched neither. The spec agents declare only `orch-report`
+> in `skills:` — everything else is read by path, file by file — which is one grep away, and is the
+> same failure class R04 exists to prevent: a verifiable claim about the system asserted without
+> opening the files.
+>
+> The script therefore carries **no constant for worker inputs**. It parses each worker's own
+> Expected Inputs and sums the real file sizes, so the estimate follows a worker that changes
+> instead of drifting away from it.
+>
+> Thresholds are unchanged (30k warn / 60k block). Correcting the estimate is not raising the gate:
+> the ceiling now governs real context instead of 40% invented context, and the project rule that a
+> ceiling moves only on measurement still applies to the ceiling itself.
 
 #### 5.3 — Spawn batch in parallel
 
@@ -1099,9 +1276,61 @@ For each task in the batch:
   "
   ```
 
-#### 5.5 — Retry decisions
+#### 5.5 — Verdict routing and retry decisions
 
-Re-read state once. For each task with `status == "failed"`:
+**First: route reviewer verdicts (R02a).** A reviewer's verdict is a successful completion carrying
+`verdict` in its `task_completed` data — `approved`, `revision_needed`, or `rejected`. For each
+`spec-reviewer` task that completed in this batch:
+
+- `verdict == "approved"` → nothing to do; its dependents are unblocked normally.
+- `verdict ∈ {"revision_needed", "rejected"}` → the **writer** revises, the reviewer does not
+  re-run over unchanged input. Count the revision cycles already spent for this domain, then:
+
+```bash
+# Revision cycles already attempted for this domain (workflow-scoped).
+python3 -c "
+import sys, re, json; sys.path.insert(0,'.claude/lib')
+from orch_core import read_events
+wf, dom = '<workflow_id>', '<domain>'
+pat = re.compile(rf'sdd_{re.escape(wf)}_{re.escape(dom)}_spec-\w+-revision-(\d+)\$')
+ids = [e.task_id for e in read_events() if e.task_id and pat.match(e.task_id)]
+n = max((int(pat.match(t).group(1)) for t in ids), default=0)
+print(json.dumps({'revision_cycles': n}))
+"
+```
+
+**If `revision_cycles >= 2`:** stop revising and escalate `E05_rejection_cycle_limit` — two rounds
+of writer revision that still fail review is a human decision, not a third machine attempt.
+
+**Otherwise** create the pair (`revision_n = revision_cycles + 1`), chained by `deps`:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<workflow_id>_<domain>_spec-writer-revision-<revision_n> \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"spec-writer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","revision_cycle":<revision_n>,"repair_context":"<the reviewer report path from its task_completed artifacts>"}'
+
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<workflow_id>_<domain>_spec-reviewer-revision-<revision_n> \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":["sdd_<workflow_id>_<domain>_spec-writer-revision-<revision_n>"],"tier":"standard","type":"spec-reviewer","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","revision_cycle":<revision_n>}'
+```
+
+The revision writer receives the reviewer's report as `repair_context` and MUST read it first — it
+is the list of issues to apply. A **fresh** reviewer task then re-judges the revised artifact.
+
+> **Why the writer and not the reviewer.** In production a reviewer expressed REVISION NEEDED as
+> `task_failed(validation_failed, retryable: true)`. No writer task was ever created; the engine
+> retried the same reviewer over the same input, and the only path to terminal-success was for the
+> problem to go away — so attempt 2 edited `mwo-catalog.spec.md` and `openapi.yaml`, reclassified
+> both **Major** findings as "minor", removed a business-rule block, and approved its own edit.
+> `should_retry` now refuses to retry `validation_failed` on a verdict task type (R02b) and
+> `emit.py` refuses to let a reviewer register a file under `domains/` (R02c). This routing is the
+> corrective action those two guards leave room for.
+
+**Then: retry decisions.** Re-read state once. For each task with `status == "failed"`:
 
 ```python
 import sys; sys.path.insert(0, '.claude/lib')
@@ -1185,27 +1414,29 @@ python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.p
 
 Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<ISO-8601>", "evidence": {...}}` and exits 0 when `status == "ok"` or 1 when `status == "blocked"`.
 
+> **GATE_EXIT_CODE_IS_BINDING (R01b).** The exit code — not your reading of the JSON — is the
+> decision. Every checker is fail-closed by construction, so a non-zero exit means the criterion is
+> NOT met regardless of how the payload reads. Emitting `phase_exit_criterion_met` for such a
+> criterion is a protocol violation (P7: critical guarantees live outside the LLM; P11: exit criteria
+> live in testable code, not in prompts). Observed in production in the test phase: a criterion
+> recorded as met while its checker returned `met: false` / exit 1, and the workflow transitioned
+> anyway — the green light was prompt-trusted, so the gate guaranteed nothing.
+>
+> Capture it mechanically instead of interpreting it. This step's sequencing is order-dependent
+> (manifest generation must not run on a blocked precondition), so check each stage's `$?`
+> immediately and stop at the first non-zero rather than looping over the whole set.
+
 **Sequencing (mandatory):**
 - If `check_all_domains_validated.py` or `check_error_codes_synced.py` returns `blocked` → do NOT generate; fall through to the "any criterion not met" handling below (Validation Repair Loop / E08).
 - If `generate_handoff_manifest.py` returns `blocked` (e.g., a compliance `block_handoff` or `handoff_allowed:false` signal) → treat as criterion-not-met → same fall-through (no new escalation code).
-- Only when all four steps return `"status": "ok"` (exit code 0), emit:
+**The precondition run above enforces ORDERING only — it records nothing.** The manifest must not
+be generated over blocked specs, which is why these run first and stop at the first non-zero `$?`.
+The authoritative evaluation and the per-criterion recording happen once, in the
+**Artifact commit gate** below, after the commit — because `sdd_artifacts_committed` is itself a
+declared criterion and cannot be evaluated before the commit exists (R01a).
 
-```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"handoff_manifest_approved"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"all_domains_validated"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"error_codes_synced"}'
-```
+If any stage here returns `blocked`, fall through to the Validation Repair Loop / E08 now and do
+not proceed to the commit.
 
 Set `criteria_met = ["handoff_manifest_approved", "all_domains_validated", "error_codes_synced"]`.
 
@@ -1228,24 +1459,11 @@ Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<
 
 `check_all_domains_validated.py` is NOT run in targeted mode — replaced by `check_all_improve_reviewers_completed.py` (invoke with `ORCH_WORKFLOW_ID=<workflow_id>` so it scopes to this workflow's `sdd_<workflow_id>_improve_*_spec-reviewer` tasks), which verifies that every improve spec-reviewer task reached `completed`.
 
-Sequencing is identical to standard mode: spec-side criteria → generate manifest → manifest gate; any `blocked` falls through to the "criterion not met" handling. Only when all four steps return `status: ok`, emit:
+Sequencing is identical to standard mode: spec-side criteria → generate manifest → manifest gate; any `blocked` falls through to the "criterion not met" handling.
 
-```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"handoff_manifest_approved"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"all_improve_reviewers_completed"}'
-
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"error_codes_synced"}'
-```
+As in standard mode, this run enforces ordering only; the recording happens once in the
+**Artifact commit gate** below, with `--mode targeted` so `applies_to_modes` selects
+`all_improve_reviewers_completed` instead of `all_domains_validated`.
 
 Set `criteria_met = ["handoff_manifest_approved", "all_improve_reviewers_completed", "error_codes_synced"]`.
 
@@ -1265,16 +1483,31 @@ git -C "$ORCH_PROJECT_DIR" commit -m "spec(sdd): handoff artifacts for <workflow
 python3 .claude/skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py
 ```
 
-If `check_sdd_artifacts_committed.py` returns `blocked` (an artifact untracked or with uncommitted changes) → fall through to the "criterion not met" handling; do NOT approve the exit. When it returns `ok`, emit the criterion and append it to `criteria_met` (both modes):
+If `check_sdd_artifacts_committed.py` returns `blocked` (an artifact untracked or with uncommitted changes) → fall through to the "criterion not met" handling; do NOT approve the exit.
+
+**Record every criterion here, via the evaluator, not by hand (R01a).** This is the single
+recording point for the phase: `evaluate_exit_criteria.py` reads
+`phase-sdd-rules/exit-criteria.json`, runs each criterion that applies to `<effective_mode>`
+(`applies_to_modes` selects `all_domains_validated` for `standard` and
+`all_improve_reviewers_completed` for `targeted`), and — only when all of them exit 0 — appends
+each `phase_exit_criterion_met` itself with `checker` and `checker_exit: 0` as execution evidence.
+Emission is all-or-nothing.
 
 ```bash
-python3 .claude/skills/orch-log/scripts/append.py \
-  --agent orchestrator-sdd \
-  --event-type phase_exit_criterion_met \
-  --data '{"phase":"sdd","criterion":"sdd_artifacts_committed"}'
+python3 .claude/scripts/evaluate_exit_criteria.py --phase sdd \
+  --workflow-id "<workflow_id>" --mode <effective_mode>
 ```
 
-Append `"sdd_artifacts_committed"` to the `criteria_met` list determined above.
+- **exit 0** (`verdict: all_met`) → every criterion, `sdd_artifacts_committed` included, is now in
+  the log. Do NOT re-emit any of them; continue to `phase_exit_approved`.
+- **exit 3** (`verdict: blocked`) → nothing was emitted. Fall through to the Validation Repair Loop
+  / E08, naming `failing[]` in the escalation `reason`.
+- **exit 1** → the evaluator itself failed; report its JSON error and stop.
+
+> Re-running the read-only precondition checks costs little; hand-composing the events is what
+> produced the production breach. `_validate_event_data` now also rejects a
+> `phase_exit_criterion_met` whose `checker_exit` is non-zero (R01c), so a criterion cannot be
+> recorded as met over a checker that blocked — by the evaluator or by anyone.
 
 ---
 
@@ -1382,7 +1615,32 @@ Store result as `repair_cycles`.
 python3 .claude/skills/phase-sdd-rules/scripts/identify_invalid_domains.py --workflow-id <workflow_id>
 ```
 
-Store `invalid_domains` and `defect_origins` from the output. `defect_origins` maps each INVALID domain to the pipeline stage its blocking issues point at, derived from the machine-readable `{domain}-validation-result.yaml` (`responsible` fields): `"back"` when ALL blocking issues belong to `u-spec-back`, `null` otherwise (mixed/front/writer/missing/unparseable).
+Store `invalid_domains`, `defect_origins` and **`stale_verdicts`** from the output.
+
+**Step R2.1 — revalidate a stale verdict instead of repairing on it (R08).** A domain listed in
+`stale_verdicts` has an INVALID verdict written *before* its spec files were last edited
+(`specs_changed_since` names them): the verdict judges a state that is no longer on disk, so its
+blocking issues may already be resolved. For each such domain create ONLY a validator task — not a
+repair pipeline:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_created \
+  --task-id sdd_<workflow_id>_<domain>_spec-validator-revalidate-<repair_n> \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","deps":[],"tier":"standard","type":"spec-validator","spec":"<ORCH_PROJECT_DIR>/<SPECS_DIR>/domains/<domain>/","validation_mode":"<incremental_back if triage.ui_task else final_complete>","revalidate_reason":"stale_verdict","specs_changed_since":[<specs_changed_since>]}'
+```
+
+Remove those domains from `invalid_domains` for this cycle and return to Step 5 — the fresh verdict
+decides whether a repair is needed at all. If the revalidation still says INVALID, the next R2 pass
+sees a current verdict and repairs normally.
+
+> **Measured cost of skipping this.** A `spec-back-repair-1` ran **6.4 minutes and changed zero
+> files**: the two blocking issues it was dispatched to fix had already been resolved on disk by an
+> earlier session that never rewrote the validation artifact. The resulting commit touched only
+> `_validation/**` and the manifest — nothing under `domains/**`, which was the entire point of the
+> dispatch. The trigger was "the artifact says INVALID", never "the condition still holds". One
+> validator run costs less than a repair pipeline and answers the actual question. `defect_origins` maps each INVALID domain to the pipeline stage its blocking issues point at, derived from the machine-readable `{domain}-validation-result.yaml` (`responsible` fields): `"back"` when ALL blocking issues belong to `u-spec-back`, `null` otherwise (mixed/front/writer/missing/unparseable).
 
 `--workflow-id` scopes the repair-target set (fix F1): on an `/u-improve`, a stale INVALID report in an untouched domain is returned under `out_of_scope_invalid` and NEVER enters `invalid_domains` — this workflow's repair loop must not dispatch workers for domains it did not touch. For u-spec / greenfield the scan stays global.
 
@@ -1472,6 +1730,7 @@ After all repair tasks created, return to **Step 5** (dispatch loop). The loop w
 | `E05_rejection_cycle_limit` | critical | spec-writer ≥ 3 attempts or spec-validator ≥ 2 attempts |
 | `E06_dispatch_loop_limit` | critical | Dispatch loop reached 30 iterations without convergence |
 | `E11_spec_input_missing` | critical | spec-reviewer failed non-retryably — required input files absent |
+| `E24_spawn_budget_exhausted` | warning / critical | Per-session subagent spawn budget nearly (exit 3) or fully (exit 4) spent — `check_spawn_budget.py`. Exhausted means stop dispatching and resume in a fresh session; nothing was claimed, so no task state needs repair |
 | `E08_exit_criteria_not_met` | warning | All tasks terminal but criteria not met |
 
 ---

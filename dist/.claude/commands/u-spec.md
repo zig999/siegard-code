@@ -9,6 +9,9 @@ Extract from `$ARGUMENTS`:
 - **Last non-quoted argument** = `workflow_id` (optional — human-readable identifier for this workflow; must not contain `/` or `\`)
 - **Remaining quoted text** = `REQUIREMENT` (optional — the requirement to specify)
 - **`INVOCATION_SOURCE`** (optional — set by parent agent, never by human): one of `human | u-improve | spec-triage`. Defaults to `human` when absent.
+- **`--respec-all`** (optional flag): acknowledges a deliberate full re-specification of **every**
+  existing domain. Required to pass the entry guard on a populated repository — see Initial
+  Validation step 4. Never set this on the caller's behalf.
 
 **Resolving `SPECS_DIR` (priority):**
 1. `specs_dir:` field in `CLAUDE.md` (project root) → use *(canonical source — preferred)*
@@ -35,6 +38,39 @@ Derive from `pwd` at command invocation (absolute path to project root).
 2. Confirm that `SPECS_DIR` was resolved. If not, stop.
 
 3. Confirm that the `{SPECS_DIR}` directory exists on the filesystem — or will be initialized (new mode).
+
+4. **Entry guard — `/u-spec` is the greenfield entry point (R10).** Run it before appending any
+   event, so a blocked entry costs nothing:
+
+```bash
+python3 .claude/skills/phase-sdd-rules/scripts/check_spec_entry.py \
+  --specs-dir "{SPECS_DIR}" --project-dir "$ORCH_PROJECT_DIR"
+```
+
+Act on the **exit code**, not on a reading of the JSON:
+
+- **exit 0** (`entry: greenfield`) → proceed.
+- **exit 3** (`entry: non_greenfield`) and `--respec-all` absent → **stop**. Report the guard's
+  `domains`, `domain_count` and `projected` verbatim:
+
+```json
+{"status": "blocked", "reason": "E_USE_IMPROVE",
+ "summary": "{SPECS_DIR} already holds <domain_count> domain spec(s) — /u-spec would re-run the full writer→reviewer→back→validator pipeline for every one of them (<projected.workers> workers, ~<projected.wall_clock_minutes> min), not only the domain this requirement is about",
+ "detail": "Adding to or changing an existing project is /u-improve: triage records the change in affected_specs and scope.py confines the pipeline to it. /u-spec is the greenfield entry point and does not scope — scope.py returns scoped:false for the u-spec trigger by design.",
+ "existing_domains": [<domains>],
+ "suggested_actions": ["run /u-improve and describe the change (names the domains and files literally)",
+                       "genuinely re-specifying every domain from scratch? re-run: /u-spec {SPECS_DIR} --respec-all — and expect the projected cost above"]}
+```
+
+- **exit 3** and `--respec-all` present → proceed, and state the projected cost in the reply so
+  the price is visible before it is paid, not after.
+- **exit 1** → stop and report the script's JSON error.
+
+> Why a guard and not a scoped fan-out: `/u-spec` builds every domain **by design** — that is
+> what greenfield needs. The defect was that nothing distinguished "empty repository" from
+> "populated repository", so an addition to an existing project silently became a full re-spec
+> that outruns the per-session subagent spawn budget and dies mid-pipeline with no terminal
+> event. Refusing by default preserves the capability and removes the accident.
 
 ---
 

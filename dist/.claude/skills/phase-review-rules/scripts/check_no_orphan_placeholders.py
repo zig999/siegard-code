@@ -209,6 +209,14 @@ def main() -> None:
     result.setdefault("status", "ok" if result.get("met") else "blocked")
     result.setdefault("timestamp", now_iso())
     print(json.dumps(result))
+    # R01b: fail-closed exit — the review phase's four criteria printed
+    # `met: false` and exited 0, so any caller branching on the exit code read a
+    # block as a pass. orchestrator-review compensated by reading the JSON, which
+    # is exactly the prompt-trust that P7/P11 forbid; the test phase had the same
+    # shape and emitted phase_exit_criterion_met over a blocked gate in production.
+    # Parity with phase-test-rules/check_all_tests_passed.py (M6).
+    if not result.get("met"):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

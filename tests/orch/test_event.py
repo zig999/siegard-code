@@ -61,7 +61,7 @@ class TestNowIso:
 
 class TestEventType:
     def test_total_count(self):
-        assert len(EventType) == 32  # +handoff_receipt (08) +suite_run_started/completed (11) +orchestrator_resume_requested/resumed (E2)
+        assert len(EventType) == 33  # +handoff_receipt (08) +suite_run_started/completed (11) +orchestrator_resume_requested/resumed (E2) +cost_projected (R11a)
 
     def test_task_lifecycle_count(self):
         task_types = [e for e in EventType if e.value.startswith("task_")]
@@ -101,7 +101,8 @@ class TestEventType:
         assert "suite_run_started" in values  # prod-hardening task 11
         assert "orchestrator_resume_requested" in values  # E2 supervised auto-resume
         assert "orchestrator_resumed" in values           # E2 supervised auto-resume
-        assert len(values) == 32
+        assert "cost_projected" in values                  # R11a — audit-only cost projection
+        assert len(values) == 33
 
 
 # ---------------------------------------------------------------------------

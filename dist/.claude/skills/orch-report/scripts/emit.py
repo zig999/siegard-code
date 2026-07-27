@@ -82,6 +82,33 @@ def _infer_worker_id_from_registry(task_id: str, attempt: int) -> str | None:
     return None
 
 
+# R02c — workers whose whole purpose is judging someone else's artifact. They may
+# write their own report; they may not register the reviewed artifact as output.
+# `worker_id` is `<worker>-<task_id>` (orchestrator-sdd Step 5.2), so the prefix
+# identifies the worker type without needing the registry.
+_REVIEW_ONLY_WORKERS: tuple[str, ...] = ("u-spec-reviewer",)
+
+# Path segments that mark a reviewed artifact rather than a review output.
+# `domains/` holds the per-domain spec tree (openapi.yaml, *.spec.md, *.back.md).
+_REVIEWED_ARTIFACT_SEGMENTS: tuple[str, ...] = ("domains",)
+
+
+def _review_only_violation(worker_id: str, path: str) -> str | None:
+    """Return an error message when a review-only worker registers a reviewed file."""
+    if not any(worker_id.startswith(w) for w in _REVIEW_ONLY_WORKERS):
+        return None
+    segments = path.replace("\\", "/").split("/")
+    for marker in _REVIEWED_ARTIFACT_SEGMENTS:
+        if marker in segments:
+            return (
+                f"{worker_id} is a review-only worker and must not register "
+                f"{path!r} as its artifact: a path under '{marker}/' is the artifact "
+                "under review, not a review output. Report the issues and let the "
+                "Spec Writer apply them (u-spec-reviewer, Separation of duties)."
+            )
+    return None
+
+
 def main() -> int:
     args = _parse_args()
 
@@ -139,6 +166,21 @@ def main() -> int:
                         "status": "error",
                         "reason": "validation_error",
                         "detail": f"artifact path must not contain '..': {path!r}",
+                    }))
+                    return 1
+                # R02c: a review-only worker must not register the artifact it
+                # reviewed. Enforced here, in Python, because prose did not hold: a
+                # reviewer that had reported two Major issues was retried on
+                # unchanged input, edited mwo-catalog.spec.md and openapi.yaml,
+                # downgraded its own findings to "minor", and approved its own edit
+                # — registering both spec files as its output. Separation of duties
+                # is a critical guarantee, so it lives outside the LLM (P6/P7).
+                violation = _review_only_violation(worker_id, path)
+                if violation:
+                    print(json.dumps({
+                        "status": "error",
+                        "reason": "separation_of_duties_violation",
+                        "detail": violation,
                     }))
                     return 1
 

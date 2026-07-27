@@ -59,6 +59,10 @@ class TestIdentifyInvalidDomains:
         "invalid_domains": [],
         "defect_origins": {},
         "out_of_scope_invalid": [],
+        # R08: domains whose INVALID verdict predates the specs it judges — they
+        # get one validator run instead of a repair pipeline built on findings
+        # nobody re-checked. Empty when nothing is INVALID.
+        "stale_verdicts": {},
         "scoped": False,
     }
 

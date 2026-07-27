@@ -362,6 +362,17 @@ class EventType(str, Enum):
     DISPATCH_DECISION = "dispatch_decision"
     CONTEXT_BUDGET_EVALUATED = "context_budget_evaluated"
     OPERATION_MODE_DECLARED = "operation_mode_declared"
+    # COST_PROJECTED (R11a): emitted right after triage, BEFORE the first dispatch,
+    # carrying the worker count and wall-clock the chosen pipeline implies. AUDIT-ONLY
+    # — no reducer handler.
+    #
+    # Why it exists: the operator only ever learned the price after paying it. The
+    # E99 confirmation gate did show `estimated_task_contracts`, but `/u-improve`
+    # sets bypass_e99 and skips that gate entirely — and /u-improve is the only
+    # usable entry point on a non-greenfield repository, so in practice no estimate
+    # was ever surfaced. Measured: a 3-item type-level change spent 56 min of sdd
+    # across 10 workers, discovered at the end.
+    COST_PROJECTED = "cost_projected"
 
     # Management and operations (9)
     CIRCUIT_BREAKER_TRIPPED = "circuit_breaker_tripped"
@@ -612,6 +623,14 @@ _VALID_SKIP_REASONS: frozenset[str] = frozenset({
     "implementation_only_no_spec_change",
     "targeted_mode_step_not_in_scope",
     "phase_short_circuit",
+    # R03: both of these are emitted by orchestrator-sdd and were absent here, so
+    # the append raised EventValidationError and the skip went UNRECORDED — the
+    # front-leg skip on a back-only workflow, and the per-domain skip that fix F1
+    # relies on to show which domains a scoped /u-improve left alone. A skip that
+    # cannot be written is a hole in the audit trail, not a no-op.
+    # tests/test_skip_reason_registry.py keeps this set and the orchestrators in sync.
+    "ui_task_false_back_only",
+    "unaffected_domain_out_of_change_scope",
 })
 
 # Failure reasons emitted ONLY by the framework when it synthesizes a terminal for
@@ -624,6 +643,15 @@ _VALID_SKIP_REASONS: frozenset[str] = frozenset({
 _SYNTHESIZED_FAILURE_REASONS: frozenset[str] = frozenset({
     "stale_timeout",
     "worker_exited_without_terminal",
+})
+
+# R02b: task types whose output IS a judgement about someone else's artifact. A
+# `validation_failed` from one of them is a verdict on the input, not a fault in
+# the worker — so retrying the same task over the same input is never the fix.
+# See should_retry() for the production incident this closes.
+_VERDICT_TASK_TYPES: frozenset[str] = frozenset({
+    "spec-reviewer",
+    "spec-validator",
 })
 
 
@@ -650,6 +678,33 @@ def _validate_event_data(event_type: str, data: dict[str, Any]) -> None:
             raise EventValidationError(
                 f"task_created: tier {tier!r} must be one of {sorted(_VALID_TIERS)}"
             )
+    if event_type == EventType.PHASE_EXIT_CRITERION_MET.value:
+        # R01c: a criterion cannot be "met" over a checker that blocked.
+        #
+        # In production orchestrator-test emitted this event for `all_tests_passed`
+        # while check_all_tests_passed.py returned met:false / exit 1, and the
+        # workflow transitioned to done. The gate was fail-closed in Python and
+        # prompt-trusted in prose, so it guaranteed nothing (P7/P11).
+        #
+        # The field is OPTIONAL on purpose: logs written before this release carry
+        # no checker_exit and must keep reducing (P1/P3 — history is immutable).
+        # What is now impossible is *claiming* execution evidence that contradicts
+        # the claim. evaluate_exit_criteria.py always writes it; the dist-level test
+        # asserts every orchestrator emission does too.
+        exit_code = data.get("checker_exit")
+        if exit_code is not None:
+            if not isinstance(exit_code, int):
+                raise EventValidationError(
+                    "phase_exit_criterion_met: 'checker_exit' must be an integer "
+                    f"(got {type(exit_code).__name__})"
+                )
+            if exit_code != 0:
+                raise EventValidationError(
+                    "phase_exit_criterion_met: criterion "
+                    f"{data.get('criterion')!r} cannot be met — its checker exited "
+                    f"{exit_code}. A non-zero exit means NOT met; emit the phase's "
+                    "not-met branch (E08) instead."
+                )
     if event_type in (EventType.TASK_FAILED.value, EventType.TASK_DLQ.value):
         reason = data.get("reason")
         if reason is not None and reason not in _VALID_FAILURE_REASONS:
@@ -3120,6 +3175,22 @@ def should_retry(task: TaskState, policy: RetryPolicy) -> bool:
     entry was dead. Removed to keep this set == the real structural reason enum.)
     """
     if task.last_failure_retryable is False:
+        return False
+    # R02b: a verdict is not a transient failure. Retrying the SAME judge over
+    # unchanged input cannot change the input — it can only pressure the judge to
+    # change its mind, which is what happened: a reviewer reported two Major
+    # issues as task_failed(validation_failed, retryable=true), the engine retried
+    # it, and attempt 2 edited the spec files under review, downgraded both
+    # findings to "minor", and approved its own edit. The corrective action for a
+    # rejected spec is a writer revision (orchestrator-sdd Step 5.5), never a
+    # re-run of the reviewer.
+    #
+    # Returning False routes the task to DLQ, which blocks phase exit and
+    # escalates — deliberately loud. Under the R02a contract a reviewer reports a
+    # verdict via task_completed, so reaching here at all means a worker broke its
+    # contract, and that should surface rather than self-heal.
+    if (task.last_failure_reason == "validation_failed"
+            and task.task_type in _VERDICT_TASK_TYPES):
         return False
     _STRUCTURAL_REASONS = frozenset({
         "worker_exited_without_terminal",
