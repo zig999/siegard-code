@@ -55,6 +55,8 @@ File written to: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json`
   "domains": ["{slug}"],
   "type": "spec_change_required | implementation_only",
   "mode_hint": "full | fast-track:minor | fast-track:patch",
+  "consumer_scope": "public | internal",
+  "consumer_scope_rationale": "<verbatim from classify_consumer_scope.py>",
   "affected_specs": [
     {
       "path": "{relative path from SPECS_DIR}",
@@ -80,6 +82,7 @@ File written to: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json`
 - `domains`: populated for **greenfield** (derived from requirement); empty `[]` for non-greenfield. The orchestrator uses this list to create `spec-writer` tasks when no domain specs exist yet.
 - `requirement`: canonical task description — the orchestrator injects this into the spawn prompt of every downstream worker so no worker needs to re-read triage.json to get context.
 - `affected_specs`: populated for targeted/improve dispatch; empty `[]` for greenfield.
+- `consumer_scope`: blast radius from `classify_consumer_scope.py` (Step 2.5a), verbatim. Combines with compatibility to produce `mode_hint`. `public` is the conservative default for anything unrecognised, ambiguous or unlabelled.
 
 ---
 
@@ -327,7 +330,28 @@ planner_required: true
 
 ## Step 2.5 — Determine mode_hint and changed_sections (spec_change_required + greenfield:false only)
 
-**mode_hint rules:**
+**Step 2.5a — classify the blast radius first (deterministic, R13).**
+
+`mode_hint` used to depend on ONE axis, compatibility, so anything breaking was `full` regardless of
+what it could reach. A rename of two keys in an injection map private to one module — every call site
+in the same repo, all updated in the same commit — paid the same toll as breaking a published DTO.
+Measured: 10 workers / 336k tokens / 56 min for a change that is 5 workers once reach is accounted
+for. Meanwhile the *larger* change in the same series (the engine's plan/collect core) ran fast-track.
+
+Run the classifier and take its output verbatim:
+
+```bash
+python3 .claude/skills/u-spec-triage-rules/scripts/classify_consumer_scope.py \
+  --triage "$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json"
+```
+
+Store `consumer_scope` (`public` | `internal`) and hold `rationale` + `public_signals` for the
+`triage.json` output. **Do not hand-classify it** — same rule as `stack` (see
+`consumer_scope_deterministic` in Behavioral rules). Accurate `changed_sections` labels are what make
+it work, so assign them carefully in Step 2.5b below; the classifier resolves anything unrecognised,
+ambiguous, or unlabelled to `public`.
+
+**mode_hint rules — compatibility × reach:**
 
 ```
 mode_hint: fast-track:patch
@@ -336,17 +360,35 @@ mode_hint: fast-track:patch
 mode_hint: fast-track:minor
   - At least one section adds optional content without breaking existing consumers
     (new optional field, new endpoint, new UI state, new component, new flow)
+  - OR: a section removes/modifies an existing contract AND consumer_scope == internal
+    (every consumer lives in this repo and is updated by this same change, so there
+    is no third party to negotiate the break with — see R13 note below)
 
 mode_hint: full
   - Any affected section removes/modifies an existing contract, business rule,
-    state machine transition, or breaks an existing consumer
+    state machine transition, or breaks an existing consumer, AND
+    consumer_scope == public
 ```
+
+> **What the downgrade gives up, and why it is acceptable.** `targeted` mode skips `spec-writer`,
+> `spec-validator`, `spec-front`, `spec-validator-front` and `spec-compliance`, running the domain
+> worker plus a reviewer per affected spec. The material loss is **cross-domain validation** — which
+> exists to protect consumers the change does not update. When there are none, it has nothing to
+> protect. When the classifier is unsure, it says `public` and nothing is skipped.
+>
+> A wrong `public` costs pipeline time. A wrong `internal` skips the validator on a published
+> contract. The errors are not symmetric, so neither is the default.
+>
+> The operator can always force the full pipeline at the confirmation gate
+> (`force_full_pipeline` — see `orchestrator-sdd` Step 3).
 
 **Assign `changed_sections` per spec:**
 
 For each entry in `affected_specs`, read the section content and assign semantic labels to `changed_sections`:
 
 ```
+**Step 2.5b — assign `changed_sections`.**
+
 Structural labels (trigger domain worker in orchestrator-sdd targeted dispatch):
   endpoints        — adds, modifies, or removes HTTP routes or RPC methods
   schemas          — adds, modifies, or removes data schema definitions
@@ -357,6 +399,28 @@ Structural labels (trigger domain worker in orchestrator-sdd targeted dispatch):
   auth_rules       — adds, modifies, or removes authentication/authorization rules
   event_types      — adds, modifies, or removes event type definitions
   api_contracts    — modifies API contract compatibility (backwards-breaking or additive)
+
+Code-internal labels (reach nothing outside this repository — R13):
+  internal_interfaces — code-level interfaces, dependency-injection surfaces, private
+                        types, internal type aliases. NOT `api_contracts`: no HTTP
+                        route, published schema, error code or event changes
+  module_exports      — a module/barrel export list: which symbols the module exposes
+                        to the rest of THIS repository
+
+> **Disambiguation — this is the distinction that was missing.** `api_contracts` was being assigned
+> to changes that touch no API: named TypeScript interfaces on DI surfaces, a rename of private
+> injection map keys, three barrel exports. There was no label for "code interface", so the closest
+> available term was used, and the inflated label forced `full`.
+>
+> | The change is… | Label |
+> |---|---|
+> | an HTTP route, its request/response shape, an error code, a published event | `endpoints` / `schemas` / `error_codes` / `event_types` / `api_contracts` |
+> | a TypeScript interface, a DI token, an injection map key, an internal type | `internal_interfaces` |
+> | which symbols a barrel/module exports within this repo | `module_exports` |
+> | a persisted entity | `data_models` — **always public**: stored data outlives the change |
+>
+> Ask: *can something this change does not update observe the difference?* If yes it is public. A
+> published contract file (`openapi.yaml`) in `affected_specs` is public regardless of labels.
 
 Text-only labels (no structural impact — domain worker may be skipped):
   descriptions     — rewrites, clarifies, or corrects prose descriptions only
@@ -445,7 +509,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --event-type task_completed \
   --task-id $ORCH_TASK_ID \
   --attempt $ORCH_ATTEMPT \
-  --data '{"phase":"sdd","artifacts":[".orch/sessions/{workflow_id}/triage.json"],"result":"triage_complete","type":"{type}","mode_hint":"{mode_hint}","trigger":"{trigger}"}'
+  --data '{"phase":"sdd","artifacts":[".orch/sessions/{workflow_id}/triage.json"],"result":"triage_complete","type":"{type}","mode_hint":"{mode_hint}","consumer_scope":"{consumer_scope}","trigger":"{trigger}"}'
 ```
 
 > `task_completed` is mandatory. Without it, the orchestrator's terminal check returns
@@ -468,6 +532,8 @@ greenfield: {true | false}
 domains: {domains list — populated for greenfield}
 type: {spec_change_required | implementation_only}
 mode_hint: {full | fast-track:minor | fast-track:patch}
+consumer_scope: {public | internal}
+consumer_scope_rationale: {verbatim from the classifier}
 affected_specs:
 {for each spec}
   - path: {path}
@@ -494,7 +560,9 @@ STOP. Do not modify any spec. Do not dispatch any agent.
 | `classification_always_runs` | Steps 1b–2.6 run for both triggers. Improve flow uses `improvement_task` from improve-scope.json as the classification input; standard flow uses `requirement` from task spec |
 | `stack_classification_deterministic` | `stack` and `ui_task` come from `classify_stack.py` (Step 1b) verbatim. Hand-classification, keyword judgment, or independent `ui_task` overrides are prohibited. Co-presence of UI + backend signals → `fullstack` (never suppressed) |
 | `greenfield_domain_extraction` | Greenfield produces `domains` list from requirement analysis — no filesystem scan possible. Orchestrator uses this list for spec-writer task creation |
-| `greenfield_mode_hint` | Greenfield always produces `mode_hint: full` — no structural diff is possible |
+| `consumer_scope_deterministic` | `consumer_scope` comes from `classify_consumer_scope.py` (Step 2.5a) verbatim. Hand-classification is prohibited — the same rule as `stack`. What the triage DOES own is `changed_sections` accuracy: label a code interface `internal_interfaces`, never `api_contracts` |
+| `consumer_scope_conservative` | Unrecognised label, empty `changed_sections`, no `affected_specs`, or a published contract file in scope ⇒ `public`. A wrong `public` costs pipeline time; a wrong `internal` skips cross-domain validation on a published contract |
+| `greenfield_mode_hint` | Greenfield always produces `mode_hint: full` and `consumer_scope: public` — no structural diff is possible, so no reach can be established |
 | `requirement_propagation` | `triage.json.requirement` is the canonical task description. Orchestrator injects it into the spawn prompt of every downstream worker |
 | `task_completed_mandatory` | `task_completed` must be emitted before stopping. Without it the orchestrator's terminal check blocks the entire SDD phase |
 | `spec_modification` | Prohibited |

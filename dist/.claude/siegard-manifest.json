@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.30.0",
+  "version": "2.31.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-27T13:48:06Z",
+  "generated_at": "2026-07-27T14:54:52Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "3db7161bcd980f6a431b583a1dd9829447ed214a9e8808f7cb7f876148fada52"
+      "sha256": "f7018b99b00bcca6d8f0ddd359fee983f957f5c8fd3ad8586e8b31bd5f8a4691"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -249,7 +249,7 @@
     },
     {
       "path": "scripts/project_cost.py",
-      "sha256": "024144142a1e7d841acca39bce1cbd13cc1708eb83d8def526ad86bafb03f03d"
+      "sha256": "f25ef431b4a4f611b6db178e13c318fa3cea74db016eaf8e8bf9015bc637a956"
     },
     {
       "path": "scripts/purge.py",
@@ -985,7 +985,11 @@
     },
     {
       "path": "skills/u-spec-triage-rules/SKILL.md",
-      "sha256": "db9aae05619e7095df378b8be6e2cd34981a2ade55a7637e6c027faf94706736"
+      "sha256": "dc02f1ea616e06506d31d6b71db4a3dda240d0ee878211accccaa52bd6e22358"
+    },
+    {
+      "path": "skills/u-spec-triage-rules/scripts/classify_consumer_scope.py",
+      "sha256": "ab56afbebb67919db547f12e3736f314c73b600c7c798ebff5cb8604514c96f4"
     },
     {
       "path": "skills/u-spec-triage-rules/scripts/classify_stack.py",

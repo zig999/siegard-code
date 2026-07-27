@@ -87,6 +87,10 @@ def project(triage: dict) -> dict:
     # hint runs targeted; everything else runs the standard pipeline.
     targeted = trigger == "u-improve" and str(mode_hint).startswith("fast-track")
     mode = "targeted" if targeted else "standard"
+    # R13: mode_hint already folds in the blast radius, so nothing to compute here —
+    # but the operator reading a suspiciously cheap projection deserves to know it
+    # came from a reach downgrade rather than from a small change.
+    consumer_scope = triage.get("consumer_scope")
 
     breakdown: dict[str, int] = {}
     if targeted:
@@ -122,6 +126,7 @@ def project(triage: dict) -> dict:
 
     return {
         "mode": mode,
+        "consumer_scope": consumer_scope,
         "workers": workers,
         "wall_clock_minutes": minutes,
         "concurrency": concurrency,
@@ -131,6 +136,7 @@ def project(triage: dict) -> dict:
             f"({concurrency} dispatched concurrently, which does not divide the "
             "total — a batch is turn-synchronous, so a stage costs its slowest "
             "member)"
+            + (f". consumer_scope={consumer_scope}" if consumer_scope else "")
             + (". Targeted mode is capped at 1 concurrent worker: it trades "
                "parallelism for the stages it skips, which is why it saves far "
                "less wall clock than it saves workers" if targeted else "")

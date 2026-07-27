@@ -309,6 +309,8 @@ Extract and hold from `triage.json`:
 - `trigger`: `u-spec | u-improve`
 - `type`: `spec_change_required | implementation_only`
 - `mode_hint`: `full | fast-track:minor | fast-track:patch`
+- `consumer_scope`: `public | internal` — blast radius from `classify_consumer_scope.py`. Combined with compatibility it produced `mode_hint`; a **breaking** change with `internal` reach yields `fast-track:minor` instead of `full` (R13)
+- `consumer_scope_rationale`: why, verbatim from the classifier — surface it at the gate
 - `affected_specs`: list (used in Step 4 Targeted)
 - `greenfield`: bool
 - `stack`: `fe | be | fullstack` — authoritative front/back/both decision from `classify_stack.py`. If absent (legacy triage), derive it from `ui_task` (`fullstack` when `ui_task` is true/absent, else `be`).
@@ -583,7 +585,29 @@ billing        | spec-writer     | pending
 ### Step 3 — Human confirmation gate
 
 > **If `bypass_e99 == true`** (trigger is `u-improve`): skip directly to Step 4 — **unless the
-> projection from Step 0.5 crosses the cost threshold (R11b).**
+> projection from Step 0.5 crosses the cost threshold (R11b), or the reach axis downgraded a
+> breaking change (R13).**
+>
+> **Reach-downgrade disclosure (R13).** When the compatibility axis said breaking but
+> `consumer_scope == internal`, the phase is about to run `targeted` — skipping cross-domain
+> validation and compliance — on a change that modifies an existing contract. That is the intended
+> saving (10 workers → 5 on the measured case), and it is also the one decision the operator cannot
+> reconstruct afterwards from a cheaper log. Ask once:
+>
+> ```bash
+> python3 .claude/skills/orch-log/scripts/append.py \
+>   --agent orchestrator-sdd \
+>   --event-type escalation \
+>   --data '{"code":"E99_human_confirmation_required","severity":"info","phase":"sdd","reason":"reach downgrade: a breaking change is running the TARGETED pipeline because every consumer is in-repo and updated by this change (<consumer_scope_rationale>). Cross-domain validation and compliance are SKIPPED. Projected: <workers> workers, ~<wall_clock_minutes> min instead of the full pipeline.","evidence":[<cost_projected seq>],"options":["confirm_proceed","force_full_pipeline","abort"],"suggested_actions":["confirm_proceed — nothing outside this change consumes it","force_full_pipeline — something does; run the standard pipeline"]}'
+> ```
+>
+> Resolve it exactly like the gate below. One escalation per workflow — if an
+> `E99_human_confirmation_required` already exists for this workflow, do not re-ask.
+>
+> A downgrade *reduces* the worker count, so it can never trip the R11b cost threshold on its own.
+> Without this disclosure the cheaper pipeline would be chosen silently, which is the mirror image of
+> the defect R11 exists to fix: cost invisible before the decision, now correctness invisible before
+> the decision.
 >
 > **Cost threshold:** `workers >= 8` (≈48 min at the measured ~6 min/worker), or
 > `sdd_cost_confirm_workers` in `.orch/config.json` when set. Below it, an `/u-improve` proceeds
@@ -614,8 +638,35 @@ If found, look for a subsequent `human_response` event:
   overriding the triage stack decision → apply the **Stack correction** below, then proceed to Step 4
   (treated as confirmation).
 - If `human_response.data.action == "confirm_proceed"`: confirmation received → skip to Step 4.
+- If `human_response.data.action == "force_full_pipeline"`: the human is overriding the **reach**
+  classification → apply the **Reach correction** below, then proceed to Step 4.
 - If `human_response.data.action == "abort"`: human aborted → output `{"status": "blocked", "last_seq": <last_seq>, "summary": "aborted by human at confirmation gate"}` and stop.
 - If no `human_response` after the escalation: confirmation still pending → output `{"status": "escalated", "last_seq": <last_seq>, "summary": "awaiting human confirmation"}` and stop.
+
+**Reach correction (`force_full_pipeline`) — R13:**
+
+The classifier judged this change's consumers to be in-repo; the human says otherwise. Rewrite
+`triage.json` deterministically (the `human_response` event is the append-only audit record of the
+override), setting `consumer_scope: "public"` and `mode_hint: "full"`, then use the corrected values
+for the rest of this invocation so Step 4 builds the standard pipeline:
+
+```bash
+python3 - "<workflow_id>" <<'PYEOF'
+import json, os, sys
+from pathlib import Path
+p = Path(os.environ.get("ORCH_PROJECT_DIR", ".")) / ".orch" / "sessions" / sys.argv[1] / "triage.json"
+t = json.loads(p.read_text(encoding="utf-8"))
+t["consumer_scope"] = "public"
+t["consumer_scope_rationale"] = "operator override at the E99 gate (force_full_pipeline)"
+t["mode_hint"] = "full"
+p.write_text(json.dumps(t, indent=2) + "\n", encoding="utf-8")
+print(json.dumps({"consumer_scope": "public", "mode_hint": "full"}))
+PYEOF
+```
+
+Set the in-memory `mode_hint` to `full` and re-derive `effective_mode` before continuing. This is the
+escape hatch that makes the reach downgrade safe to have: the cheap path is the default, and one word
+restores the expensive one.
 
 **Stack correction (`force_fullstack` | `force_backend_only`):**
 
@@ -671,7 +722,7 @@ execution_policy:
   pipeline:                {triage.execution_policy.pipeline}
   regression_test_required: {triage.execution_policy.regression_test_required}
 
-Options: confirm_proceed | force_fullstack | force_backend_only | abort
+Options: confirm_proceed | force_fullstack | force_backend_only | force_full_pipeline | abort
 ```
 
 Emit escalation. The meta-orchestrator surfaces only `code` + `reason` + `options` to the human (via
@@ -685,7 +736,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --data '{
     "code": "E99_human_confirmation_required",
     "severity": "info",
-    "reason": "SDD confirmation before first dispatch. trigger={trigger}; stack={triage.stack} (confidence={triage.stack_confidence}); domains={triage.domains}; front leg: {will run | SKIPPED (back-only)}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}.{ When stack_confidence==low, append: ' ⚠ low-confidence stack: ' + triage.stack_confidence_hint} If the stack is wrong, correct it here: force_fullstack (add the front leg) or force_backend_only (drop it) — no need to abort.",
+    "reason": "SDD confirmation before first dispatch. trigger={trigger}; stack={triage.stack} (confidence={triage.stack_confidence}); domains={triage.domains}; front leg: {will run | SKIPPED (back-only)}; estimated_task_contracts={triage.estimated_task_contracts}; pipeline={triage.execution_policy.pipeline}.{ When stack_confidence==low, append: ' ⚠ low-confidence stack: ' + triage.stack_confidence_hint} consumer_scope={triage.consumer_scope} ({triage.consumer_scope_rationale}).{ When the compatibility axis said breaking but consumer_scope==internal, append: ' ⚠ REACH DOWNGRADE: a breaking change is running the TARGETED pipeline because every consumer is in-repo and updated by this change — cross-domain validation and compliance are SKIPPED. If anything outside this change consumes it, use force_full_pipeline.'} If the stack is wrong, correct it here: force_fullstack (add the front leg) or force_backend_only (drop it). If the reach classification is wrong, force_full_pipeline. No need to abort.",
     "options": ["confirm_proceed", "force_fullstack", "force_backend_only", "abort"],
     "evidence": [],
     "suggested_actions": ["confirm_proceed — start spec worker dispatch with stack={triage.stack}", "force_fullstack — override to fullstack and run the front leg", "force_backend_only — override to back-only and skip the front leg", "abort — stop the workflow"]
