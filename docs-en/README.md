@@ -53,8 +53,9 @@ Canonical phase specification: [`../extras/phases.md`](../extras/phases.md).
 | Document | Contents | Status |
 |---|---|---|
 | [`u-drift.md`](u-drift.md) | Spec ↔ code drift analysis — running `/u-drift`, reading the report, acting on findings | **Available** |
+| [`upgrading.md`](upgrading.md) | Non-destructive upgrade of a target project: `verify_install.py` first, resolve every `modified` file, then copy | **Available** |
 | `flow.md` | **Start here.** Phases, routing, gates, and the re-invocation loop end to end | Planned |
-| `installation.md` | Manual copy into `<target>/.claude/`, `verify_install.py`, project configuration | Planned |
+| `installation.md` | First-time manual copy into `<target>/.claude/` and project configuration (for upgrades see `upgrading.md`) | Planned |
 | `commands.md` | Slash commands — `/u-orchestrator` and the rest | Planned |
 | `agents.md` | Meta-orchestrator, the four phase orchestrators, and all workers | Planned |
 | `workflow.md` | Engine internals: event sourcing, log reduction, dispatch loop, idempotency | Planned |

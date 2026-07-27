@@ -1,7 +1,8 @@
 ---
 name: u-spec-validation
-description: Cross-validation skill for specs - cross-reference, error code consistency, state coverage, and orphan spec detection.
+description: Cross-validation skill for specs - cross-reference, error code consistency, state coverage, and orphan spec detection. Ships scripts/verify_evidence.py, which re-executes the evidence a spec cites about the source code (R04b) — the only check in the pipeline that can detect a spec that is internally consistent but false about the code.
 user-invocable: false
+allowed-tools: Bash(python3 *), Read, Glob, Grep
 ---
 
 # SKILL: Cross-Validation of Specs

@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.29.0",
+  "version": "2.30.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-27T13:23:12Z",
+  "generated_at": "2026-07-27T13:48:06Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -93,7 +93,7 @@
     },
     {
       "path": "agents/spec/u-spec-back.md",
-      "sha256": "ca51fdae89e7dc8ecc5e1d877b006de35b68afb0698c8f47afdc47a0db89f8a4"
+      "sha256": "a8e532d2d4a69a215f28252db56c021c7756c086e7689ba9e4aa203578c3fc15"
     },
     {
       "path": "agents/spec/u-spec-compliance.md",
@@ -101,11 +101,11 @@
     },
     {
       "path": "agents/spec/u-spec-front.md",
-      "sha256": "f2d42cca7d5eabc629287bf883fe0aa7c2454ebe558ffdb7bf8f9c6ead13877c"
+      "sha256": "a5d113487fcf6ea0fda49f8ef3f34f0cbf945898c9f6ab34df72b37fd9953a90"
     },
     {
       "path": "agents/spec/u-spec-reviewer.md",
-      "sha256": "c143257c6c52c7a8c36e62b733731aa460aa3060c1aa695778cdaf17e3f04649"
+      "sha256": "2a999c464263772b4816b0739351df61cbb3473241699f3a99e32d0dddbd3213"
     },
     {
       "path": "agents/spec/u-spec-triage.md",
@@ -113,11 +113,11 @@
     },
     {
       "path": "agents/spec/u-spec-validator.md",
-      "sha256": "535f483ab57266f8aed68a401c291d1513496212b4676d53fad68078e16a60a3"
+      "sha256": "07ce484f3a078d5aee457893d2faf6114fa8ffc198a6bcd1ee7a3f3b7b48c532"
     },
     {
       "path": "agents/spec/u-spec-writer.md",
-      "sha256": "d2259100a94d469c3083cd7de1e1feb771ea365a39c0238660937495150c29d7"
+      "sha256": "e8ced6761240f8216b1a09fb510af6e888b6d9bdd6916e95da476046bcb554a7"
     },
     {
       "path": "claude-md-fragments/fe-stack-react-tailwind-tanstack.md",
@@ -433,7 +433,7 @@
     },
     {
       "path": "skills/phase-review-rules/scripts/check_documentation_verified.py",
-      "sha256": "945e29b5c00a11846779085b6246955781af2dac01572acad9a905b5bb62bb35"
+      "sha256": "fac412fffcd06aae62871f6ea8ce71c9725ab00cb14233869b9cdaf22c6d5a05"
     },
     {
       "path": "skills/phase-review-rules/scripts/check_micro_unanimous_clean.py",
@@ -465,7 +465,7 @@
     },
     {
       "path": "skills/phase-review-rules/scripts/read_qa_verdict.py",
-      "sha256": "bfb15e55af786c3c56ad45851cada9a52cfa154a7ace7fc6697bcabe1c904591"
+      "sha256": "aced17d6c17219544c374abc45fcfa480eb16587107257b20292ff8685ec9b65"
     },
     {
       "path": "skills/phase-review-rules/scripts/run_suite.py",
@@ -477,11 +477,11 @@
     },
     {
       "path": "skills/phase-sdd-rules/SKILL.md",
-      "sha256": "57c88a677ba7637e610ca3a26b426a53632d93754527140d55216b236b21ac35"
+      "sha256": "ab3094dc2000ba874fed34c1e60aa4b080397c1110ef62f320f1df0c0bfb4414"
     },
     {
       "path": "skills/phase-sdd-rules/exit-criteria.json",
-      "sha256": "64af1345205cd58fdabb044068ae735e5283ae255a6d56345a84a08394beb91f"
+      "sha256": "267753c3aaad819190f8c511f17b3f1450a9ca477ba6145dfea9168cf8a2fb22"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_all_domains_validated.py",
@@ -502,6 +502,10 @@
     {
       "path": "skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py",
       "sha256": "6f25c9bb649616456d868883e411fed6310cb1f3f568a89fc54436f430f31d36"
+    },
+    {
+      "path": "skills/phase-sdd-rules/scripts/check_spec_drift_reviewed.py",
+      "sha256": "2048f471301df7ac94cbc4fb0d88845caa4aa9bfb1f197318a988c9e175d3315"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_spec_entry.py",
@@ -901,7 +905,7 @@
     },
     {
       "path": "skills/u-spec-globals/SKILL.md",
-      "sha256": "465312c0b8fdd7acad13bc598e3b91f35e0b39620c86d57dfd20d88c879fd38d"
+      "sha256": "c2b4bb905b9251fce00f86b6dd091d8d3494b720a62d38ebc0bbed85eb6a8e89"
     },
     {
       "path": "skills/u-spec-globals/conventions.md",
@@ -909,7 +913,7 @@
     },
     {
       "path": "skills/u-spec-globals/error-codes.md",
-      "sha256": "dca5c10345ce69f6de1373b559a859e851d25bc2b334eeeba3151ff2e3dd5e2d"
+      "sha256": "e1cd9612c5f0633eb8fcedfa011a6f3a2e5a76f718c8b98c71d303c63eefacac"
     },
     {
       "path": "skills/u-spec-globals/glossary.md",
@@ -989,7 +993,11 @@
     },
     {
       "path": "skills/u-spec-validation/SKILL.md",
-      "sha256": "b2da10842628de6396bebc17b555044d5343401e1ff410914d89db2255405b22"
+      "sha256": "258d20e07c270e496efb70a07fd4038dbb787c9f535a82df8ae6a20710b55e5f"
+    },
+    {
+      "path": "skills/u-spec-validation/scripts/verify_evidence.py",
+      "sha256": "ec4c4c969e9c31f418e812eb7a11ac1b3b342024e20ac261da2a6b716f2ee113"
     },
     {
       "path": "skills/u-spec-writing/SKILL.md",

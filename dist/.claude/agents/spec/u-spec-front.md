@@ -35,6 +35,7 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 - `domains/{domain}/openapi.yaml` — **APPROVED** (one for each domain involved in the features)
 - `domains/{domain}/{domain}.spec.md` — **APPROVED** (one for each domain)
 - `.claude/skills/u-spec-globals/error-codes.md` — to map errors to UI messages
+- `{SPECS_DIR}/_global/error-codes.md` — **this project's** codes. The catalog is the UNION of the two; new project codes are registered there, never in the framework file (it is overwritten on upgrade)
 - `.claude/skills/u-spec-templates/TEMPLATE.front.md` — global frontend spec template
 - `.claude/skills/u-spec-templates/TEMPLATE.feature.spec.md` — feature spec template (1 feature = 1 URL)
 - `.claude/skills/u-spec-templates/TEMPLATE.component.spec.md` — component spec template (shared components)

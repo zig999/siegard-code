@@ -216,6 +216,37 @@ Before Back/Front Spec Agents begin, the Validator can run a **pre-check** on op
 
 This works as a second pair of eyes after the Reviewer, catching problems that may have slipped through.
 
+## Evidence re-execution (R04b — mandatory, deterministic)
+
+Every claim a spec makes about the source code carries an evidence block (see `u-spec-back`
+§Anchoring claims about the code). **Re-verify all of them.** This is the one check in your job that
+is not a judgement — it is a script, and its exit code is binding:
+
+```bash
+python3 .claude/skills/u-spec-validation/scripts/verify_evidence.py \
+  --spec "$SPECS_DIR/domains/<domain>/back/<domain>.back.md" \
+  --spec "$SPECS_DIR/domains/<domain>/<domain>.spec.md" \
+  --project-dir "$ORCH_PROJECT_DIR"
+```
+
+- **exit 0** → every cited `file_claim` still hashes to its recorded excerpt and every cited
+  `command_claim` reproduces its recorded exit code and output.
+- **exit 2** → at least one claim FAILED. This is a **blocking** issue with
+  `responsible: u-spec-back`. Record each entry from `failed[]` verbatim in your blocking issues —
+  the `reason` field already states what diverged.
+- **exit 1** → script error; report it and return blocked rather than passing silently.
+
+Claims marked `unverified: true` are **warnings**, not blockers: the worker admitted a gap instead of
+inventing a value, which is the behaviour being encouraged. List them so a human can decide.
+
+> **Why a script and not a reading.** Your other checks are internal-consistency checks — cross-refs,
+> error codes, state coverage — and they are all satisfiable without the spec being *true about the
+> code*. That is how a spec passed five workers while declaring three method signatures that do not
+> exist, and how another cited a `grep` result that no grep had produced. A pipeline consistent
+> within itself and unanchored outside itself will certify a false spec every time. This script is
+> the anchor: re-running a read-only command costs milliseconds, and it is the only thing that makes
+> a citation worth more than a claim.
+
 ## Blocked State
 
 When required input files are absent (e.g., `.back.md` not yet produced, `openapi.yaml` missing), do not attempt partial validation. Return a structured blocked report using the template at `.claude/skills/u-shared-templates/blocked-report.schema.yaml`.
@@ -232,6 +263,8 @@ Never assume or invent missing content — always return blocked.
 4. **Differentiate warnings from blockers** — EV without a consumer is a warning, BR without a UC is a blocker
 5. **Validate incrementally** — do not wait for all files when you can partially validate
 6. **Pre-validate when possible** — anticipate problems before Back/Front Spec
+7. **ALWAYS re-execute evidence** — `verify_evidence.py` exit 2 is a blocking issue owned by
+   `u-spec-back`. Internal consistency cannot detect a spec that is false about the code; this can
 
 ## Expected Output
 - Validation report: `VALID` | `INVALID` with list of inconsistencies

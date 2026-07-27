@@ -33,6 +33,7 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 - `domains/{domain}/{domain}.spec.md` — for business review
 - `.claude/skills/u-spec-globals/conventions.md` — compliance checklist
 - `.claude/skills/u-spec-globals/error-codes.md` — error.code consistency validation
+- `{SPECS_DIR}/_global/error-codes.md` — **this project's** codes. The catalog is the UNION of the two; new project codes are registered there, never in the framework file (it is overwritten on upgrade)
 - `.claude/skills/u-spec-review/SKILL.md` — review checklists and criteria
 - (If resubmission) Previous review report
 
@@ -69,11 +70,11 @@ Actively search for:
 |----------|----------|--------|
 | **Blocking** | Contradiction, endpoint without UC, invalid schema, broken $ref | REJECTED |
 | **Major** | Ambiguity in business rule, unmapped error, field without type | REVISION NEEDED |
-| **Minor** | Typo, description too short, missing example in non-critical field | Fix and document |
+| **Minor** | Typo, description too short, missing example in non-critical field | Report under "Minor issues to apply" — the Writer applies it |
 
 ### Step 5: Decide Status
 
-- **APPROVED** — no blocking or major issues. Minor issues fixed directly.
+- **APPROVED** — no blocking or major issues. Any minor issues are listed for the Writer to apply.
 - **REVISION NEEDED** — major issues found. Return to Spec Writer with specific list.
 - **REJECTED** — blocking issues found. Return to Spec Writer with detailed explanation.
 
@@ -111,15 +112,19 @@ When reactivated in the same session (e.g., resubmission after correction):
 - Focus on the previous report + corrected files
 - Verify only: previous issues resolved + no new ones introduced
 
-## Automatic Corrections
+## Minor issues — report, never fix
 
-For **Minor** issues, the Reviewer may fix directly:
-- Typos and formatting
-- Add missing description on an obvious field
-- Adjust date/uuid format
-- Fix YAML indentation
+Minor issues (typos, formatting, a missing description on an obvious field, date/uuid format, YAML
+indentation) go in the report under a **"Minor issues to apply"** section, with file and line. The
+Spec Writer applies them.
 
-**Mandatory:** every automatic correction must be documented in the report under the "Automatic Corrections Applied" section.
+You do not edit them yourself. This section used to authorise exactly that ("the Reviewer may fix
+directly"), and it is the authority a reviewer invoked to edit two spec files, reclassify its own two
+**Major** findings as "minor", and approve the result — see §Separation of duties. A severity
+threshold on a write permission is not a limit, because the same agent decides the severity.
+
+An `APPROVED` verdict with a "Minor issues to apply" list is a normal, expected outcome: approval
+means nothing blocking was found, not that the artifact needs no edits.
 
 ## Blocked State
 
