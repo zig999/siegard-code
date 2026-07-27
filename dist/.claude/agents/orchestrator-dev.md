@@ -795,6 +795,24 @@ python3 .claude/scripts/check_stale.py
 
 `check_stale.py` emits `task_failed(reason=stale_timeout)` for every `running` task past its tier threshold and prints `{"stale_count": N, "failed": [...]}`. Consume the `failed` list; the emission is performed deterministically in Python (not via a prompt-composed append).
 
+**Subagent spawn budget (R12).** The host caps subagent spawns per session; once it is gone every
+further dispatch fails identically, so this is a session-level stop condition, not a task failure.
+Check it here, **before** selecting or claiming a batch — a claim followed by a failed spawn
+produces `worker_exited_without_terminal` on a task that never ran, spending one of its two
+structural retry attempts on a condition no retry inside this session can change.
+
+```bash
+python3 .claude/scripts/check_spawn_budget.py --since-seq <log_seq_at_spawn> --workflow-id "<workflow_id>"
+```
+
+Branch on the **exit code**: `0` (ok) → continue · `3` (low) → emit `E24_spawn_budget_exhausted`
+(`severity: warning`) once per invocation, then continue · `4` (exhausted) → emit
+`E24_spawn_budget_exhausted` (`severity: critical`) and output
+`{"status": "blocked", "last_seq": <last_seq>, "summary": "subagent spawn budget exhausted — resume in a fresh session"}`
+without claiming anything. Non-terminal tasks are left untouched; the next invocation resumes them.
+See `orchestrator-sdd` Step 5.0 for the full escalation payloads.
+
+
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit):**
 ```bash
 python3 .claude/scripts/requeue_due_tasks.py --phase dev --workflow-id "<workflow_id>" --wait-window 90
@@ -1087,14 +1105,29 @@ The end state (HEAD on `main`, clean tree, no unmerged `feat/TC-*` branch, no le
 
 ### Step 6 — Exit criteria evaluation
 
+> **GATE_EXIT_CODE_IS_BINDING (R01b).** Every checker is fail-closed: it prints its JSON **and**
+> exits non-zero when the criterion is not met. The exit code — not your reading of the JSON — is
+> the decision. Emitting `phase_exit_criterion_met` for a criterion whose checker exited non-zero
+> is a protocol violation (P7: critical guarantees live outside the LLM; P11: exit criteria live in
+> testable code, not in prompts). Observed in production in the test phase: a criterion recorded as
+> met while its checker returned `met: false` / exit 1, and the workflow transitioned anyway.
+
+Run all six and capture the verdict mechanically — do not decide from the printed JSON:
+
 ```bash
-ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-dev-rules/scripts/check_all_impl_tasks_terminal.py
-ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-dev-rules/scripts/check_all_deliveries_qa_ready.py
-python3 .claude/skills/phase-dev-rules/scripts/check_no_open_prohibitions.py
-python3 .claude/skills/phase-dev-rules/scripts/check_all_branches_integrated.py
-python3 .claude/skills/phase-dev-rules/scripts/check_acceptance_criteria_covered.py
-python3 .claude/skills/phase-dev-rules/scripts/check_spec_requirements_covered.py
+GATE_FAILED=""
+for c in check_all_impl_tasks_terminal check_all_deliveries_qa_ready \
+         check_no_open_prohibitions check_all_branches_integrated \
+         check_acceptance_criteria_covered check_spec_requirements_covered; do
+  ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-dev-rules/scripts/$c.py \
+    || GATE_FAILED="$GATE_FAILED $c"
+done
+echo "GATE_FAILED:${GATE_FAILED:- none}"
 ```
+
+`GATE_FAILED: none` is the only state that permits emitting the criteria below. Anything else means
+at least one criterion is NOT met: emit none of them, and name the failing checkers from
+`GATE_FAILED` in the E08 `reason`.
 
 `check_spec_requirements_covered` (Rec A) blocks dev exit when a `UC-NN`/`FEAT-NN` defined in a spec the backlog references is covered by no Task Contract — the planner-under-scoped-a-requirement leak. It self-scopes to standard/greenfield flows (improve/synthesized backlogs return `met: true`, reason recorded in evidence).
 
@@ -1190,6 +1223,7 @@ Re-read state. Determine:
 | `E08_exit_criteria_not_met` | warning | All tasks terminal but delivery criteria not met |
 | `E13_improve_scope_unusable` | critical | improve flow with `planner_required=false` but `triage.json` missing — cannot synthesize backlog |
 | `E22_backlog_scope_violation` | critical | Planner produced TCs referencing only out-of-scope domains twice (post-revision) — `/u-improve` must not be re-broadened (L4) |
+| `E24_spawn_budget_exhausted` | warning / critical | Per-session subagent spawn budget nearly (exit 3) or fully (exit 4) spent — `check_spawn_budget.py`. Exhausted means stop dispatching and resume in a fresh session; nothing was claimed, so no task state needs repair |
 
 ---
 

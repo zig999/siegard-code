@@ -512,8 +512,20 @@ python3 .claude/skills/phase-sdd-rules/scripts/scope.py --workflow-id <workflow_
 - `scoped == true`  → dispatch the pipeline ONLY for domains in the intersection
   of the scanned list and `domains`. Untouched domains are left as-is (they keep
   their last validation-result and are NOT re-dispatched, re-validated, or
-  re-gated — the Step-6 gate is scoped to the same set). Record the skipped
-  domains with a `task_skipped` event (`reason: unaffected_domain_out_of_change_scope`).
+  re-gated — the Step-6 gate is scoped to the same set). Record the excluded
+  domains with ONE `task_skipped` event — this record is what makes the F1
+  scoping auditable, so emit it even when the excluded list is long:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type task_skipped \
+  --task-id sdd_<workflow_id>_out_of_scope_domains \
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"unaffected_domain_out_of_change_scope","skipped_domains":[<scanned domains NOT in scope.py domains>],"in_scope_domains":[<the intersection>]}'
+```
+
+  Skip the event only when the excluded list is empty (every scanned domain is in scope).
+
 - `scoped == false` → dispatch for ALL scanned domains (prior behavior; u-spec /
   greenfield must build every domain).
 
@@ -724,7 +736,7 @@ python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_skipped \
   --task-id sdd_<workflow_id>_front_skip \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"ui_task_false_back_only","skipped_steps":["spec-front","spec-validator-front"]}'
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"ui_task_false_back_only","superseded_standard_steps":["spec-front","spec-validator-front"]}'
 ```
 
 Finally, create the cross-domain compliance task. Its deps depend on whether the front leg ran:
@@ -820,15 +832,30 @@ python3 .claude/skills/orch-log/scripts/append.py \
 
 No cross-domain compliance task is created in Targeted mode (scope is limited to the affected files only).
 
-**Per DECLARATIVE_TRUNCATION, log a `task_skipped` event for the standard pipeline steps that are skipped in targeted mode (spec-writer, spec-back, spec-validator, spec-front, spec-validator-front, spec-compliance):**
+**Per DECLARATIVE_TRUNCATION, log a `task_skipped` event for the standard pipeline steps targeted mode replaces.**
+
+`superseded_standard_steps` MUST be **derived from what you just created**, never copied as a
+literal (R03). Targeted mode does not skip the domain worker — it dispatches it under a different
+task ID, once per affected spec. Build the list as:
+
+- always superseded: `spec-writer`, `spec-validator`, `spec-validator-front`, `spec-compliance`
+- plus the domain worker type you did **not** use: `spec-front` when `domain_task_type` is
+  `spec-back`, `spec-back` when it is `spec-front`
+- plus `spec-reviewer` **only if** no reviewer task was created (never the case today)
 
 ```bash
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type task_skipped \
   --task-id sdd_<workflow_id>_targeted_pipeline_skip \
-  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"targeted_mode_step_not_in_scope","skipped_steps":["spec-writer","spec-back","spec-validator","spec-front","spec-validator-front","spec-compliance"]}'
+  --data '{"phase":"sdd","workflow_id":"<workflow_id>","reason":"targeted_mode_step_not_in_scope","superseded_standard_steps":[<derived per the rule above>],"steps_dispatched_instead":[<"<domain_task_type>" when domain_worker_required else omitted>,"spec-reviewer"],"affected_spec_count":<len(affected_specs)>}'
 ```
+
+> **Why derived and not literal.** The previous literal listed `spec-back` as skipped while the
+> same phase dispatched three `spec-back` tasks (`improve_01/02/03_spec-back`). P1 says the log is
+> the truth and P3 says corrections happen through new events — an event that misdescribes what the
+> log records two events later breaks both, in the one place where they are supposed to be
+> unbreakable. `steps_dispatched_instead` makes the substitution explicit instead of implied.
 
 Re-read state after all `task_created` events. Proceed to Step 5 (dispatch loop, unchanged).
 
@@ -880,6 +907,39 @@ python3 .claude/scripts/check_stale.py
 ```
 
 `check_stale.py` reaps `running` sdd tasks past their task-type threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The post-batch reaper at Step 5.4 remains the primary reaping point.
+
+**Subagent spawn budget (R12).** The host caps subagent spawns per session. An SDD fan-out can
+spend it mid-pipeline, and once it is gone every further dispatch fails identically — so this is
+a session-level stop condition, not a task failure. Check it here, before selecting a batch:
+
+```bash
+python3 .claude/scripts/check_spawn_budget.py --since-seq <log_seq_at_spawn> --workflow-id "<workflow_id>"
+```
+
+Branch on the **exit code**:
+
+- **0** (`ok`) → continue.
+- **3** (`low`) → emit `E24_spawn_budget_exhausted` with `severity: warning` **once per invocation**
+  (skip if an `E24` escalation already exists after `log_seq_at_spawn`), then continue dispatching.
+  The point is to warn while the run can still be finished or handed over deliberately:
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-sdd \
+  --event-type escalation \
+  --data '{"code":"E24_spawn_budget_exhausted","phase":"sdd","severity":"warning","reason":"subagent spawn budget nearly spent: <spawned>/<budget> used, <remaining> left — the remaining sdd tasks may not fit in this session","evidence":[<last_seq>],"suggested_actions":["let the current batch finish, then re-invoke in a fresh session — the log resumes exactly where it stopped","reduce fan-out: an /u-improve scoped to the domains actually touched dispatches far fewer workers"]}'
+```
+
+- **4** (`exhausted`) → **stop dispatching.** Emit `E24_spawn_budget_exhausted` with
+  `severity: critical` and output
+  `{"status": "blocked", "last_seq": <last_seq>, "summary": "subagent spawn budget exhausted — resume in a fresh session"}`.
+  Do NOT select a batch, and do NOT claim any task: a claim followed by a failed spawn produces
+  `worker_exited_without_terminal` on a task that never ran, spending one of its two structural
+  retry attempts on a condition no retry inside this session can change. Non-terminal tasks stay
+  exactly as they are and the next invocation resumes them normally.
+
+> Ordering matters: this check runs **before** 5.1/5.2 for that reason. Reaching `exhausted` after
+> claiming is the failure mode observed in production, not a hypothetical.
 
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0), workflow-scoped:**
 ```bash
@@ -1185,6 +1245,18 @@ python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.p
 
 Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<ISO-8601>", "evidence": {...}}` and exits 0 when `status == "ok"` or 1 when `status == "blocked"`.
 
+> **GATE_EXIT_CODE_IS_BINDING (R01b).** The exit code — not your reading of the JSON — is the
+> decision. Every checker is fail-closed by construction, so a non-zero exit means the criterion is
+> NOT met regardless of how the payload reads. Emitting `phase_exit_criterion_met` for such a
+> criterion is a protocol violation (P7: critical guarantees live outside the LLM; P11: exit criteria
+> live in testable code, not in prompts). Observed in production in the test phase: a criterion
+> recorded as met while its checker returned `met: false` / exit 1, and the workflow transitioned
+> anyway — the green light was prompt-trusted, so the gate guaranteed nothing.
+>
+> Capture it mechanically instead of interpreting it. This step's sequencing is order-dependent
+> (manifest generation must not run on a blocked precondition), so check each stage's `$?`
+> immediately and stop at the first non-zero rather than looping over the whole set.
+
 **Sequencing (mandatory):**
 - If `check_all_domains_validated.py` or `check_error_codes_synced.py` returns `blocked` → do NOT generate; fall through to the "any criterion not met" handling below (Validation Repair Loop / E08).
 - If `generate_handoff_manifest.py` returns `blocked` (e.g., a compliance `block_handoff` or `handoff_allowed:false` signal) → treat as criterion-not-met → same fall-through (no new escalation code).
@@ -1472,6 +1544,7 @@ After all repair tasks created, return to **Step 5** (dispatch loop). The loop w
 | `E05_rejection_cycle_limit` | critical | spec-writer ≥ 3 attempts or spec-validator ≥ 2 attempts |
 | `E06_dispatch_loop_limit` | critical | Dispatch loop reached 30 iterations without convergence |
 | `E11_spec_input_missing` | critical | spec-reviewer failed non-retryably — required input files absent |
+| `E24_spawn_budget_exhausted` | warning / critical | Per-session subagent spawn budget nearly (exit 3) or fully (exit 4) spent — `check_spawn_budget.py`. Exhausted means stop dispatching and resume in a fresh session; nothing was claimed, so no task state needs repair |
 | `E08_exit_criteria_not_met` | warning | All tasks terminal but criteria not met |
 
 ---

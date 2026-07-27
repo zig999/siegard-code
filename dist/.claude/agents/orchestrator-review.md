@@ -363,6 +363,10 @@ Parse `fresh`, `current_sr_id`, `next_sr_id`, `signature` from the output.
 Read from project's `CLAUDE.md`:
 - `build_command` (optional — empty string skips build)
 - `test_command` (required; must emit JSON to stdout)
+- `test_framework` (optional — `vitest` or `jest`). Pass it verbatim to `--framework` below when
+  present; pass `auto` when absent. `auto` resolves the runner from `test_command` and then from
+  the nearest `package.json` (root first, then nested up to 2 levels) — a monorepo with no root
+  manifest resolves correctly without the field.
 
 Emit `suite_run_started` (use `current_sr_id` if fresh, else `next_sr_id`):
 
@@ -389,7 +393,7 @@ python3 .claude/skills/phase-review-rules/scripts/run_suite.py \
   --trigger-seq <last_seq> \
   --build-cmd "<build_cmd>" \
   --test-cmd "<test_cmd>" \
-  --framework auto
+  --framework "<test_framework from CLAUDE.md, else auto>"
 ```
 
 `<round>` is `max(task.attempts)` across active review tasks (default 1 on round 1).
@@ -447,7 +451,13 @@ If `manifest.tests.result == "degraded"` (parser could not understand the runner
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-review \
   --event-type escalation \
-  --data '{"code":"E17_suite_parser_degraded","severity":"warning","reason":"shared suite run completed but parser could not extract failures (framework not supported or non-JSON output) — workers will fall back to local test-gate this round","evidence":[<suite_run_completed seq>],"suggested_actions":["ensure CLAUDE.md test_command emits JSON (vitest --reporter=json or jest --json)","update parse_test_output.py to support the project's framework"]}'
+  --data '{"code":"E17_suite_parser_degraded","severity":"warning","reason":"shared suite run completed but the output was unusable — <the `warning` field verbatim from manifest.json tests.warning> — workers will fall back to local test-gate this round","evidence":[<suite_run_completed seq>],"suggested_actions":["read manifest.json → tests.warning: it distinguishes non-JSON output from JSON in an unrecognized shape","non-JSON: make CLAUDE.md test_command emit JSON (vitest --reporter=json / jest --json) AND verify it is runnable from ORCH_PROJECT_DIR","unrecognized shape: the runner is not jest/vitest-compatible — extend parse_test_output.py for it","inspect the raw output at <raw_output_path> before treating the suite as failed — a green run reported as degraded is a parser defect, not a test failure"]}'
+
+> **E17 is a defect to fix, never a defect to absorb.** Do not label it a known/managed limitation:
+> vitest and jest are both natively supported, and any output carrying their reporter shape is
+> parsed regardless of which framework was detected. A degraded result therefore means one of two
+> concrete, fixable things, and `tests.warning` says which. Reporting it as an accepted limitation
+> trains the operator to ignore a real signal — which is worse than the missing attribution itself.
 ```
 
 When fallback is active, the activation prompt in Step 4.3 must NOT inject the `Suite run mode: shared` lines.
@@ -484,6 +494,24 @@ python3 .claude/scripts/check_stale.py
 ```
 
 `check_stale.py` reaps `running` review tasks past their tier threshold (consume its `failed` list) and also returns `stale_orchestrator`: while ready tasks remain, keep dispatching — do NOT break the loop on that signal (in-band resume). The Step 4.4 reaper remains the post-batch reaping point.
+
+**Subagent spawn budget (R12).** The host caps subagent spawns per session; once it is gone every
+further dispatch fails identically, so this is a session-level stop condition, not a task failure.
+Check it here, **before** selecting or claiming a batch — a claim followed by a failed spawn
+produces `worker_exited_without_terminal` on a task that never ran, spending one of its two
+structural retry attempts on a condition no retry inside this session can change.
+
+```bash
+python3 .claude/scripts/check_spawn_budget.py --since-seq <log_seq_at_spawn> --workflow-id "<workflow_id>"
+```
+
+Branch on the **exit code**: `0` (ok) → continue · `3` (low) → emit `E24_spawn_budget_exhausted`
+(`severity: warning`) once per invocation, then continue · `4` (exhausted) → emit
+`E24_spawn_budget_exhausted` (`severity: critical`) and output
+`{"status": "blocked", "last_seq": <last_seq>, "summary": "subagent spawn budget exhausted — resume in a fresh session"}`
+without claiming anything. Non-terminal tasks are left untouched; the next invocation resumes them.
+See `orchestrator-sdd` Step 5.0 for the full escalation payloads.
+
 
 **Retry / DLQ requeue (deterministic — recommendation #4, 2026-07-15 workflow audit; mirrors orchestrator-dev 5.0):**
 ```bash
@@ -972,6 +1000,30 @@ python3 .claude/skills/phase-review-rules/scripts/check_no_orphan_placeholders.p
 
 `check_no_orphan_placeholders` (R2) scans the delivered source surface for incomplete-work markers (e.g. `em construção`, `swaps the inner content`, `TODO: TC-`). A leftover placeholder owned by no integration TC is a green-but-non-functional deliverable — this gate blocks it. Projects scope the scan via `ORCH_PLACEHOLDER_SCAN_PATHS` and tune markers via `ORCH_PLACEHOLDER_EXTRA_MARKERS`; with no source root present it returns `met: true` (scanned 0).
 
+> **GATE_EXIT_CODE_IS_BINDING (R01b).** Every checker above is fail-closed: it prints its JSON
+> **and** exits non-zero when the criterion is not met. The exit code — not your reading of the
+> JSON — is the decision. Emitting `phase_exit_criterion_met` for a criterion whose checker exited
+> non-zero is a protocol violation (P7: critical guarantees live outside the LLM; P11: exit criteria
+> live in testable code, not in prompts). Observed in production in the test phase: a criterion
+> recorded as met while its checker returned `met: false` / exit 1, and the workflow transitioned
+> anyway.
+
+Capture the verdict mechanically rather than deciding from the printed JSON:
+
+```bash
+GATE_FAILED=""
+for c in check_all_qa_verdicts_approved check_no_open_critical_findings \
+         check_documentation_verified check_no_orphan_placeholders; do
+  ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-review-rules/scripts/$c.py \
+    || GATE_FAILED="$GATE_FAILED $c"
+done
+echo "GATE_FAILED:${GATE_FAILED:- none}"
+```
+
+`GATE_FAILED: none` is the only state that permits emitting the criteria below. Anything else means
+at least one criterion is NOT met: emit none of them, and name the failing checkers from
+`GATE_FAILED` in the E08 `reason`.
+
 If all four return `"met": true`:
 
 ```bash
@@ -1053,6 +1105,7 @@ Stop.
 | `E17_suite_parser_degraded` | warning | Shared suite ran but parser could not extract failures — workers fall back to local test-gate for this round |
 | `E18_auto_approval_granted` | info | Step 5.0 strict gate met — orchestrator synthesized a `human_response` with `action=approve`; manual override is still possible by appending a `return_to_dev` response |
 | `E19_qa_mode_classifier_failed` | warning | classify_qa_mode.py exited non-zero — task created with qa_mode=standard (default) |
+| `E24_spawn_budget_exhausted` | warning / critical | Per-session subagent spawn budget nearly (exit 3) or fully (exit 4) spent — `check_spawn_budget.py`. Exhausted means stop dispatching and resume in a fresh session; nothing was claimed, so no task state needs repair |
 
 ---
 

@@ -218,6 +218,57 @@ def _check_w05_register_worker_phase(content: str, path: Path) -> list[Violation
 
 
 # ---------------------------------------------------------------------------
+# W08 — gate fields must be declared in the producing worker's protocol
+#
+# Origin: `documentation_verified` was required by
+# `check_documentation_verified.py` and documented ONLY in the qa-report
+# template. The QA worker delivered the review, omitted the field, and the
+# phase blocked with E08 — work complete, record incomplete, one human
+# round-trip burned. A requirement that lives only in a file the agent is
+# expected to open is a requirement with a recurring failure mode.
+#
+# This registry is the artifact -> checker contract, in one place. Adding a
+# field to a checker without adding it here (and to the worker) fails the gate.
+# ---------------------------------------------------------------------------
+
+GATE_FIELDS_BY_WORKER: dict[str, list[tuple[str, str]]] = {
+    # worker stem -> [(field, checker that reads it)]
+    "u-be-qa": [
+        ("verdict", "check_all_qa_verdicts_approved.py"),
+        ("documentation_verified", "check_documentation_verified.py"),
+    ],
+    "u-fe-qa": [
+        ("verdict", "check_all_qa_verdicts_approved.py"),
+        ("documentation_verified", "check_documentation_verified.py"),
+    ],
+    "u-be-developer": [("qa_ready", "check_all_deliveries_qa_ready.py")],
+    "u-fe-developer": [("qa_ready", "check_all_deliveries_qa_ready.py")],
+    "u-test-runner": [("result", "check_all_tests_passed.py")],
+}
+
+
+def _check_w08_gate_fields_declared(content: str, path: Path) -> list[Violation]:
+    required = GATE_FIELDS_BY_WORKER.get(path.stem)
+    if not required:
+        return []
+    violations: list[Violation] = []
+    for field_name, checker in required:
+        # Word-boundary match so `documentation_verified` is not satisfied by a
+        # longer identifier that merely contains it.
+        if not re.search(rf"(?<![\w-]){re.escape(field_name)}(?![\w-])", content):
+            violations.append(Violation(
+                rule="W08",
+                severity="error",
+                detail=(
+                    f"gate field '{field_name}' is read by {checker} but never named in this "
+                    f"worker's protocol — the worker can complete without writing it and block "
+                    f"the phase with E08"
+                ),
+            ))
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Single file validation
 # ---------------------------------------------------------------------------
 
@@ -237,6 +288,7 @@ def check_file(path: Path) -> FileResult:
     violations.extend(_check_w02_failed_fields(content, path))
     violations.extend(_check_w04_default_phase(content, path))
     violations.extend(_check_w05_register_worker_phase(content, path))
+    violations.extend(_check_w08_gate_fields_declared(content, path))
 
     return FileResult(
         file=str(path),

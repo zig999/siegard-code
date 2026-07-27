@@ -44,7 +44,19 @@ CRITERION_ID = "all_tests_passed"
 PHASE_NAME = "test"
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
 
-_RESULT_RE = re.compile(r"^\s*result\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
+# Leading markdown decoration (`**result:**`, `- result:`, `| result |`) and a
+# bold-wrapped value are tolerated: the canonical artifact is JSON, but a worker
+# that registers the human-readable report must not make a GREEN suite read as
+# `field_absent`. Defence in depth for R05 — the contract fix is that the
+# registered artifact is the `.json`; this keeps a contract slip from inverting
+# the verdict.
+# The value side allows decoration and HORIZONTAL space only: `\s` would let the
+# match cross a newline and capture the next field's value from an empty
+# `result:` line.
+_RESULT_RE = re.compile(
+    r"^[\s>*_#|-]*result[ \t]*[:=][ \t*_`]*([A-Za-z_]+)",
+    re.MULTILINE | re.IGNORECASE,
+)
 _PASSED_VALUE = "passed"
 
 

@@ -24,7 +24,15 @@ SDD_SCRIPTS = (
 # Every entry needs a reason — an empty reason is a test failure.
 # Empty today: every spec-tree scanner is scope-aware (v2.7.0). Adding an
 # entry here is a conscious, justified decision.
-GLOBAL_SCAN_ALLOWLIST: dict[str, str] = {}
+GLOBAL_SCAN_ALLOWLIST: dict[str, str] = {
+    "check_spec_entry.py": (
+        "R10 entry guard. Its whole question is 'does this repository already hold "
+        "ANY domain spec?', so a scoped scan would answer the wrong question — and "
+        "it runs in /u-spec Initial Validation, before triage.json exists, so no "
+        "scope is derivable yet. It gates nothing per-domain and repairs nothing: "
+        "it only classifies the entry point as greenfield or not."
+    ),
+}
 
 _GLOB_RE = re.compile(r"\.r?glob\(")
 _SCOPE_IMPORT_RE = re.compile(r"^from scope import |^import scope\b", re.MULTILINE)

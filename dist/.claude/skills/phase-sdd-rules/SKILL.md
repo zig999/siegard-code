@@ -184,6 +184,32 @@ the handoff scan to map a `_validation/` artifact back to its domain.
 
 ---
 
+## scripts/check_spec_entry.py
+
+Entry guard for `/u-spec` (R10). Answers one question — does `{SPECS_DIR}/domains/`
+already hold a spec? — and projects what a full fan-out would cost. Consumed by the
+`/u-spec` command in Initial Validation, **before** any event is appended.
+
+```bash
+python3 .claude/skills/phase-sdd-rules/scripts/check_spec_entry.py \
+  --specs-dir <dir> [--project-dir <dir>]
+# exit 0 → {"entry":"greenfield",     "domain_count":0, "domains":[], "projected":{...}}
+# exit 3 → {"entry":"non_greenfield", "domain_count":N, "domains":[...], "projected":{...}}
+```
+
+Pairs with `scope.py`: that script returns `scoped: false` for the `u-spec` trigger **by
+design**, so `orchestrator-sdd` dispatches the pipeline for every scanned domain. Correct
+on an empty repository; on a populated one it turns an addition into a full re-spec that
+outruns the per-session subagent spawn budget. This guard is what distinguishes the two
+cases, and it is the only thing that did.
+
+`projected.wall_clock_minutes` uses `WALL_CLOCK_MINUTES_PER_WORKER = 6` — measured across
+three real workflows (5.6 / 5.9 / 6.9 min per dispatched worker, over differing modes,
+domain counts and change sizes). Its purpose is to make the price visible before it is
+paid rather than after.
+
+---
+
 ## scripts/check_error_codes_synced.py
 
 Criterion: every `error.code` / `code: Exxx` value found in an in-scope spec YAML/MD file is

@@ -612,6 +612,14 @@ _VALID_SKIP_REASONS: frozenset[str] = frozenset({
     "implementation_only_no_spec_change",
     "targeted_mode_step_not_in_scope",
     "phase_short_circuit",
+    # R03: both of these are emitted by orchestrator-sdd and were absent here, so
+    # the append raised EventValidationError and the skip went UNRECORDED — the
+    # front-leg skip on a back-only workflow, and the per-domain skip that fix F1
+    # relies on to show which domains a scoped /u-improve left alone. A skip that
+    # cannot be written is a hole in the audit trail, not a no-op.
+    # tests/test_skip_reason_registry.py keeps this set and the orchestrators in sync.
+    "ui_task_false_back_only",
+    "unaffected_domain_out_of_change_scope",
 })
 
 # Failure reasons emitted ONLY by the framework when it synthesizes a terminal for

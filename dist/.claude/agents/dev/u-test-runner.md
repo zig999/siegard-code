@@ -74,9 +74,16 @@ Do not abort on first failure — run all commands and collect all results.
 
 ### Step 3 — Write the report artifact
 
-Write a JSON report to `.orch/test-reports/{task_id}.json`. The canonical contract
-is `u-shared-templates/test-report.schema.yaml` — the report MUST validate against
-it (the test-phase exit-criteria checkers parse this JSON structurally):
+Write a JSON report to `$SESSION_DIR/test-reports/{task_id}-report.json` — the exact
+path given in the activation prompt. The canonical contract is
+`u-shared-templates/test-report.schema.yaml` — the report MUST validate against it
+(the test-phase exit-criteria checkers parse this JSON structurally).
+
+> **The registered artifact is the JSON, always.** A `{task_id}-report.md` may be written
+> alongside for human reading, but registering the `.md` in `task_completed` breaks the
+> `all_tests_passed` gate: the checker reads the artifact path it is given, and a markdown
+> report yields `result: field_absent` — a green suite blocked as unverifiable. The path is
+> also session-scoped; a bare `.orch/test-reports/` collides across concurrent workflows.
 
 ```json
 {
@@ -121,7 +128,7 @@ python3 .claude/skills/orch-report/scripts/emit.py \
   --kind completed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "test", "summary": "all tests passed", "artifacts": [".orch/test-reports/<task_id>.json"]}'
+  --data '{"phase": "test", "summary": "all tests passed", "artifacts": ["<SESSION_DIR>/test-reports/<task_id>-report.json"]}'
 ```
 
 **On failure (`result: failed` or `result: blocked`):**
@@ -130,7 +137,7 @@ python3 .claude/skills/orch-report/scripts/emit.py \
   --kind failed \
   --task-id "<task_id>" \
   --attempt <attempt> \
-  --data '{"phase": "test", "reason": "tests_failed | delivery_not_qa_ready", "retryable": true, "artifacts": [".orch/test-reports/<task_id>.json"]}'
+  --data '{"phase": "test", "reason": "tests_failed | delivery_not_qa_ready", "retryable": true, "artifacts": ["<SESSION_DIR>/test-reports/<task_id>-report.json"]}'
 ```
 
 ---
@@ -144,3 +151,4 @@ python3 .claude/skills/orch-report/scripts/emit.py \
 | I3 | Always write the report before emitting the terminal event. |
 | I4 | Report artifact must be valid JSON — no free-form text output. |
 | I5 | If a command times out after 5 minutes, record `exit_code: -1`, `result: failed`, and `severity: high` with `retryable: true` — a timeout is transient (contention under parallel load), not a deterministic failure. Reserve `severity: critical` for zero test output (runner failed to start), per the severity rules above. Do not send a flaky timeout straight to a non-retryable DLQ. |
+| I6 | The artifact registered in the terminal event is the **`.json`** report, at the session-scoped path from the activation prompt. Never register a `.md` — the `all_tests_passed` checker parses the JSON, and a markdown path makes it read `field_absent` on a green suite. |
