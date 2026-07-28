@@ -413,7 +413,14 @@ def main() -> int:
     args = ap.parse_args()
 
     project_dir = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
-    specs_dir = project_dir / os.environ.get("SPECS_DIR", "specs")
+    # v2.35.1: canonical specs_dir resolution (shared with flow_guard/baseline);
+    # env-only resolution wrote artifacts to the wrong tree when the export was
+    # lost between Bash calls (same class as the mwoassistant baseline incident).
+    _lib = Path(__file__).resolve().parents[3] / "lib"
+    if str(_lib) not in sys.path:
+        sys.path.insert(0, str(_lib))
+    from orch_core import resolve_specs_dir  # noqa: PLC0415
+    specs_dir = project_dir / resolve_specs_dir(project_dir)
 
     result = generate(project_dir, specs_dir, args.workflow_id)
     print(json.dumps(result))

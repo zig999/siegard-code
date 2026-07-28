@@ -317,11 +317,11 @@ print(json.dumps({'stack': stack}))
 Store `stack`. Set `handoff_type = "fast_track"`, `dev_impact = ""`, `changed_files = []`.
 Proceed directly to Step 3 — do NOT run `check_handoff_manifest_approved.py`.
 
-Run the criterion checker to validate the manifest (standard and spec_change_required improve flows only). Export `WORKFLOW_ID` first so provenance (PROV, v2.35.0) is scoped to this workflow:
+Run the criterion checker to validate the manifest (standard and spec_change_required improve flows only). `WORKFLOW_ID` scopes provenance (PROV, v2.35.0) to this workflow:
 
 ```bash
-export WORKFLOW_ID="$workflow_id"
-python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
+# Inline env (W11): exports do NOT survive across Bash calls.
+ORCH_PROJECT_DIR=<ORCH_PROJECT_DIR> SPECS_DIR=<SPECS_DIR from spawn prompt inputs> WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
 ```
 
 If `"met": false` AND any entry in `evidence.validator_errors` starts with `PROV-`:

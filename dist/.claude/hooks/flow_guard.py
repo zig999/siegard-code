@@ -72,7 +72,6 @@ Windows-safe: no fcntl; read-only except the best-effort warn audit file.
 """
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -85,6 +84,7 @@ from orch_core import (  # noqa: E402
     load_config,
     now_iso,
     reduce_all,
+    resolve_specs_dir,
     worker_liveness_expired,
 )
 
@@ -96,40 +96,20 @@ _PATH_FIELDS: dict[str, str] = {
     "NotebookEdit": "notebook_path",
 }
 
-# Machine-parsed contract line in the target CLAUDE.md (see
-# claude-md-target-template.md — "Do not rename or nest them").
-_SPECS_DIR_RE = re.compile(r"^specs_dir:\s*(\S+)\s*$", re.MULTILINE)
-
 _VALID_MODES = frozenset({"hard", "warn", "off"})
 
 
 def _resolve_specs_dir(project_dir: Path, config: dict) -> str | None:
-    """Returns the specs dir as a normalized project-relative posix string, or None."""
-    guard_cfg = config.get("guard") or {}
-    candidates: list[str] = []
-    override = guard_cfg.get("specs_dir")
-    if isinstance(override, str) and override.strip():
-        candidates.append(override.strip())
-    claude_md = project_dir / "CLAUDE.md"
-    if claude_md.exists():
-        try:
-            m = _SPECS_DIR_RE.search(claude_md.read_text(encoding="utf-8"))
-            if m:
-                candidates.append(m.group(1))
-        except OSError:
-            pass
-    env = os.environ.get("SPECS_DIR")
-    if env:
-        candidates.append(env)
-    if (project_dir / "specs").is_dir():
-        candidates.append("specs")
-    for cand in candidates:
-        cand = cand.replace("\\", "/").strip("/")
-        # A template placeholder ({e.g. docs/specs}) is not a real value.
-        if not cand or "{" in cand or "}" in cand:
-            continue
-        return cand
-    return None
+    """v2.35.1: delegates to orch_core.resolve_specs_dir — the SINGLE canonical
+    chain (config override > CLAUDE.md machine-parsed > env > "specs"), shared
+    with record_spec_baseline, generate_handoff_manifest and the sdd checkers.
+    The guard keeps its original fail-open contract: when the default falls
+    through to "specs" and that directory does not exist, there is nothing to
+    protect — return None rather than guarding a phantom path."""
+    resolved = resolve_specs_dir(project_dir, config)
+    if resolved == "specs" and not (project_dir / "specs").is_dir():
+        return None
+    return resolved
 
 
 def _guard_mode(config: dict) -> str:

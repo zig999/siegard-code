@@ -35,7 +35,15 @@ from pathlib import Path
 CHECK_ID = "handoff_manifest_approved"
 
 _PROJECT_DIR = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
-_SPECS_DIR = _PROJECT_DIR / os.environ.get("SPECS_DIR", "specs")
+# v2.35.1: canonical specs_dir resolution (config > CLAUDE.md > env > default),
+# shared with flow_guard/baseline/generator — env-only resolution silently
+# checked the wrong tree when SPECS_DIR was not exported in the same Bash call.
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+if str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+from orch_core import resolve_specs_dir  # noqa: E402
+
+_SPECS_DIR = _PROJECT_DIR / resolve_specs_dir(_PROJECT_DIR)
 _MANIFEST_FILE = _SPECS_DIR / "handoff-manifest.yaml"
 
 # prod-hardening task 04 (C3/A3-F2): the gate now invokes the real semantic

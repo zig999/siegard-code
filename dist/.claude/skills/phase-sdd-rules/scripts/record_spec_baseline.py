@@ -46,8 +46,10 @@ if str(_LIB) not in sys.path:
 from orch_core import (  # noqa: E402
     EventType,
     append_event,
+    claude_md_specs_dir,
     load_blob_data,
     read_events,
+    resolve_specs_dir,
 )
 
 
@@ -91,7 +93,11 @@ def main() -> int:
     args = ap.parse_args()
 
     project_dir = Path(os.environ.get("ORCH_PROJECT_DIR", "."))
-    specs_rel = os.environ.get("SPECS_DIR", "specs")
+    # v2.35.1: canonical resolution (config override > CLAUDE.md machine-parsed
+    # > env > default), shared with flow_guard/generator/checkers. The v2.35.0
+    # field incident recorded an EMPTY baseline against env-default "specs"
+    # while CLAUDE.md declared docs/specs — never resolve from env alone.
+    specs_rel = resolve_specs_dir(project_dir)
     specs_dir = project_dir / specs_rel
 
     existing = _existing_baseline_seq(args.workflow_id)
@@ -110,6 +116,28 @@ def main() -> int:
         artifacts: dict[str, str] = {}
     else:
         artifacts = _snapshot(project_dir, specs_dir)
+
+    # Brownfield-poisoning guard (v2.35.1): an empty baseline is only legitimate
+    # when the canonical spec tree genuinely holds no files. If resolution ever
+    # regresses again, the empty snapshot would PERMANENTLY poison PROV for this
+    # workflow (once-per-workflow idempotency blocks re-recording) — so when the
+    # snapshot is empty but the CLAUDE.md-declared tree has files elsewhere,
+    # abort loudly instead of recording.
+    if not artifacts:
+        declared = claude_md_specs_dir(project_dir)
+        if declared and declared != specs_rel:
+            declared_dir = project_dir / declared
+            if declared_dir.is_dir() and any(f.is_file() for f in declared_dir.rglob("*")):
+                print(json.dumps({
+                    "status": "error",
+                    "reason": "specs_dir_resolution_mismatch",
+                    "detail": (
+                        f"refusing to record an EMPTY baseline against {specs_rel!r} while "
+                        f"CLAUDE.md declares a populated specs_dir {declared!r} — an empty "
+                        "baseline in a brownfield project poisons PROV for the whole workflow"
+                    ),
+                }), file=sys.stderr)
+                return 1
 
     event = append_event(
         agent="spec-baseline",

@@ -363,6 +363,52 @@ def _check_w10_description_gate(content: str, path: Path) -> list[Violation]:
 
 
 # ---------------------------------------------------------------------------
+# W11 — env-dependent scripts must be invoked with inline env
+#
+# Origin (v2.35.1 / mwoassistant field incident): the orchestrator-sdd protocol
+# exported SPECS_DIR in one bash block and invoked record_spec_baseline.py in a
+# LATER block — but each Bash tool call is a fresh shell, so the export never
+# reached the script, which fell back to the env default ("specs") while the
+# target's CLAUDE.md declared docs/specs. The adoption baseline was recorded
+# EMPTY, guaranteeing PROV false positives for the whole workflow. The scripts
+# now self-resolve via orch_core.resolve_specs_dir (defense one); this rule is
+# defense two: any invocation of an env-dependent script in an agent protocol
+# must carry inline env on the SAME command line, so the intent survives the
+# shell boundary regardless.
+# ---------------------------------------------------------------------------
+
+ENV_DEPENDENT_SCRIPTS: frozenset[str] = frozenset({
+    "record_spec_baseline.py",
+    "generate_handoff_manifest.py",
+    "check_handoff_manifest_approved.py",
+    "check_sdd_artifacts_committed.py",
+})
+
+_W11_INLINE_ENV_RE = re.compile(r"\bORCH_PROJECT_DIR=")
+
+
+def _check_w11_inline_env(content: str, path: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for lineno, line in enumerate(content.splitlines(), 1):
+        if "python3" not in line:
+            continue  # prose mentions and comments without an invocation
+        for script in ENV_DEPENDENT_SCRIPTS:
+            if script in line and not _W11_INLINE_ENV_RE.search(line):
+                violations.append(Violation(
+                    rule="W11",
+                    severity="error",
+                    detail=(
+                        f"{script} invoked without inline env (ORCH_PROJECT_DIR=... on the "
+                        "same line) — exports do not survive across Bash tool calls; an "
+                        "invocation relying on an earlier block resolves against the wrong "
+                        "tree (the v2.35.0 empty-baseline incident)"
+                    ),
+                    line=lineno,
+                ))
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Single file validation
 # ---------------------------------------------------------------------------
 
@@ -385,6 +431,7 @@ def check_file(path: Path) -> FileResult:
     violations.extend(_check_w08_gate_fields_declared(content, path))
     violations.extend(_check_w09_review_only_artifacts(content, path))
     violations.extend(_check_w10_description_gate(content, path))
+    violations.extend(_check_w11_inline_env(content, path))
 
     return FileResult(
         file=str(path),
