@@ -4,7 +4,7 @@ description: >
   Phase orchestrator for the SDD (Specification-Driven Development) phase.
   Dispatches spec pipeline workers (writer, reviewer, back, validator, front, compliance),
   manages human confirmation gates via E99 escalation, and evaluates exit criteria.
-  Spawned exclusively by the meta-orchestrator. Returns structured status envelope on completion.
+  Spawned exclusively by the meta-orchestrator — never invoke directly; workflows enter via /u-spec, /u-dev, /u-improve, or /u-orchestrator. Returns structured status envelope on completion.
 model: claude-sonnet-4-6
 tools:
   - Agent
@@ -315,7 +315,33 @@ Extract and hold from `triage.json`:
 - `greenfield`: bool
 - `stack`: `fe | be | fullstack` — authoritative front/back/both decision from `classify_stack.py`. If absent (legacy triage), derive it from `ui_task` (`fullstack` when `ui_task` is true/absent, else `be`).
 - `ui_task`: bool — **derived** from `stack` (`ui_task = stack in {fe, fullstack}`). Gates the front leg in Step 4 standard. If absent, default to `true` (conservative: run the front leg).
+- `stack_refinement`: `"fullstack->be" | null` — set when triage Step 2.1b narrowed the conservative text-only default because no front artifact was in `affected_specs`. Audit field: it marks a front leg that was deliberately not dispatched. Absent on legacy triage; treat as `null`.
 - `requirement`: task description (passed to workers as context)
+
+**Reconcile the stack against its recorded inputs — before projecting the cost:**
+
+```bash
+python3 .claude/scripts/reconcile_stack.py \
+  --triage "$ORCH_PROJECT_DIR/.orch/sessions/<workflow_id>/triage.json"
+```
+
+If `status == "reconciled"`, `triage.json` has been rewritten in place: **re-read** `stack`,
+`ui_task`, `stack_confidence` and `stack_refinement` from the file before continuing. The
+corrected values then travel on the canonical `operation_mode_declared` in Step 2b
+(`stack_refinement: "fullstack->be (reconciled)"`), which is where the decision becomes
+auditable — do NOT emit a mode declaration here, `effective_mode` is not derived yet.
+
+Any other `status` (`consistent`, `skipped`) → continue unchanged. A non-zero exit means the
+stack could NOT be verified — continue with the triage value, never treat it as confirmed.
+
+> **Why the orchestrator recomputes instead of trusting.** The front/back decision is the largest
+> fan-out lever in the phase (2 workers) and `triage.json` records the exact inputs it was derived
+> from, so it is a derived value, not a fact (P1/P2). Triage Step 2.1b is supposed to apply the
+> refinement — but the defect this closes was itself a deterministic classifier that a prose step
+> failed to reach, so guarding it with one more prose step would repeat the pattern. The script
+> reconciles only `fullstack -> be` (the sole transition the conservative default can be wrong in),
+> never touches a `human_override`, and runs before `project_cost.py` so the projection reflects
+> the corrected worker count rather than a front leg that will not be dispatched.
 
 **Project the cost and record it — ALWAYS, before the first domain dispatch (R11a):**
 
@@ -443,8 +469,15 @@ Store `effective_mode`, `bypass_e99`, `trigger` for use in Steps 3–6.
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type operation_mode_declared \
-  --data '{"phase":"sdd","mode":"<effective_mode>","trigger":"<trigger>","mode_hint":"<mode_hint>","bypass_e99":<bypass_e99>,"workflow_id":"<workflow_id>"}'
+  --data '{"phase":"sdd","mode":"<effective_mode>","trigger":"<trigger>","mode_hint":"<mode_hint>","bypass_e99":<bypass_e99>,"workflow_id":"<workflow_id>","stack":"<triage.stack>","stack_confidence":"<triage.stack_confidence>","stack_refinement":<triage.stack_refinement or null>}'
 ```
+
+> **Why the stack travels on this event.** The front/back decision is the single biggest fan-out
+> lever in the phase (2 workers), and under `bypass_e99` it is taken with no gate. Carrying `stack`,
+> `stack_confidence` and `stack_refinement` here puts the decision AND its basis in the log before
+> the first dispatch, so a wrongly-skipped or wrongly-added front leg is reconstructible afterwards
+> (P8 — every decision cites the evidence that justifies it). This is an audit record, not a gate:
+> it costs nothing and interrupts no one.
 
 ---
 
@@ -687,6 +720,10 @@ wid, new_stack, ui_task = sys.argv[1], sys.argv[2], sys.argv[3] == "true"
 p = Path(os.environ.get("ORCH_PROJECT_DIR", ".")) / ".orch" / "sessions" / wid / "triage.json"
 t = json.loads(p.read_text(encoding="utf-8"))
 t["stack"], t["ui_task"] = new_stack, ui_task
+# A human override supersedes whatever the classifier derived, including the
+# Step 2.1b artifact refinement — leaving the old value would attribute the
+# operator's decision to the classifier.
+t["stack_refinement"] = "human_override"
 p.write_text(json.dumps(t, indent=2), encoding="utf-8")
 print(json.dumps({"updated": True, "stack": new_stack, "ui_task": ui_task}))
 PY
@@ -711,6 +748,7 @@ greenfield:  {triage.greenfield}
 stack:       {triage.stack}  →  front leg: {"will run" if ui_task else "SKIPPED (back-only)"}
 ui_task:     {triage.ui_task}  (derived from stack)
 stack_confidence: {triage.stack_confidence}{"  ⚠ " + triage.stack_confidence_hint if triage.stack_confidence == "low" else ""}
+stack_refinement: {triage.stack_refinement or "none"}{"  (front leg dropped: no front artifact in affected_specs — force_fullstack if that is wrong)" if triage.stack_refinement == "fullstack->be" else ""}
 domains:     {triage.domains or "derived from existing specs"}
 affected_specs:
 {for each spec in triage.affected_specs}

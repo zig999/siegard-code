@@ -45,9 +45,9 @@ sys.path.insert(0, str(_LIB))
 
 from orch_core import (
     EventType,
-    TaskStatus,
     _elapsed_seconds,
     append_event,
+    attempt_has_terminal,
     get_active_workers,
     load_config,
     now_iso,
@@ -60,21 +60,12 @@ from orch_core import (
 
 
 def _has_terminal(task_id: str, attempt: int, state) -> bool:
-    """Returns True if a terminal event exists for (task_id, attempt) in derived state."""
-    task = state.tasks.get(task_id)
-    if task is None:
-        return False
-    # Terminal for attempt: task is completed/dlq (final) OR task has moved past this attempt
-    if task.status in (TaskStatus.COMPLETED, TaskStatus.DLQ):
-        return True
-    # If attempts counter exceeds this attempt, a terminal was emitted for it
-    if task.attempts > attempt:
-        return True
-    # Status is FAILED, SCHEDULED, or RUNNING with a matching attempt means
-    # task_failed was emitted (FAILED/SCHEDULED) or it's still running (RUNNING)
-    if task.status in (TaskStatus.FAILED, TaskStatus.SCHEDULED) and task.attempts == attempt:
-        return True
-    return False
+    """Returns True if a terminal event exists for (task_id, attempt) in derived state.
+
+    v2.34.0: semantics moved verbatim to orch_core.attempt_has_terminal so the
+    flow guard (flow_guard.py) and this hook share one definition of "in flight".
+    """
+    return attempt_has_terminal(state.tasks.get(task_id), attempt)
 
 
 def _get_task_phase(task_id: str, state) -> str:

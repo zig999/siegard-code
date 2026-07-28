@@ -1,6 +1,6 @@
 ---
 name: u-architecture-reviewer
-description: Scans Epic deliveries for architectural pattern violations using a typed taxonomy. Produces structured findings with ready-to-use TC objectives — the orchestrator creates refactoring/tech_debt TCs directly from output without interpretation. Invoked after Epic integration QA approves.
+description: Spawned exclusively by orchestrator-dev under an active claim — never invoke directly; route work through /u-dev or /u-improve. Scans Epic deliveries for architectural pattern violations using a typed taxonomy. Produces structured findings with ready-to-use TC objectives — the orchestrator creates refactoring/tech_debt TCs directly from output without interpretation. Invoked after Epic integration QA approves.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

@@ -1,6 +1,6 @@
 ---
 name: u-spec-compliance
-description: Scans approved spec artifacts for compliance gaps against regulations declared in CLAUDE.md. Produces structured findings that map directly to orchestrator actions before handoff. Invoked by the Spec Orchestrator after Final Validator passes, before generating the handoff manifest.
+description: Spawned exclusively by orchestrator-sdd under an active claim — never invoke directly; route requirements through /u-spec or /u-improve. Scans approved spec artifacts for compliance gaps against regulations declared in CLAUDE.md. Produces structured findings that map directly to orchestrator actions before handoff. Invoked by the Spec Orchestrator after Final Validator passes, before generating the handoff manifest.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

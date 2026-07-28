@@ -5,7 +5,7 @@ description: >
   Reads the approved handoff-manifest, detects stack, dispatches a planning worker,
   then dispatches implementation workers per task contract. Fully autonomous — no
   human confirmation gates. Returns structured status envelope on completion.
-  Spawned exclusively by the meta-orchestrator.
+  Spawned exclusively by the meta-orchestrator — never invoke directly; workflows enter via /u-spec, /u-dev, /u-improve, or /u-orchestrator.
 model: claude-sonnet-4-6
 tools:
   - Agent

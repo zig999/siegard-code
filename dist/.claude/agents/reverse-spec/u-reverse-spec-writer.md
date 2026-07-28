@@ -1,6 +1,6 @@
 ---
 name: u-reverse-spec-writer
-description: Spec generation agent from code analysis. Consumes analysis-report.md and produces complete spec artifacts (openapi.yaml, .spec.md, .back.md, screens, flows) using existing spec flow templates and conventions. All artifacts receive draft status.
+description: Spawned exclusively by orchestrator-reverse-spec — never invoke directly; run /u-reverse-spec. Spec generation agent from code analysis. Consumes analysis-report.md and produces complete spec artifacts (openapi.yaml, .spec.md, .back.md, screens, flows) using existing spec flow templates and conventions. All artifacts receive draft status.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

@@ -62,6 +62,71 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _registry_identity_violation(
+    worker_id: str, task_id: str, attempt: int
+) -> tuple[str, str] | None:
+    """B2 (v2.34.0): cross-check the claimed identity against the worker registry.
+
+    The env-var identity model is spoofable by construction: any session that can
+    `export ORCH_WORKER_ID` chooses its identity (the downstream flow-discipline
+    incident class). The orchestrator writes a registry entry BEFORE every spawn
+    (I5 / register_worker), so a legitimate worker's identity is always backed by
+    a matching entry. Two hard violations:
+
+      * an entry exists for this worker_id but binds a DIFFERENT (task_id, attempt)
+      * an entry exists for this (task_id, attempt) but under a DIFFERENT worker_id
+
+    Missing entry on both sides is a WARNING, not an error: the reverse-spec
+    pipeline dispatches workers without registry entries (off-log orchestration),
+    and hard-failing would break it. The deterministic boundary against freelance
+    work is flow_guard.py + artifact notarization (Pacote A) — this check only
+    removes the cheap impersonation paths.
+
+    Returns (severity, detail) — severity "error" | "warning" — or None when the
+    registry confirms the identity. Registry read errors return None (fail-open:
+    an unreadable registry is not evidence of forgery).
+    """
+    try:
+        entry_path = WORKERS_DIR / f"{worker_id}.json"
+        if entry_path.exists():
+            entry = json.loads(entry_path.read_text(encoding="utf-8"))
+            if entry.get("task_id") != task_id or entry.get("attempt") != attempt:
+                return (
+                    "error",
+                    f"registry entry for {worker_id!r} binds "
+                    f"(task_id={entry.get('task_id')!r}, attempt={entry.get('attempt')!r}), "
+                    f"but this emit claims (task_id={task_id!r}, attempt={attempt}). "
+                    "A worker only emits for the task it was registered for.",
+                )
+            return None
+        if WORKERS_DIR.exists():
+            for f in WORKERS_DIR.glob("*.json"):
+                try:
+                    other = json.loads(f.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    continue
+                if (
+                    other.get("task_id") == task_id
+                    and other.get("attempt") == attempt
+                    and other.get("worker_id") != worker_id
+                ):
+                    return (
+                        "error",
+                        f"(task_id={task_id!r}, attempt={attempt}) is registered to "
+                        f"{other.get('worker_id')!r}, not to {worker_id!r}. "
+                        "Do not emit for a task claimed by another worker.",
+                    )
+        return (
+            "warning",
+            f"no registry entry backs {worker_id!r} for "
+            f"(task_id={task_id!r}, attempt={attempt}) — legitimate for off-registry "
+            "pipelines (reverse-spec); anywhere else this means the orchestrator "
+            "skipped register_worker before spawning.",
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _infer_worker_id_from_registry(task_id: str, attempt: int) -> str | None:
     """
     Fallback: find worker_id from .orch/workers/ registry when ORCH_WORKER_ID
@@ -126,6 +191,24 @@ def main() -> int:
             ),
         }))
         return 1
+
+    # B2 (v2.34.0): identity must be backed by the registry — see
+    # _registry_identity_violation for the two hard cases and the warning tier.
+    identity = _registry_identity_violation(worker_id, args.task_id, args.attempt)
+    if identity is not None:
+        severity, detail = identity
+        if severity == "error":
+            print(json.dumps({
+                "status": "error",
+                "reason": "identity_mismatch",
+                "detail": detail,
+            }))
+            return 1
+        print(json.dumps({
+            "status": "warning",
+            "reason": "unregistered_worker",
+            "detail": detail,
+        }), file=sys.stderr)
 
     try:
         data = json.loads(args.data)

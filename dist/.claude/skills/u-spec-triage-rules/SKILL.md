@@ -51,6 +51,7 @@ File written to: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json`
   "ui_task": true,
   "stack_confidence": "high | low",
   "stack_confidence_hint": "{advisory — surfaced at the E99 gate; never changes the decision}",
+  "stack_refinement": "fullstack->be | null",
   "greenfield": true,
   "domains": ["{slug}"],
   "type": "spec_change_required | implementation_only",
@@ -77,12 +78,13 @@ File written to: `$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json`
 ```
 
 **Field notes:**
-- `stack`: front/back/both decision produced by `classify_stack.py` (Step 1b). `be` runs the back leg only; `fe` and `fullstack` run the front leg. Authoritative — `orchestrator-sdd` derives the front-leg gate from it.
+- `stack`: front/back/both decision produced by `classify_stack.py` — Step 1b from text, then **superseded by Step 2.1b** when `affected_specs` is non-empty. `be` runs the back leg only; `fe` and `fullstack` run the front leg. Authoritative — `orchestrator-sdd` derives the front-leg gate from it.
 - `ui_task`: **derived** (`ui_task = stack in {"fe", "fullstack"}`). Retained only for orchestrator back-compat; never set it independently of `stack`.
+- `stack_refinement`: `artifact_refinement` from Step 2.1b, verbatim — `"fullstack->be"` when the conservative text default was narrowed because no front artifact is in scope, `null` otherwise. Audit field: it records that a front leg was *deliberately* not dispatched, so a wrongly-skipped front leg is reconstructible from the log.
 - `domains`: populated for **greenfield** (derived from requirement); empty `[]` for non-greenfield. The orchestrator uses this list to create `spec-writer` tasks when no domain specs exist yet.
 - `requirement`: canonical task description — the orchestrator injects this into the spawn prompt of every downstream worker so no worker needs to re-read triage.json to get context.
 - `affected_specs`: populated for targeted/improve dispatch; empty `[]` for greenfield.
-- `consumer_scope`: blast radius from `classify_consumer_scope.py` (Step 2.5a), verbatim. Combines with compatibility to produce `mode_hint`. `public` is the conservative default for anything unrecognised, ambiguous or unlabelled.
+- `consumer_scope`: blast radius from `classify_consumer_scope.py` (Step 2.5b), verbatim. Combines with compatibility to produce `mode_hint`. `public` is the conservative default for anything unrecognised, ambiguous or unlabelled.
 
 ---
 
@@ -170,11 +172,16 @@ Set `trigger: u-improve`, `greenfield: false`. Proceed to Step 1b.
 
 ---
 
-## Step 1b — Stack classification (fe | be | fullstack)
+## Step 1b — Stack classification, first pass (fe | be | fullstack)
 
 Applied to `requirement` text. Classification is automatic, deterministic, and
 **co-presence aware** — do NOT classify by hand and do NOT apply keyword judgment.
 Run the classifier and store its output verbatim:
+
+> **First pass.** For `greenfield: false` this decision is refined in **Step 2.1b**,
+> once `affected_specs` is known — the same script, called again with complete input.
+> Do not skip Step 2.1b: text alone cannot tell a backend-only change apart from one
+> that needs a front leg when the description uses neither vocabulary.
 
 ```bash
 python3 .claude/skills/u-spec-triage-rules/scripts/classify_stack.py \
@@ -268,7 +275,38 @@ change_summary: "<one sentence — what changes in this file>"
 
 Set `domains: []`.
 
-If no affected spec found: set `type: implementation_only`. Skip Steps 2.2 and 2.5. Proceed to Step 2.3.
+If no affected spec found: set `type: implementation_only`. Skip Steps 2.1b, 2.2 and 2.5. Proceed to Step 2.3.
+
+---
+
+## Step 2.1b — Stack refinement from affected artifacts (greenfield:false, `affected_specs` non-empty)
+
+Step 1b decided the stack from text alone. `affected_specs` is now known, and it is
+stronger evidence: every artifact the front leg writes lives under `{SPECS_DIR}/front/`.
+Re-run the **same** classifier with the complete input and **replace** the Step 1b values:
+
+```bash
+python3 .claude/skills/u-spec-triage-rules/scripts/classify_stack.py \
+  --requirement "<requirement text>" \
+  --project-domain "<frontend|backend, if the target CLAUDE.md declares one — else omit>" \
+  --affected-specs '<affected_specs as a JSON array>'
+```
+
+Store `stack`, `ui_task`, `confidence`, `confidence_hint` from THIS output (it supersedes
+Step 1b verbatim), plus `artifact_refinement` → `stack_refinement` in `triage.json`.
+
+> **Why this step exists.** A backend-only `/u-improve` described in domain vocabulary
+> ("refatorar a FSM", "remover o campo X") contains no term from either signal list, so
+> Step 1b sees no signals and applies the conservative `fullstack` default — dispatching
+> `spec-front` + the front validator against a repository with no front specs at all.
+> Measured: 2 wasted workers per occurrence. And `/u-improve` sets `bypass_e99`, so the
+> `force_backend_only` correction is never offered in the one flow where the guess fires.
+>
+> The classifier refines `fullstack → be` only when the text carried **no** UI signal AND
+> **no** affected spec is a front artifact. Positive UI evidence always wins; an entry with
+> no readable `path` disables the refinement entirely. `generate_handoff_manifest.py`
+> already fails closed on this exact contradiction (front-bearing stack, no front
+> artifacts) — this evaluates the same predicate before dispatch instead of after.
 
 ---
 
@@ -330,65 +368,13 @@ planner_required: true
 
 ## Step 2.5 — Determine mode_hint and changed_sections (spec_change_required + greenfield:false only)
 
-**Step 2.5a — classify the blast radius first (deterministic, R13).**
+**Step 2.5a — assign `changed_sections` per spec.**
 
-`mode_hint` used to depend on ONE axis, compatibility, so anything breaking was `full` regardless of
-what it could reach. A rename of two keys in an injection map private to one module — every call site
-in the same repo, all updated in the same commit — paid the same toll as breaking a published DTO.
-Measured: 10 workers / 336k tokens / 56 min for a change that is 5 workers once reach is accounted
-for. Meanwhile the *larger* change in the same series (the engine's plan/collect core) ran fast-track.
-
-Run the classifier and take its output verbatim:
-
-```bash
-python3 .claude/skills/u-spec-triage-rules/scripts/classify_consumer_scope.py \
-  --triage "$ORCH_PROJECT_DIR/.orch/sessions/{workflow_id}/triage.json"
-```
-
-Store `consumer_scope` (`public` | `internal`) and hold `rationale` + `public_signals` for the
-`triage.json` output. **Do not hand-classify it** — same rule as `stack` (see
-`consumer_scope_deterministic` in Behavioral rules). Accurate `changed_sections` labels are what make
-it work, so assign them carefully in Step 2.5b below; the classifier resolves anything unrecognised,
-ambiguous, or unlabelled to `public`.
-
-**mode_hint rules — compatibility × reach:**
+These labels are the ENTIRE input to the reach classifier in Step 2.5b, which is why they
+come first. For each entry in `affected_specs`, read the section content and assign semantic
+labels to `changed_sections`:
 
 ```
-mode_hint: fast-track:patch
-  - All affected_specs sections are descriptive only (typo, clarification, description-only)
-
-mode_hint: fast-track:minor
-  - At least one section adds optional content without breaking existing consumers
-    (new optional field, new endpoint, new UI state, new component, new flow)
-  - OR: a section removes/modifies an existing contract AND consumer_scope == internal
-    (every consumer lives in this repo and is updated by this same change, so there
-    is no third party to negotiate the break with — see R13 note below)
-
-mode_hint: full
-  - Any affected section removes/modifies an existing contract, business rule,
-    state machine transition, or breaks an existing consumer, AND
-    consumer_scope == public
-```
-
-> **What the downgrade gives up, and why it is acceptable.** `targeted` mode skips `spec-writer`,
-> `spec-validator`, `spec-front`, `spec-validator-front` and `spec-compliance`, running the domain
-> worker plus a reviewer per affected spec. The material loss is **cross-domain validation** — which
-> exists to protect consumers the change does not update. When there are none, it has nothing to
-> protect. When the classifier is unsure, it says `public` and nothing is skipped.
->
-> A wrong `public` costs pipeline time. A wrong `internal` skips the validator on a published
-> contract. The errors are not symmetric, so neither is the default.
->
-> The operator can always force the full pipeline at the confirmation gate
-> (`force_full_pipeline` — see `orchestrator-sdd` Step 3).
-
-**Assign `changed_sections` per spec:**
-
-For each entry in `affected_specs`, read the section content and assign semantic labels to `changed_sections`:
-
-```
-**Step 2.5b — assign `changed_sections`.**
-
 Structural labels (trigger domain worker in orchestrator-sdd targeted dispatch):
   endpoints        — adds, modifies, or removes HTTP routes or RPC methods
   schemas          — adds, modifies, or removes data schema definitions
@@ -432,6 +418,64 @@ Text-only labels (no structural impact — domain worker may be skipped):
 ```
 
 Populate `changed_sections` as a deduplicated list of all assigned labels per spec entry. A section may receive multiple labels if it touches multiple concerns.
+
+**Step 2.5b — classify the blast radius (deterministic, R13).**
+
+`mode_hint` used to depend on ONE axis, compatibility, so anything breaking was `full` regardless of
+what it could reach. A rename of two keys in an injection map private to one module — every call site
+in the same repo, all updated in the same commit — paid the same toll as breaking a published DTO.
+Measured: 10 workers / 336k tokens / 56 min for a change that is 5 workers once reach is accounted
+for. Meanwhile the *larger* change in the same series (the engine's plan/collect core) ran fast-track.
+
+Run the classifier and take its output verbatim:
+
+```bash
+python3 .claude/skills/u-spec-triage-rules/scripts/classify_consumer_scope.py \
+  --affected-specs '<affected_specs as a JSON array, carrying the Step 2.5a changed_sections>'
+```
+
+> **Pass the in-memory array, never `--triage`.** `triage.json` is written in Step 3, after
+> this step: on a new workflow the file does not exist yet and the classifier exits 1, and on
+> a resumed workflow it holds the **previous** run's `affected_specs`. Either way the
+> deterministic classification silently does not happen and `consumer_scope` falls back to the
+> hand-classification that `consumer_scope_deterministic` prohibits. `--affected-specs` is the
+> supported production path; `--triage` is for inspecting a triage.json that already exists.
+
+Store `consumer_scope` (`public` | `internal`) and hold `rationale` + `public_signals` for the
+`triage.json` output. **Do not hand-classify it** — same rule as `stack` (see
+`consumer_scope_deterministic` in Behavioral rules). The Step 2.5a labels are the classifier's
+entire input; anything unrecognised, ambiguous, or unlabelled resolves to `public`.
+
+**mode_hint rules — compatibility × reach:**
+
+```
+mode_hint: fast-track:patch
+  - All affected_specs sections are descriptive only (typo, clarification, description-only)
+
+mode_hint: fast-track:minor
+  - At least one section adds optional content without breaking existing consumers
+    (new optional field, new endpoint, new UI state, new component, new flow)
+  - OR: a section removes/modifies an existing contract AND consumer_scope == internal
+    (every consumer lives in this repo and is updated by this same change, so there
+    is no third party to negotiate the break with — see R13 note below)
+
+mode_hint: full
+  - Any affected section removes/modifies an existing contract, business rule,
+    state machine transition, or breaks an existing consumer, AND
+    consumer_scope == public
+```
+
+> **What the downgrade gives up, and why it is acceptable.** `targeted` mode skips `spec-writer`,
+> `spec-validator`, `spec-front`, `spec-validator-front` and `spec-compliance`, running the domain
+> worker plus a reviewer per affected spec. The material loss is **cross-domain validation** — which
+> exists to protect consumers the change does not update. When there are none, it has nothing to
+> protect. When the classifier is unsure, it says `public` and nothing is skipped.
+>
+> A wrong `public` costs pipeline time. A wrong `internal` skips the validator on a published
+> contract. The errors are not symmetric, so neither is the default.
+>
+> The operator can always force the full pipeline at the confirmation gate
+> (`force_full_pipeline` — see `orchestrator-sdd` Step 3).
 
 ---
 
@@ -528,6 +572,7 @@ trigger: {u-spec | u-improve}
 requirement: {requirement}
 stack: {fe | be | fullstack}
 ui_task: {true | false}
+stack_refinement: {fullstack->be | none}
 greenfield: {true | false}
 domains: {domains list — populated for greenfield}
 type: {spec_change_required | implementation_only}
@@ -558,9 +603,11 @@ STOP. Do not modify any spec. Do not dispatch any agent.
 | Rule | Description |
 |------|-------------|
 | `classification_always_runs` | Steps 1b–2.6 run for both triggers. Improve flow uses `improvement_task` from improve-scope.json as the classification input; standard flow uses `requirement` from task spec |
-| `stack_classification_deterministic` | `stack` and `ui_task` come from `classify_stack.py` (Step 1b) verbatim. Hand-classification, keyword judgment, or independent `ui_task` overrides are prohibited. Co-presence of UI + backend signals → `fullstack` (never suppressed) |
+| `stack_classification_deterministic` | `stack` and `ui_task` come from `classify_stack.py` verbatim. Hand-classification, keyword judgment, or independent `ui_task` overrides are prohibited. Co-presence of UI + backend signals → `fullstack` (never suppressed) |
+| `stack_refinement_mandatory` | When `greenfield: false` and `affected_specs` is non-empty, Step 2.1b MUST re-run `classify_stack.py` with `--affected-specs` and its output supersedes Step 1b. Skipping it leaves the text-only conservative default in place, which dispatches a front leg into repositories that have no front specs — 2 wasted workers per occurrence, uncorrectable under `bypass_e99` |
+| `classifier_inputs_in_memory` | Both deterministic classifiers are fed the values held in memory, never `triage.json` — that file is written in Step 3, so reading it here either fails (new workflow) or returns the previous run's data (resumed workflow). Use `--affected-specs`, not `--triage` |
 | `greenfield_domain_extraction` | Greenfield produces `domains` list from requirement analysis — no filesystem scan possible. Orchestrator uses this list for spec-writer task creation |
-| `consumer_scope_deterministic` | `consumer_scope` comes from `classify_consumer_scope.py` (Step 2.5a) verbatim. Hand-classification is prohibited — the same rule as `stack`. What the triage DOES own is `changed_sections` accuracy: label a code interface `internal_interfaces`, never `api_contracts` |
+| `consumer_scope_deterministic` | `consumer_scope` comes from `classify_consumer_scope.py` (Step 2.5b) verbatim. Hand-classification is prohibited — the same rule as `stack`. What the triage DOES own is `changed_sections` accuracy: label a code interface `internal_interfaces`, never `api_contracts` |
 | `consumer_scope_conservative` | Unrecognised label, empty `changed_sections`, no `affected_specs`, or a published contract file in scope ⇒ `public`. A wrong `public` costs pipeline time; a wrong `internal` skips cross-domain validation on a published contract |
 | `greenfield_mode_hint` | Greenfield always produces `mode_hint: full` and `consumer_scope: public` — no structural diff is possible, so no reach can be established |
 | `requirement_propagation` | `triage.json.requirement` is the canonical task description. Orchestrator injects it into the spawn prompt of every downstream worker |

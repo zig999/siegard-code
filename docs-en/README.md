@@ -96,7 +96,7 @@ dist/.claude/
 │   ├── dev/                         # Dev phase workers
 │   └── reverse-spec/                # Reverse-engineering workers
 ├── commands/                        # Slash command entry points
-├── hooks/                           # on_subagent_stop.py, on_stop.py (quality gates)
+├── hooks/                           # on_subagent_stop.py, on_stop.py, flow_guard.py (quality gates)
 ├── lib/                             # orch_core.py, sm_runner.py, minimal_yaml.py (stdlib only)
 ├── scripts/                         # preflight, circuit breaker, DLQ triage, GC, monitor, …
 ├── skills/                          # orch-* engine skills, phase-*-rules, u-* worker skills
@@ -106,6 +106,21 @@ dist/.claude/
 ```
 
 Runtime state lives in the **target project** under `.orch/sessions/<workflow_id>/`, centered on the append-only `log.jsonl`.
+
+### Flow guard (v2.34.0)
+
+`hooks/flow_guard.py` runs as a `PreToolUse` hook (wired in the shipped
+`settings.json`). It deterministically blocks Write/Edit tool calls on
+pipeline-owned artifacts — the specs tree (including `handoff-manifest.yaml`)
+and `.orch/log.jsonl` — unless a registered pipeline worker is in flight, and
+redirects the caller to the correct entry command (`/u-improve`, `/u-spec`).
+This stops the host session from executing spec-flow steps inline instead of
+routing through the pipeline (P7 — critical guarantees outside the LLM).
+Operator kill-switch in `.orch/config.json`:
+`{"guard": {"enforce": "hard" | "warn" | "off"}}` (default `hard`; `warn`
+audits to `.orch/guard_warnings.jsonl` without blocking). Bash writes are not
+intercepted — provenance verification at handoff (artifact notarization) is the
+planned complement (v2.35.0).
 
 ---
 

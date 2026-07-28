@@ -101,3 +101,76 @@ class TestW08GateFieldsDeclared:
         assert not check_worker._check_w08_gate_fields_declared(
             target.read_text(encoding="utf-8"), target
         )
+
+
+class TestW10DescriptionGate:
+    """W10 — the description must gate dispatch, not advertise capability.
+
+    Origin (v2.34.0 flow-discipline incident): a downstream host session offered
+    to execute the SDD flow inline instead of routing through /u-improve. Agent
+    descriptions are the host model's auto-delegation routing signal — a
+    capability-only description is bait for that bypass.
+    """
+
+    GATED = (
+        "---\n"
+        "name: u-fake-worker\n"
+        "description: Spawned exclusively by orchestrator-dev under an active "
+        "claim — never invoke directly; route work through /u-dev or /u-improve. "
+        "Does useful things.\n"
+        "---\n"
+    )
+    BAIT = (
+        "---\n"
+        "name: u-fake-worker\n"
+        "description: Initial spec author. Transforms natural language "
+        "requirements into OpenAPI contracts.\n"
+        "---\n"
+    )
+    FOLDED = (
+        "---\n"
+        "name: u-fake-worker\n"
+        "description: >\n"
+        "  Spawned exclusively by orchestrator-test under an active claim — never\n"
+        "  invoke directly; reached via /u-dev workflows. Runs test suites.\n"
+        "---\n"
+    )
+
+    def test_capability_bait_fails_both_clauses(self, tmp_path):
+        violations = check_worker._check_w10_description_gate(
+            self.BAIT, Path("u-fake-worker.md")
+        )
+        assert len(violations) == 2
+        assert all(v.rule == "W10" for v in violations)
+
+    def test_gated_description_passes(self):
+        assert not check_worker._check_w10_description_gate(
+            self.GATED, Path("u-fake-worker.md")
+        )
+
+    def test_folded_block_clause_spanning_lines_passes(self):
+        """minimal_yaml folds `>` blocks with spaces — a clause split across
+        lines ('never\\n  invoke directly') must still satisfy the regex."""
+        assert not check_worker._check_w10_description_gate(
+            self.FOLDED, Path("u-fake-worker.md")
+        )
+
+    def test_entry_points_are_exempt(self):
+        for stem in ("orchestrator", "orchestrator-reverse-spec"):
+            assert not check_worker._check_w10_description_gate(
+                self.BAIT, Path(f"{stem}.md")
+            ), f"{stem} is a command entry point and must stay directly invocable"
+
+    def test_missing_description_fails(self):
+        content = "---\nname: u-fake-worker\nuser-invocable: false\n---\n"
+        violations = check_worker._check_w10_description_gate(
+            content, Path("u-fake-worker.md")
+        )
+        assert len(violations) == 2
+
+    def test_every_shipped_agent_passes_w10(self):
+        for agent in AGENT_FILES:
+            violations = check_worker._check_w10_description_gate(
+                agent.read_text(encoding="utf-8"), agent
+            )
+            assert not violations, f"{_rel(agent)}: {[v.detail for v in violations]}"

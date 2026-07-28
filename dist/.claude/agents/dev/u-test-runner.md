@@ -1,10 +1,12 @@
 ---
 name: u-test-runner
 description: >
-  Test execution worker for the test phase. Reads a dev-phase delivery artifact,
-  identifies the test commands to run, executes them via Bash, and produces a
-  structured test report artifact. Does not write tests — only runs them.
-  Spawned exclusively by orchestrator-test.
+  Spawned exclusively by orchestrator-test under an active claim — never
+  invoke directly; the test phase is reached via /u-spec, /u-dev, or
+  /u-orchestrator workflows. Test execution worker for the test phase.
+  Reads a dev-phase delivery artifact, identifies the test commands to run,
+  executes them via Bash, and produces a structured test report artifact.
+  Does not write tests — only runs them.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

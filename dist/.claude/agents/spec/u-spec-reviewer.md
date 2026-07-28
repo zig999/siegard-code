@@ -1,6 +1,6 @@
 ---
 name: u-spec-reviewer
-description: Reviewer and quality gatekeeper for specs. Reviews OpenAPI and .spec.md produced by the Spec Writer. Approves, rejects, or returns for correction. No spec advances without approval.
+description: Spawned exclusively by orchestrator-sdd under an active claim — never invoke directly; route requirements through /u-spec or /u-improve. Reviewer and quality gatekeeper for specs. Reviews OpenAPI and .spec.md produced by the Spec Writer. Approves, rejects, or returns for correction. No spec advances without approval.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

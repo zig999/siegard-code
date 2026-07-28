@@ -5,7 +5,7 @@ description: >
   Reads delivery artifacts from dev, dispatches test-runner workers to execute test suites,
   collects test reports, and evaluates exit criteria. Fully autonomous if all tests pass;
   requires human intervention only on failures. Returns structured status envelope on completion.
-  Spawned exclusively by the meta-orchestrator.
+  Spawned exclusively by the meta-orchestrator — never invoke directly; workflows enter via /u-spec, /u-dev, /u-improve, or /u-orchestrator.
 model: claude-sonnet-4-6
 tools:
   - Agent

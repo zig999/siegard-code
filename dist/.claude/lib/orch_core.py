@@ -2801,6 +2801,31 @@ def worker_liveness_expired(
     return _elapsed_seconds(now, task.last_event_at) > threshold
 
 
+def attempt_has_terminal(task: TaskState | None, attempt: int) -> bool:
+    """True when a terminal event exists for (task, attempt) in derived state.
+
+    Single source of truth for "is this registered attempt still in flight",
+    shared by on_subagent_stop.py (terminal synthesis) and flow_guard.py
+    (pipeline-owned artifact guard, v2.34.0) so the two can never disagree.
+    Extracted verbatim from the hook's battle-tested _has_terminal (F-03 /
+    SIEGARD BUG-1 lineage) — do not change the semantics here without
+    revisiting both consumers.
+    """
+    if task is None:
+        return False
+    # Terminal for attempt: task is completed/dlq (final) OR task has moved past this attempt
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.DLQ):
+        return True
+    # If attempts counter exceeds this attempt, a terminal was emitted for it
+    if task.attempts > attempt:
+        return True
+    # Status is FAILED, SCHEDULED, or RUNNING with a matching attempt means
+    # task_failed was emitted (FAILED/SCHEDULED) or it's still running (RUNNING)
+    if task.status in (TaskStatus.FAILED, TaskStatus.SCHEDULED) and task.attempts == attempt:
+        return True
+    return False
+
+
 def stale_tasks(state: OrchState, now: str, config: dict[str, Any] | None = None) -> list[TaskState]:
     """
     Returns tasks in `running` status whose last activity exceeds their
@@ -2948,6 +2973,16 @@ def default_config() -> dict[str, Any]:
         # passes it into the SM inputs; DevStateMachine clamps to >= 1 (default 2).
         "dispatch_policy": {
             "dev": {"max_concurrent": 2},
+        },
+        # v2.34.0 flow-guard: PreToolUse ownership guard over pipeline-owned
+        # artifacts (specs tree, handoff-manifest.yaml, log.jsonl). Modes:
+        #   hard (default) — block the Write/Edit and redirect to /u-improve
+        #   warn           — allow, but append an audit line to .orch/guard_warnings.jsonl
+        #   off            — disable the guard entirely
+        # Operator kill-switch: the human owns the repo; the guard exists to stop
+        # the HOST MODEL from freelancing pipeline artifacts, not to lock humans out.
+        "guard": {
+            "enforce": "hard",
         },
         # F-02: stale-detection thresholds, configurable and task-type aware. A
         # worker may stay legitimately silent for minutes between semantic
@@ -3873,6 +3908,7 @@ __all__ = [
     "stale_tasks",
     "stale_threshold_seconds",
     "worker_liveness_expired",
+    "attempt_has_terminal",
     "reap_stale_tasks",
     "slugify_workflow_id",
     "resolve_workflow_id",

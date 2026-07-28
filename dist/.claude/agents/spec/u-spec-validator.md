@@ -1,6 +1,6 @@
 ---
 name: u-spec-validator
-description: Global consistency validator between specs. Verifies cross-references, error codes, state coverage, and dependencies between domains. Runs incremental and final validation before handoff.
+description: Spawned exclusively by orchestrator-sdd under an active claim — never invoke directly; route requirements through /u-spec or /u-improve. Global consistency validator between specs. Verifies cross-references, error codes, state coverage, and dependencies between domains. Runs incremental and final validation before handoff.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

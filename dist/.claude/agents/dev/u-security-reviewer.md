@@ -1,6 +1,6 @@
 ---
 name: u-security-reviewer
-description: Scans delivered code for security vulnerabilities using a typed pattern taxonomy. Produces structured findings that map directly to orchestrator actions — no narrative interpretation required. Invoked by the orchestrator after QA full-mode approves a Task Contract.
+description: Spawned exclusively by orchestrator-dev under an active claim — never invoke directly; route work through /u-dev or /u-improve. Scans delivered code for security vulnerabilities using a typed pattern taxonomy. Produces structured findings that map directly to orchestrator actions — no narrative interpretation required. Invoked by the orchestrator after QA full-mode approves a Task Contract.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

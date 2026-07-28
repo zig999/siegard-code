@@ -1,6 +1,6 @@
 ---
 name: u-drift-analyzer
-description: Semantic drift analyzer for /u-drift (Release B). Examines ONLY the spec-code pairs that match_drift.py already matched structurally — aligned endpoints (behavioral/contract drift) and business rules (which have no code-derivable key) — and emits a drift-verdicts.json with a verdict and mandatory evidence per item. Never guesses — unresolvable cases return the undecidable verdict. Not user-invocable — invoked by the /u-drift command, standalone (outside the engine).
+description: Spawned exclusively by the /u-drift command — never invoke directly; run /u-drift. Semantic drift analyzer for /u-drift (Release B). Examines ONLY the spec-code pairs that match_drift.py already matched structurally — aligned endpoints (behavioral/contract drift) and business rules (which have no code-derivable key) — and emits a drift-verdicts.json with a verdict and mandatory evidence per item. Never guesses — unresolvable cases return the undecidable verdict. Not user-invocable — invoked by the /u-drift command, standalone (outside the engine).
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

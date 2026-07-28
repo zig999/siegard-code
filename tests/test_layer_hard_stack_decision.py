@@ -25,13 +25,29 @@ SCRIPTS = ROOT / "dist/.claude/skills/phase-sdd-rules/scripts"
 WID = "wf-test"
 
 
-def _classify(requirement: str, project_domain: str | None = None) -> dict:
+def _classify(requirement: str, project_domain: str | None = None,
+              affected_specs: list | None = None) -> dict:
     args = [sys.executable, str(CLASSIFY), "--requirement", requirement]
     if project_domain:
         args += ["--project-domain", project_domain]
+    if affected_specs is not None:
+        args += ["--affected-specs", json.dumps(affected_specs)]
     p = subprocess.run(args, capture_output=True, text=True)
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout)
+
+
+def _spec(path: str) -> dict:
+    return {"path": path, "sections": ["§2"], "changed_sections": ["schemas"],
+            "change_summary": "x"}
+
+
+# The measured case: a backend-only /u-improve described in domain vocabulary.
+# No term in it belongs to either signal list, so text alone yields the
+# conservative fullstack default.
+FSM_REQUIREMENT = ("Refatorar a FSM para distinguir os estados terminais e "
+                   "remover answerType e hasThumb")
+BACK_ONLY_SPECS = [_spec("domains/fsm/back/fsm.back.md"), _spec("domains/fsm/fsm.spec.md")]
 
 
 def _gen(project_dir: Path):
@@ -239,6 +255,169 @@ class TestStackStructuralPrecedence:
         r = _classify("Rapid processing of records", project_domain="backend")
         assert r["stack"] == "be"
         assert r["structural_override"] == "fullstack->be"
+
+
+class TestStackArtifactRefinement:
+    """SGD-002: `affected_specs` narrows the conservative text-only default.
+
+    The conservative default (no signals -> fullstack) dispatched spec-front plus
+    the front validator into repositories with no front specs at all — 2 workers
+    per occurrence — and `/u-improve` sets bypass_e99, so `force_backend_only` was
+    never offered in the flow where it fired. Once Step 2.1 has resolved
+    `affected_specs`, the structural answer is on hand: every front artifact lives
+    under `{SPECS_DIR}/front/`.
+
+    The guards matter as much as the refinement: it must never recreate P0-1 from
+    the other side by dropping a front leg that a UI signal justified.
+    """
+
+    def test_no_signals_without_affected_specs_still_defaults_fullstack(self):
+        # The conservative default is unchanged when there is no structural input.
+        r = _classify(FSM_REQUIREMENT)
+        assert r["stack"] == "fullstack"
+        assert r["artifact_refinement"] is None
+
+    def test_back_only_affected_specs_refine_to_be(self):
+        r = _classify(FSM_REQUIREMENT, affected_specs=BACK_ONLY_SPECS)
+        assert r["stack"] == "be"
+        assert r["ui_task"] is False
+        assert r["confidence"] == "high"
+        assert r["artifact_refinement"] == "fullstack->be"
+
+    def test_front_artifact_in_scope_blocks_refinement(self):
+        for path in ("front/features/login.feature.spec.md",
+                     "front/components/badge.component.spec.md",
+                     "front/_flows/auth.flow.md",
+                     "front/front.md",
+                     "front/design-system/tokens.md",
+                     "specs/front/design-system-rules.md"):
+            r = _classify(FSM_REQUIREMENT,
+                          affected_specs=BACK_ONLY_SPECS + [_spec(path)])
+            assert r["stack"] == "fullstack", path
+            assert r["artifact_refinement"] is None, path
+
+    def test_ui_signal_in_text_always_wins(self):
+        # Positive UI evidence is never overturned by the absence of a front spec:
+        # the artifact may not exist yet precisely because it is being requested.
+        r = _classify("Adicionar uma tela de acompanhamento da FSM",
+                      affected_specs=BACK_ONLY_SPECS)
+        assert r["ui_task"] is True
+        assert r["artifact_refinement"] is None
+
+    def test_entry_without_readable_path_disables_refinement(self):
+        # Absence of a path is absence of evidence — it must not license a
+        # narrowing, because the unreadable entry could be the front artifact.
+        for bad in ({"sections": ["§2"]}, {"path": ""}, {"path": "   "}, 42):
+            r = _classify(FSM_REQUIREMENT, affected_specs=[_spec("domains/x/back/x.back.md"), bad])
+            assert r["stack"] == "fullstack", bad
+            assert r["artifact_refinement"] is None, bad
+
+    def test_empty_affected_specs_does_not_refine(self):
+        r = _classify(FSM_REQUIREMENT, affected_specs=[])
+        assert r["stack"] == "fullstack"
+        assert r["artifact_refinement"] is None
+
+    def test_refinement_never_overturns_a_signalled_decision(self):
+        # `fe` and `be` both come from real signals and are left alone; only the
+        # evidence-free `fullstack` default is narrowed.
+        fe = _classify("Ajustar o componente de badge", affected_specs=BACK_ONLY_SPECS)
+        assert fe["stack"] == "fe" and fe["artifact_refinement"] is None
+        be = _classify("Ajustar o repositório de atendimentos", affected_specs=BACK_ONLY_SPECS)
+        assert be["stack"] == "be" and be["artifact_refinement"] is None
+
+    def test_copresence_fullstack_is_not_narrowed(self):
+        # A fullstack backed by BOTH signals is a real decision, not the default.
+        r = _classify("Checkout page consuming the payment API",
+                      affected_specs=BACK_ONLY_SPECS)
+        assert r["stack"] == "fullstack"
+        assert r["artifact_refinement"] is None
+
+    def test_declared_frontend_domain_outranks_the_refinement(self):
+        # An author's explicit `domain: frontend` is stronger than inferred
+        # structure, and it resolves first — the refinement must not undo it.
+        r = _classify(FSM_REQUIREMENT, project_domain="frontend",
+                      affected_specs=BACK_ONLY_SPECS)
+        assert r["stack"] == "fe"
+        assert r["structural_override"] == "fullstack->fe"
+        assert r["artifact_refinement"] is None
+
+    def test_storefront_domain_is_not_a_front_artifact(self):
+        # Exact path-segment match: `storefront` must not read as `front`.
+        r = _classify(FSM_REQUIREMENT,
+                      affected_specs=[_spec("domains/storefront/back/storefront.back.md")])
+        assert r["stack"] == "be"
+        assert r["artifact_refinement"] == "fullstack->be"
+
+    def test_plain_string_entries_are_accepted(self):
+        r = _classify(FSM_REQUIREMENT, affected_specs=["domains/fsm/back/fsm.back.md"])
+        assert r["stack"] == "be"
+        r2 = _classify(FSM_REQUIREMENT, affected_specs=["front/features/x.feature.spec.md"])
+        assert r2["stack"] == "fullstack"
+
+    def test_windows_separators_are_normalized(self):
+        r = _classify(FSM_REQUIREMENT,
+                      affected_specs=[_spec("front\\features\\login.feature.spec.md")])
+        assert r["stack"] == "fullstack"
+        assert r["artifact_refinement"] is None
+
+    def test_malformed_affected_specs_json_is_a_usage_error(self):
+        p = subprocess.run(
+            [sys.executable, str(CLASSIFY), "--requirement", "x",
+             "--affected-specs", "{not json"],
+            capture_output=True, text=True)
+        assert p.returncode == 1
+        assert json.loads(p.stderr)["error"] == "invalid_json"
+
+    def test_refined_stack_passes_the_handoff_guard(self, tmp_path):
+        # End to end: the refinement produces exactly the stack the downstream
+        # guard demands when no front artifacts exist. Before it, the same repo
+        # reached handoff declaring `fullstack` and was blocked — after two
+        # workers had already run.
+        assert _classify(FSM_REQUIREMENT, affected_specs=BACK_ONLY_SPECS)["stack"] == "be"
+        _build(tmp_path, frontend=False, triage_stack="be")
+        assert _gen(tmp_path).returncode == 0, _gen(tmp_path).stdout
+
+
+class TestRefinementIsWiredIntoTheProtocol:
+    """A classifier nobody calls fixes nothing — the skill and the orchestrator
+    must actually route through it."""
+
+    TRIAGE_SKILL = ROOT / "dist/.claude/skills/u-spec-triage-rules/SKILL.md"
+    SDD = ROOT / "dist/.claude/agents/orchestrator-sdd.md"
+
+    def test_skill_declares_the_refinement_step(self):
+        text = self.TRIAGE_SKILL.read_text(encoding="utf-8")
+        assert "## Step 2.1b — Stack refinement from affected artifacts" in text
+        assert "--affected-specs" in text
+
+    def test_refinement_runs_after_affected_specs_are_known(self):
+        text = self.TRIAGE_SKILL.read_text(encoding="utf-8")
+        assert (text.index("## Step 2.1 — Identify affected specs or domains")
+                < text.index("## Step 2.1b — Stack refinement"))
+
+    def test_skipping_the_refinement_is_prohibited(self):
+        text = self.TRIAGE_SKILL.read_text(encoding="utf-8")
+        assert "stack_refinement_mandatory" in text
+
+    def test_triage_json_carries_the_audit_field(self):
+        text = self.TRIAGE_SKILL.read_text(encoding="utf-8")
+        assert '"stack_refinement"' in text
+
+    def test_orchestrator_reads_and_logs_the_decision(self):
+        """Under bypass_e99 the log is the only surface the decision reaches (P8)."""
+        text = self.SDD.read_text(encoding="utf-8")
+        assert "`stack_refinement`" in text
+        # The canonical operation-mode declaration is the payload carrying
+        # bypass_e99 — the reconciliation emit is a separate, narrower event.
+        declared = next(chunk for chunk in text.split("--event-type operation_mode_declared")[1:]
+                        if "bypass_e99" in chunk.split("```", 1)[0])
+        payload = declared.split("```", 1)[0]
+        for field in ("stack", "stack_confidence", "stack_refinement"):
+            assert f'"{field}"' in payload, field
+
+    def test_human_override_is_not_attributed_to_the_classifier(self):
+        text = self.SDD.read_text(encoding="utf-8")
+        assert 't["stack_refinement"] = "human_override"' in text
 
 
 # --------------------------------------------------------------------------- #

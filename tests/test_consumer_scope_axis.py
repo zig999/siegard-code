@@ -239,6 +239,15 @@ class TestTheSavingIsReal:
         assert out["mode"] == "standard" and out["workers"] == 10
 
 
+def _consumer_scope_invocation() -> str:
+    """The shell command the skill tells triage to run — not the prose mentions."""
+    text = TRIAGE_SKILL.read_text(encoding="utf-8")
+    marker = ("```bash\npython3 .claude/skills/u-spec-triage-rules/scripts/"
+              "classify_consumer_scope.py")
+    assert marker in text, "the skill must invoke the classifier in a bash block"
+    return text.split(marker, 1)[1].split("```", 1)[0]
+
+
 class TestTriageContract:
     def test_skill_runs_the_classifier(self):
         text = TRIAGE_SKILL.read_text(encoding="utf-8")
@@ -279,6 +288,29 @@ class TestTriageContract:
         """The classification must be auditable from the log alone."""
         text = TRIAGE_SKILL.read_text(encoding="utf-8")
         assert '"consumer_scope":"{consumer_scope}"' in text
+
+    def test_classifier_is_fed_the_in_memory_array_not_triage_json(self):
+        """The step must not read triage.json — that file is written in Step 3.
+
+        Reading it here fails on a new workflow (`triage_not_found`, exit 1) and
+        returns the PREVIOUS run's affected_specs on a resumed one. Either way the
+        deterministic classification silently does not happen and `consumer_scope`
+        falls back to the hand-classification the skill prohibits.
+        """
+        invocation = _consumer_scope_invocation()
+        assert "--affected-specs" in invocation
+        assert "--triage" not in invocation, (
+            "triage.json does not exist yet at this point in the skill"
+        )
+
+    def test_labels_are_assigned_before_the_classifier_runs(self):
+        """The labels are the classifier's entire input, so they must come first."""
+        text = TRIAGE_SKILL.read_text(encoding="utf-8")
+        assign = text.index("**Step 2.5a — assign `changed_sections` per spec.**")
+        classify = text.index("**Step 2.5b — classify the blast radius")
+        assert assign < classify
+        assert assign < text.index("```bash\npython3 .claude/skills/u-spec-triage-rules"
+                                   "/scripts/classify_consumer_scope.py")
 
 
 class TestOrchestratorSurfacesAndAllowsOverride:
