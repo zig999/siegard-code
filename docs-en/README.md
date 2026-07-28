@@ -107,7 +107,7 @@ dist/.claude/
 
 Runtime state lives in the **target project** under `.orch/sessions/<workflow_id>/`, centered on the append-only `log.jsonl`.
 
-### Flow guard (v2.34.0)
+### Flow guard (v2.34.0, exact mode v2.35.0)
 
 `hooks/flow_guard.py` runs as a `PreToolUse` hook (wired in the shipped
 `settings.json`). It deterministically blocks Write/Edit tool calls on
@@ -118,9 +118,31 @@ This stops the host session from executing spec-flow steps inline instead of
 routing through the pipeline (P7 — critical guarantees outside the LLM).
 Operator kill-switch in `.orch/config.json`:
 `{"guard": {"enforce": "hard" | "warn" | "off"}}` (default `hard`; `warn`
-audits to `.orch/guard_warnings.jsonl` without blocking). Bash writes are not
-intercepted — provenance verification at handoff (artifact notarization) is the
-planned complement (v2.35.0).
+audits to `.orch/guard_warnings.jsonl` without blocking).
+
+**Exact mode (v2.35.0, capability-gated):** on hosts whose `PreToolUse`
+payload carries agent identity (`agent_id`/`agent_type` inside subagents —
+present on Claude Code ≥ 2.1.220), the guard self-detects the capability
+(`.orch/host_capabilities.json`) and then also blocks main-session writes
+*while workers are in flight*, and writes from subagents whose type matches no
+registered worker. Hosts that never provide the field stay in coarse mode —
+a legitimate worker is never blocked by inference.
+
+### Artifact provenance (v2.35.0)
+
+Integrity gates prove the manifest matches the files; **PROV proves the files
+came from the pipeline**. Three notarization sources feed the append-only log:
+`emit.py` computes sha256 per declared worker artifact; the sdd phase records
+a `spec_baseline_recorded` snapshot at entry (inherited state accepted — once
+per workflow); `generate_handoff_manifest.py` notarizes the manifest it wrote.
+`u-handoff-validator` then enforces PROV-010/020/030 at handoff, and
+`orchestrator-dev` emits `handoff_receipt` on consumption and
+`E25_unprovenanced_artifact` on failure (re-adoption route: `/u-improve`).
+Workflows without a baseline (pre-2.35) degrade PROV to warnings. The
+SubagentStop hook also gained exact correlation: it identifies the stopped
+worker via its transcript (`ORCH_WORKER_ID` in the spawn prompt) and
+synthesizes missing terminals immediately instead of waiting out the stale
+threshold — older CLIs fall back to the liveness-gated path unchanged.
 
 ---
 

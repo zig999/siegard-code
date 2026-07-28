@@ -1,6 +1,6 @@
 ---
 name: u-handoff-validator
-description: Validates a handoff-manifest.yaml against schema and semantic rules before it is consumed by Dev orchestrators. Single source of truth for manifest validation — replaces inline checks in BE and FE orchestrator cores.
+description: Validates a handoff-manifest.yaml against schema, semantic rules, and provenance (PROV — every pinned artifact hash must be log-notarized by a worker terminal or match the workflow's adoption baseline; the manifest itself must match its generation event) before it is consumed by Dev orchestrators. Single source of truth for manifest validation — replaces inline checks in BE and FE orchestrator cores.
 user-invocable: false
 ---
 
@@ -32,7 +32,9 @@ This skill consolidates rules that previously lived inline in `u-be-orchestrator
 
 ## Validation rules
 
-The deployed implementation is **`validate.py`** (stdlib-only, prod-hardening task 03b): it loads the manifest via `minimal_yaml`, evaluates the 13 rules below, and prints a flat JSON envelope. `rules.yaml` is the declarative catalog — documentation, NOT loaded at runtime. Each rule has:
+The deployed implementation is **`validate.py`** (stdlib-only, prod-hardening task 03b): it loads the manifest via `minimal_yaml`, evaluates the 13 structural rules below plus the PROV provenance rules (v2.35.0), and prints a flat JSON envelope. `rules.yaml` is the declarative catalog — documentation, NOT loaded at runtime. Each rule has:
+
+**PROV rules (v2.35.0)** — provenance against the orchestration log, evaluated when a `spec_baseline_recorded` event exists for the workflow (otherwise degraded to warnings — A6' migration): PROV-010 (every pinned sha256 equals the latest worker-notarized hash after the baseline, or the baseline hash when untouched), PROV-020 (the manifest file's sha256 equals the hash recorded by `handoff_manifest_generated`), PROV-030 (a generation event exists — `delivered_by` backed by evidence, P8). Integrity rules prove the manifest matches the files; PROV proves the files came from the pipeline — a freelance edit laundered through manifest regeneration passes HDF-020/021 and fails PROV-010. On PROV failure the consuming orchestrator emits `E25_unprovenanced_artifact`.
 - `id` — stable identifier (FLOW-NNN or HDF-NNN)
 - `severity` — `blocking` (populates `errors[]`) or `warning` (populates `warnings[]`)
 - `applies_to` — DESCRIPTIVE ONLY: which caller the rule matters to. `validate.py` evaluates **all** rules regardless of `--caller`; scoping is data-driven (see note under the catalog).

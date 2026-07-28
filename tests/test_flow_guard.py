@@ -52,13 +52,14 @@ def _isolate_orch(tmp_path, monkeypatch):
     orch_core.ensure_dirs()
 
 
-def _invoke(monkeypatch, capsys, project_dir, file_path, tool_name="Write"):
+def _invoke(monkeypatch, capsys, project_dir, file_path, tool_name="Write", **extra):
     payload = {
         "session_id": "test-session",
         "cwd": str(project_dir),
         "hook_event_name": "PreToolUse",
         "tool_name": tool_name,
         "tool_input": {"file_path": str(file_path)},
+        **extra,
     }
     monkeypatch.setenv("ORCH_PROJECT_DIR", str(project_dir))
     monkeypatch.delenv("SPECS_DIR", raising=False)
@@ -358,3 +359,100 @@ class TestShippedWiring:
         command = entry["hooks"][0]["command"]
         assert "flow_guard.py" in command
         assert "ORCH_PROJECT_DIR" in command
+
+
+# ─── exact mode (v2.35.0) — capability self-detection ─────────────────────────
+
+class TestExactMode:
+    """Validated empirically (2026-07-28, CLI 2.1.220): a PreToolUse payload
+    from inside a subagent carries agent_id + agent_type; one from the main
+    session carries neither. Exact mode activates ONLY after this guard has
+    seen agent identity in a real payload on this host (capability marker) —
+    a host that never provides the field never leaves coarse mode, so a
+    legitimate worker is never blocked by inference."""
+
+    SPEC = "docs/specs/domains/auth/auth.spec.md"
+
+    def _spec_path(self, tmp_path):
+        return tmp_path / self.SPEC
+
+    def _seed_inflight(self, tmp_path):
+        _seed_task()
+        orch_core.register_worker("u-spec-writer-sdd_wf_writer-auth",
+                                  "sdd_wf_writer-auth", 1, phase="sdd")
+
+    def _marker(self, tmp_path):
+        return tmp_path / ".orch" / "host_capabilities.json"
+
+    def test_matching_worker_subagent_allowed_and_marker_recorded(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        self._seed_inflight(tmp_path)
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path),
+                        agent_id="abc", agent_type="u-spec-writer")
+        assert rc == 0
+        caps = json.loads(self._marker(tmp_path).read_text(encoding="utf-8"))
+        assert caps["pretooluse_agent_identity"] is True
+
+    def test_unrelated_subagent_blocked(self, tmp_path, monkeypatch, capsys):
+        """Freelance with extra steps: a subagent whose type matches no
+        registered in-flight worker may not write specs."""
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        self._seed_inflight(tmp_path)
+        rc, err = _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path),
+                          agent_id="zzz", agent_type="general-purpose")
+        assert rc == 2
+        assert "general-purpose" in json.loads(err.strip())["detail"]
+
+    def test_main_session_blocked_once_capability_known(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The in-flight window closes: after the marker exists, a payload
+        without agent_id is demonstrably the main session on this host."""
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        self._seed_inflight(tmp_path)
+        # 1) worker write records the capability
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path),
+                        agent_id="abc", agent_type="u-spec-writer")
+        assert rc == 0
+        # 2) main-session write during the same in-flight window -> blocked
+        rc, err = _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path))
+        assert rc == 2
+        assert "main session" in json.loads(err.strip())["detail"]
+
+    def test_main_session_allowed_without_marker(self, tmp_path, monkeypatch, capsys):
+        """Coarse fallback preserved: on a host that never showed agent
+        identity, 'no agent_id' cannot distinguish main from worker."""
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        self._seed_inflight(tmp_path)
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path))
+        assert rc == 0
+
+    def test_subagent_blocked_when_no_workflow(self, tmp_path, monkeypatch, capsys):
+        """agent identity alone is not a permit — without any in-flight worker
+        even a subagent write is freelance."""
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path),
+                        agent_id="abc", agent_type="u-spec-writer")
+        assert rc == 2
+
+    def test_marker_write_is_idempotent(self, tmp_path, monkeypatch, capsys):
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        self._seed_inflight(tmp_path)
+        for _ in range(2):
+            _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path),
+                    agent_id="abc", agent_type="u-spec-writer")
+        caps = json.loads(self._marker(tmp_path).read_text(encoding="utf-8"))
+        assert caps["pretooluse_agent_identity"] is True
+        first_seen = caps["first_seen"]
+        _invoke(monkeypatch, capsys, tmp_path, self._spec_path(tmp_path),
+                agent_id="abc", agent_type="u-spec-writer")
+        caps2 = json.loads(self._marker(tmp_path).read_text(encoding="utf-8"))
+        assert caps2["first_seen"] == first_seen

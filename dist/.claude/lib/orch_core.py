@@ -395,6 +395,20 @@ class EventType(str, Enum):
     # manifest was consumed — a logged event (not a session side-file) so
     # consumed/orphan handoff state is derived from the log (P1/P12).
     HANDOFF_RECEIPT = "handoff_receipt"
+    # Artifact provenance (v2.35.0, PROV). Both AUDIT-ONLY: no reducer handler —
+    # u-handoff-validator reads them straight from the log.
+    # SPEC_BASELINE_RECORDED: appended once per workflow at sdd phase entry by
+    # record_spec_baseline.py — snapshot {path: sha256} of the whole spec tree.
+    # It is the "inherited state accepted" mark: pre-existing specs (reverse-spec
+    # drafts, pre-Siegard files, human edits between workflows) are legitimized
+    # by the baseline, so PROV only flags divergence introduced DURING the
+    # workflow without a notarizing worker terminal.
+    # HANDOFF_MANIFEST_GENERATED: appended by generate_handoff_manifest.py right
+    # after writing the manifest — proves the manifest on disk is the one the
+    # deterministic generator produced (PROV-020/030), replacing trust in the
+    # self-asserted delivered_by string.
+    SPEC_BASELINE_RECORDED = "spec_baseline_recorded"
+    HANDOFF_MANIFEST_GENERATED = "handoff_manifest_generated"
     # Review shared-suite-run flow (prod-hardening task 11): emitted by
     # orchestrator-review around SHARED_SUITE_RUN. Previously undefined — the
     # append.py calls would raise UnknownEventType at runtime (latent crash).
@@ -587,6 +601,8 @@ _REQUIRED_DATA_FIELDS: dict[str, set[str]] = {
     EventType.HUMAN_RESPONSE.value:            {"escalation_seq", "action", "operator"},
     EventType.LOG_RECOVERED.value:             {"seq_truncated_from", "events_removed", "operator", "corrupt_file_path"},
     EventType.HANDOFF_RECEIPT.value:           {"manifest_id", "manifest_sha256", "consumed_by"},
+    EventType.SPEC_BASELINE_RECORDED.value:    {"workflow_id", "phase", "specs_dir", "artifacts"},
+    EventType.HANDOFF_MANIFEST_GENERATED.value: {"workflow_id", "manifest_path", "manifest_sha256"},
     EventType.SUITE_RUN_STARTED.value:         {"phase", "suite_run_id"},
     EventType.SUITE_RUN_COMPLETED.value:       {"phase", "suite_run_id"},
 }

@@ -531,6 +531,19 @@ export ORCH_PROJECT_DIR="<ORCH_PROJECT_DIR from spawn prompt inputs>"
 export SPECS_DIR="<SPECS_DIR from spawn prompt inputs>"
 ```
 
+**Record the spec adoption baseline (PROV, v2.35.0 — idempotent, before any dispatch):**
+
+```bash
+python3 .claude/skills/phase-sdd-rules/scripts/record_spec_baseline.py --workflow-id "<workflow_id>"
+```
+
+The baseline snapshots the spec tree as "inherited state accepted" — provenance
+validation (PROV) at handoff flags only divergence introduced during the workflow
+without a notarizing worker terminal. The script is a no-op when a baseline already
+exists for this workflow (`status: exists`) — re-invocation MUST NOT re-bless the
+tree. Any output status (`recorded` / `exists` / `skipped`) continues the flow;
+only exit 1 (internal error) is reported as an issue, without blocking.
+
 **Greenfield routing (S8, via state machine):**
 
 ```bash

@@ -9,17 +9,35 @@ terminal event (task_completed or task_failed). If the worker stops silently
 C1/C7: reads worker context from .orch/workers/<worker_id>.json registry instead
 of env vars, so it works regardless of the hook's CWD.
 
-F-03 / SIEGARD BUG-1 — correlation gate: SubagentStop fires on the stop of ANY
-subagent and its stdin payload carries no key (it has session_id/transcript_path,
-not the orchestrator's worker_id) that correlates it to a specific registry entry.
-Therefore a stop NEVER proves that a particular registered worker died:
+EXACT CORRELATION (v2.35.0 — validated empirically 2026-07-28, CLI 2.1.220):
+the SubagentStop payload now carries `agent_id`, `agent_type` (the spawn's
+subagent_type) and `agent_transcript_path` (the stopped subagent's own JSONL,
+which contains the spawn prompt — including the literal `ORCH_WORKER_ID=<id>`
+line every orchestrator sends). Scanning that transcript identifies EXACTLY
+which registered worker stopped:
+  • correlated + terminal already in state -> registry cleanup, done;
+  • correlated + NO terminal -> the worker demonstrably exited without
+    reporting: synthesize task_failed IMMEDIATELY (no liveness wait). This
+    collapses the audited 20-30 min dead windows to seconds;
+  • the stop is exact evidence about ONE worker only — other registered
+    workers keep the liveness-gated path below.
+
+F-03 / SIEGARD BUG-1 — correlation gate (FALLBACK, still load-bearing): on
+hosts whose payload lacks the agent fields (older CLIs), or when the
+transcript is unreadable / contains no ORCH_WORKER_ID, a stop NEVER proves
+that a particular registered worker died:
   • it may be the stop of a sibling worker or an auxiliary subagent, and
   • the targeted worker may merely be mid-finalization — about to write its
     artifact and call emit.py.
-The gate's only safe signal is silence-over-time. A worker is synthesized as failed
-ONLY once it has been silent past its task-type stale threshold (worker_liveness_expired),
-the SAME bound the stale reaper uses, so the two never disagree. This holds for ALL
-cases — a single registered worker is treated exactly like one of many.
+The gate's only safe signal is then silence-over-time. A worker is synthesized as
+failed ONLY once it has been silent past its task-type stale threshold
+(worker_liveness_expired), the SAME bound the stale reaper uses, so the two never
+disagree. This holds for ALL uncorrelated cases — a single registered worker is
+treated exactly like one of many.
+
+The session_id route was investigated and rejected with evidence: both the
+subagent's env CLAUDE_CODE_SESSION_ID and the payload session_id carry the
+PARENT session's id — they correlate nothing.
 
 History: the original code failed EVERY non-terminal worker on each stop, killing
 live siblings (the F-03 incident). A follow-up exempted the "exactly one non-terminal
@@ -37,12 +55,14 @@ If the registry is empty or absent: no-op (not an orchestrated worker context).
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 _LIB = Path(__file__).resolve().parents[1] / "lib"
 sys.path.insert(0, str(_LIB))
 
+import orch_core
 from orch_core import (
     EventType,
     _elapsed_seconds,
@@ -55,7 +75,6 @@ from orch_core import (
     schedule_retry_if_due,
     unregister_worker,
     worker_liveness_expired,
-    ORCH_DIR,
 )
 
 
@@ -72,6 +91,33 @@ def _get_task_phase(task_id: str, state) -> str:
     """Returns phase for task_id from derived state, or empty string."""
     task = state.tasks.get(task_id)
     return task.phase if task else ""
+
+
+# v2.35.0: the spawn prompt carries `ORCH_WORKER_ID=<worker_id>` (orchestrator
+# Step 5.3) and lands verbatim in the subagent's transcript — validated by
+# probing a real transcript. First match wins; worker Bash lines re-exporting
+# the same variable repeat the same value, so ambiguity is not possible within
+# one transcript.
+_WORKER_ID_RE = re.compile(r"ORCH_WORKER_ID=([A-Za-z0-9_\-.]+)")
+
+
+def _correlate_worker_id(payload: dict) -> str | None:
+    """Exact correlation: extract the stopped subagent's ORCH_WORKER_ID from its
+    own transcript (payload.agent_transcript_path). Returns None whenever the
+    host does not provide the field, the file is unreadable, or no marker is
+    found — callers then fall back to the liveness-gated path (F-03)."""
+    path = payload.get("agent_transcript_path")
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = _WORKER_ID_RE.search(line)
+                if m:
+                    return m.group(1)
+    except OSError:
+        return None
+    return None
 
 
 # SIEGARD-01: best-effort root-cause hint for a worker that stopped without a
@@ -109,13 +155,23 @@ def _infer_cause(entry: dict) -> dict:
 
 
 def main() -> int:
-    # Consume stdin — Claude Code passes SubagentStop JSON via stdin; not used here.
+    # v2.35.0: the SubagentStop payload is now USED — agent_transcript_path
+    # enables exact correlation (see module docstring). Any parse failure
+    # degrades to the uncorrelated fallback, never crashes the hook.
+    payload: dict = {}
     try:
-        sys.stdin.read()
+        raw = sys.stdin.read()
+        if raw.strip():
+            payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            payload = {}
     except Exception:  # noqa: BLE001
-        pass
+        payload = {}
+    correlated_worker_id = _correlate_worker_id(payload)
 
-    log_file = ORCH_DIR / "log.jsonl"
+    # v2.35.0: read ORCH_DIR from the module (not a from-import binding) so path
+    # redirection — tests, or a future per-call project dir — always takes effect.
+    log_file = orch_core.ORCH_DIR / "log.jsonl"
     if not log_file.exists():
         return 0  # no orchestrated workflow in progress
 
@@ -153,16 +209,22 @@ def main() -> int:
             unregister_worker(worker_id)
             continue
 
-        # SIEGARD BUG-1: liveness is required on EVERY path. SubagentStop carries no
-        # key correlating it to a worker (see register_worker — no session_id is
-        # persisted), so "exactly one non-terminal worker" does NOT prove this stop
+        # v2.35.0 exact correlation: this stop demonstrably belongs to
+        # `correlated_worker_id`. For THAT worker with no terminal in state,
+        # synthesize immediately — the process exited without reporting; there
+        # is no finalization left to protect. For every OTHER worker this stop
+        # is exact evidence of NOTHING — apply the liveness gate below.
+        is_correlated = worker_id == correlated_worker_id
+
+        # SIEGARD BUG-1 (uncorrelated path): liveness is required. Without exact
+        # correlation, "exactly one non-terminal worker" does NOT prove this stop
         # belongs to it: the stop may be a sibling/auxiliary subagent, or this worker
         # may be mid-finalization (about to emit its terminal). Synthesize only once
         # the worker is silent past its task-type stale threshold — the same bound the
         # stale reaper uses. A task with no recorded activity (last_event_at is None)
         # has no life to protect: worker_liveness_expired returns True for it.
         task = state.tasks.get(task_id)
-        if task is not None and not worker_liveness_expired(task, now, config):
+        if not is_correlated and task is not None and not worker_liveness_expired(task, now, config):
             continue
 
         # Prefer phase from registry (written at claim time) to avoid a full log
@@ -180,6 +242,11 @@ def main() -> int:
                     "reason": "worker_exited_without_terminal",
                     "retryable": True,
                     "synthesized_by": worker_id,
+                    # v2.35.0: record whether this synthesis came from exact
+                    # correlation (immediate) or the liveness fallback (gated) —
+                    # audit signal for measuring dead-window collapse.
+                    "correlated": is_correlated,
+                    **({"agent_type": payload.get("agent_type")} if is_correlated and payload.get("agent_type") else {}),
                     **_infer_cause(entry),  # SIEGARD-01: suspected_cause, elapsed_s, spawn_context_chars
                 },
             )

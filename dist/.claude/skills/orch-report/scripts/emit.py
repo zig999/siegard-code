@@ -12,6 +12,7 @@ Agent identity is resolved in priority order:
      (fallback when env var is lost between separate Bash calls)
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -60,6 +61,46 @@ def _parse_args() -> argparse.Namespace:
         help="Event payload as a JSON object string (default: '{}').",
     )
     return p.parse_args()
+
+
+def _notarize_artifacts(artifacts: list[str], data: dict) -> list[str]:
+    """A1' (v2.35.0): compute sha256 per declared artifact — notarization.
+
+    The hash is computed HERE, in deterministic code at emit time, not declared
+    by the worker: a worker cannot lie about what it wrote, and the log's
+    append-only hash chain then acts as a notary for artifact content.
+    u-handoff-validator's PROV rules later verify that every hash pinned in
+    handoff-manifest.yaml matches a log-notarized hash — the check that makes
+    freelance edits + manifest regeneration detectable.
+
+    Keys are normalized to project-root-relative posix paths when possible so
+    the validator can match them against manifest paths. Raw bytes are hashed
+    (same convention as generate_handoff_manifest._sha256 — the two must never
+    diverge). A path that is missing or not a regular file produces a stderr
+    warning and no hash entry — tolerated because artifact path conventions
+    vary by worker (session-dir reports, directories); spec files that dodge
+    hashing are still caught by PROV at handoff, just later.
+    """
+    project_root = Path(os.environ.get("ORCH_PROJECT_DIR", ".")).resolve()
+    hashes: dict[str, str] = {}
+    skipped: list[str] = []
+    for p in artifacts:
+        raw = Path(p.replace("\\", "/"))
+        target = raw if raw.is_absolute() else project_root / raw
+        try:
+            key = target.resolve().relative_to(project_root).as_posix()
+        except (ValueError, OSError):
+            key = raw.as_posix()
+        try:
+            if target.is_file():
+                hashes[key] = hashlib.sha256(target.read_bytes()).hexdigest()
+            else:
+                skipped.append(key)
+        except OSError:
+            skipped.append(key)
+    if hashes:
+        data["artifacts_sha256"] = hashes
+    return skipped
 
 
 def _registry_identity_violation(
@@ -266,6 +307,19 @@ def main() -> int:
                         "detail": violation,
                     }))
                     return 1
+            # A1' (v2.35.0): notarize declared artifacts — sha256 computed here,
+            # in deterministic code, and appended into the event data.
+            skipped = _notarize_artifacts(artifacts, data)
+            if skipped:
+                print(json.dumps({
+                    "status": "warning",
+                    "reason": "artifacts_not_hashed",
+                    "detail": (
+                        f"declared artifacts not found as regular files (no sha256 "
+                        f"recorded): {skipped}. Spec files under SPECS_DIR without a "
+                        "notarized hash will fail PROV at handoff."
+                    ),
+                }), file=sys.stderr)
 
     event_type = _ALLOWED_KINDS[args.kind]
 

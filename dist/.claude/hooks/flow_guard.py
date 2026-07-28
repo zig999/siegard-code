@@ -22,12 +22,20 @@ boundary:
     guarantee (artifact notarization in the log + PROV rules in
     u-handoff-validator — Pacote A, planned v2.35.0) is what makes evaded
     writes worthless: unnotarized artifacts never enter the next phase.
-  * While a worker is in flight the guard cannot attribute the calling session
-    (the same PreToolUse/SubagentStop correlation gap documented in
-    on_subagent_stop.py — no payload key maps to a registry entry). A
-    freelance write inside that window is allowed. Upgrade path: registry
-    entries gain the worker's session_id at first checkpoint; the guard then
-    compares the payload session_id and becomes exact.
+  * EXACT MODE (v2.35.0, capability-gated): on hosts whose PreToolUse payload
+    carries agent identity — validated empirically on CLI 2.1.220: a payload
+    from inside a subagent has `agent_id` + `agent_type`; one from the main
+    session has neither — the guard closes the in-flight window:
+      - a payload WITH agent_id records the capability marker
+        (.orch/host_capabilities.json) and is allowed only when its agent_type
+        matches a registered in-flight worker (worker_id prefix);
+      - a payload WITHOUT agent_id, once the marker exists, is demonstrably
+        the main session on this host -> blocked even while workers run.
+    Self-detection is the safety property: exact mode activates only after
+    this guard has SEEN agent identity in a real payload on this host. Hosts
+    that never provide the field never leave coarse mode — a legitimate
+    worker is never blocked by inference. (The session_id route was tested
+    and rejected: env and payload both carry the PARENT session's id.)
 
 Ownership classes:
   pipeline-owned  {specs_dir}/** (includes handoff-manifest.yaml, _validation/,
@@ -131,8 +139,8 @@ def _guard_mode(config: dict) -> str:
     return mode if mode in _VALID_MODES else "hard"
 
 
-def _worker_in_flight(config: dict) -> bool:
-    """True when any registered worker attempt is still live.
+def _in_flight_entries(config: dict) -> list[dict]:
+    """Registry entries whose worker attempt is still live.
 
     Uses the same two bounds as the SubagentStop hook and the stale reaper
     (attempt_has_terminal + worker_liveness_expired), so the guard never
@@ -143,9 +151,10 @@ def _worker_in_flight(config: dict) -> bool:
     """
     workers = get_active_workers()
     if not workers:
-        return False
+        return []
     state = reduce_all()
     now = now_iso()
+    live: list[dict] = []
     for entry in workers:
         task_id = entry.get("task_id")
         attempt = entry.get("attempt")
@@ -153,13 +162,57 @@ def _worker_in_flight(config: dict) -> bool:
             continue
         task = state.tasks.get(task_id)
         if task is None:
-            return True  # registered, no events yet — dispatch in progress
+            live.append(entry)  # registered, no events yet — dispatch in progress
+            continue
         if attempt_has_terminal(task, attempt):
             continue  # this attempt already ended; stale registry entry
         if worker_liveness_expired(task, now, config):
             continue  # silent past its window — reaper's to claim, not proof of life
-        return True
-    return False
+        live.append(entry)
+    return live
+
+
+# ─── exact mode (v2.35.0) — capability self-detection ────────────────────────
+# Exact mode is gated on EVIDENCE from this host: only after a real PreToolUse
+# payload carrying agent identity has been observed does "no agent_id" become
+# proof of "main session". Inference from another event type (SubagentStop) is
+# deliberately NOT used — if PreToolUse lacked the field while SubagentStop had
+# it, inferred exact mode would block every legitimate worker write.
+
+_CAPABILITIES_FILE = "host_capabilities.json"
+
+
+def _capabilities_path(project_dir: Path) -> Path:
+    return project_dir / ".orch" / _CAPABILITIES_FILE
+
+
+def _host_provides_agent_identity(project_dir: Path) -> bool:
+    try:
+        caps = json.loads(_capabilities_path(project_dir).read_text(encoding="utf-8"))
+        return caps.get("pretooluse_agent_identity") is True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _record_agent_identity_capability(project_dir: Path) -> None:
+    """Best-effort, idempotent marker write. Never raises."""
+    try:
+        path = _capabilities_path(project_dir)
+        if path.exists():
+            try:
+                caps = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                caps = {}
+            if caps.get("pretooluse_agent_identity") is True:
+                return
+        else:
+            caps = {}
+            path.parent.mkdir(parents=True, exist_ok=True)
+        caps["pretooluse_agent_identity"] = True
+        caps["first_seen"] = now_iso()
+        path.write_text(json.dumps(caps, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _known_workflows(project_dir: Path, limit: int = 3) -> list[str]:
@@ -282,18 +335,51 @@ def main() -> int:
         print(json.dumps(record, ensure_ascii=False), file=sys.stderr)
         return 0
 
+    caller_agent_id = hook_input.get("agent_id")
+    caller_agent_type = hook_input.get("agent_type")
+
     try:
-        if _worker_in_flight(config):
-            # Correlation gap: cannot attribute the calling session while a
-            # worker is live — allow (documented residual; see module docstring).
-            return 0
+        in_flight = _in_flight_entries(config)
     except Exception:  # noqa: BLE001
         return 0  # fail-open: a broken reducer must not brick spec work
+
+    if caller_agent_id:
+        # Demonstrably a subagent on a host that tags payloads — record the
+        # capability, then require the agent's type to match a registered
+        # in-flight worker (worker_id is "<worker-name>-<task_id>", so the
+        # prefix identifies the type). An unrelated subagent writing specs is
+        # freelance with extra steps.
+        _record_agent_identity_capability(project_dir)
+        if caller_agent_type and any(
+            str(e.get("worker_id", "")).startswith(caller_agent_type)
+            for e in in_flight
+        ):
+            return 0
+        deny_reason = (
+            f"subagent '{caller_agent_type or caller_agent_id}' does not match any "
+            "registered in-flight pipeline worker"
+        )
+    elif in_flight:
+        if not _host_provides_agent_identity(project_dir):
+            # Coarse mode: this host has never shown agent identity in a
+            # PreToolUse payload, so "no agent_id" cannot distinguish the main
+            # session from a worker — allow (documented residual).
+            return 0
+        # Exact mode: this host tags subagent payloads (capability marker
+        # recorded from real evidence), so a payload WITHOUT agent_id is the
+        # main session freelancing inside the in-flight window.
+        deny_reason = (
+            "main session write while pipeline workers are in flight — this host "
+            "tags subagent payloads with agent identity, and this call has none"
+        )
+    else:
+        deny_reason = "no pipeline worker is in flight"
 
     return _deny({
         "status": "blocked",
         "hook": "flow_guard",
         "reason": "pipeline_owned_artifact",
+        "detail": deny_reason,
         "path": rel,
         "policy": (
             "spec artifacts and handoff-manifest.yaml are produced only by pipeline "
