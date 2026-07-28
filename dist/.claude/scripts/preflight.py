@@ -310,6 +310,67 @@ def check_agent_references() -> CheckResult:
     return _timed(_run)
 
 
+def check_flow_guard_wired() -> CheckResult:
+    """SOFT check (never blocks — always ok=True, warning in reason).
+
+    Field lesson (mwoassistant, v2.35): 'guard installed but hook never firing'
+    was only discoverable by manual forensics. Surface it at every preflight:
+    wired = settings.json declares the PreToolUse entry AND the hook file
+    exists; 'active' = .orch/guard_status.json shows at least one adjudication
+    (written by the guard itself since v2.36.0)."""
+    def _run() -> CheckResult:
+        project_dir = ORCH_DIR.parent
+        settings = project_dir / ".claude" / "settings.json"
+        hook = project_dir / ".claude" / "hooks" / "flow_guard.py"
+        wired = False
+        try:
+            hooks_cfg = json.loads(settings.read_text(encoding="utf-8")).get("hooks") or {}
+            wired = any(
+                "flow_guard.py" in (h.get("command") or "")
+                for entry in (hooks_cfg.get("PreToolUse") or [])
+                for h in (entry.get("hooks") or [])
+            )
+        except Exception:  # noqa: BLE001
+            wired = False
+        if wired and hook.is_file():
+            status = project_dir / ".orch" / "guard_status.json"
+            if status.is_file():
+                return CheckResult(True, "flow_guard wired and active (guard_status.json present)")
+            return CheckResult(True, "flow_guard wired; no adjudication recorded yet — if spec writes happened without it, the hook may not be firing in this session (check /hooks)")
+        return CheckResult(True, "warning: flow_guard NOT wired — spec-tree writes are unguarded (copy dist settings.json + hooks/, then restart the session)")
+    return _timed(_run)
+
+
+def check_template_version() -> CheckResult:
+    """SOFT check (never blocks): the target CLAUDE.md tracks the shipped
+    template. The template travels in the copy but the target CLAUDE.md is
+    author-maintained — field lesson: the Flow discipline section never reached
+    the target because nothing signalled the drift."""
+    def _run() -> CheckResult:
+        project_dir = ORCH_DIR.parent
+        rx = re.compile(r"^template_version:\s*(\S+)", re.MULTILINE)
+        try:
+            shipped_m = rx.search(
+                (project_dir / ".claude" / "claude-md-target-template.md")
+                .read_text(encoding="utf-8")
+            )
+        except Exception:  # noqa: BLE001
+            shipped_m = None
+        if shipped_m is None:
+            return CheckResult(True, "template carries no version marker (pre-2.36 install)")
+        shipped = shipped_m.group(1)
+        try:
+            target_m = rx.search((project_dir / "CLAUDE.md").read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            target_m = None
+        if target_m is None:
+            return CheckResult(True, f"warning: CLAUDE.md predates template_version {shipped} — re-apply the current template sections (Flow discipline, machine-parsed block) and add 'template_version: {shipped}'")
+        if target_m.group(1) == shipped:
+            return CheckResult(True, f"template_version {shipped} in sync")
+        return CheckResult(True, f"warning: CLAUDE.md template_version {target_m.group(1)} != shipped {shipped} — review the template diff and update the drifted sections")
+    return _timed(_run)
+
+
 LOCAL_CHECKS: list[tuple[str, Callable[[], CheckResult]]] = [
     ("bash_available", check_bash_available),
     ("python_version", check_python_version),
@@ -319,6 +380,8 @@ LOCAL_CHECKS: list[tuple[str, Callable[[], CheckResult]]] = [
     ("claude_code_version", check_claude_code_version),
     ("agent_references", check_agent_references),
     ("claude_md_config", check_claude_md_config),
+    ("flow_guard_wired", check_flow_guard_wired),
+    ("template_version", check_template_version),
 ]
 
 

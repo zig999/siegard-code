@@ -99,6 +99,41 @@ def run(workflow_id: str | None, now: str | None, dry_run: bool) -> dict:
         result["detail"] = "no non-terminal tasks — nothing to recover"
         return result
 
+    # v2.36.0 liveness gate — measured BEFORE this tick's own recovery events
+    # are appended (reap/requeue below would otherwise poison the recency read).
+    # Field calibration: the false alarm fired 107s after a live orchestrator's
+    # dispatch in another session; the real "estalo" stall was ~324s quiet.
+    # Default 300s separates the two; config recovery_policy.quiet_seconds.
+    last_ts = None
+    already = False
+    for e in read_events():
+        last_ts = e.ts
+        if (e.event_type == EventType.ESCALATION.value
+                and (e.data or {}).get("code") == ESCALATION_CODE):
+            already = True
+    quiet_seconds = 300
+    try:
+        quiet_seconds = int(
+            (orch_core.load_config().get("recovery_policy") or {})
+            .get("quiet_seconds", 300)
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    recently_active = False
+    if last_ts is not None:
+        try:
+            elapsed = orch_core._elapsed_seconds(now, last_ts)
+            # Negative elapsed = log events newer than `now` (clock skew or an
+            # explicit --now in the past): recency cannot be asserted — fail
+            # toward escalating (the pre-gate behavior), never toward silence.
+            recently_active = 0 <= elapsed < quiet_seconds
+        except Exception:  # noqa: BLE001
+            recently_active = False
+    if recently_active:
+        result["e26_suppressed"] = (
+            f"log active within {quiet_seconds}s — driver presumed live in another session"
+        )
+
     if dry_run:
         result["status"] = "attention"
         result["detail"] = (
@@ -131,12 +166,7 @@ def run(workflow_id: str | None, now: str | None, dry_run: bool) -> dict:
     #    driving it is an escalable condition, not a normal resting state — and an
     #    escalation is visible to whoever reads the log, which a passive
     #    last_error.json is not.
-    already = any(
-        e.event_type == EventType.ESCALATION.value
-        and (e.data or {}).get("code") == ESCALATION_CODE
-        for e in read_events()
-    )
-    if not already:
+    if not already and not recently_active:
         try:
             ev = append_event(
                 agent="recovery-tick",

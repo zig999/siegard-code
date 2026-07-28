@@ -1215,15 +1215,22 @@ register_worker('<worker_id>', '<task_id>', <attempt>, phase='sdd', spawn_contex
 python3 .claude/scripts/estimate_spawn_context.py \
   --worker <selected_worker> --phase sdd \
   --spec-file "<task.spec if it resolves to a file, else omit>" \
-  --requirement-chars <len(triage.requirement)>
+  --requirement-chars <len(triage.requirement)> \
+  --sections "<comma-separated section selectors from the task's affected_specs entry in triage.json, when present — else omit>"
 ```
 
 Branch on the **exit code**:
 
-- **0** → proceed. Take `mitigation` (`none` | `monitor`) from the output verbatim.
-- **3** → `mitigation: blocked`. Do NOT spawn: emit `task_failed` with
-  `reason: "context_budget_exceeded"`, `retryable: false`, and remove the task from the batch
-  before Step 5.3.
+- **0** → proceed. Take `mitigation` (`none` | `monitor`) from the output verbatim. When
+  `sections_applied` is `true`, the worker MUST be spawned section-scoped: include in its prompt
+  the instruction to load the spec via `read_spec_sections.py --sections "<same selectors>"`.
+- **3** → `mitigation: blocked`. **Downscope before declaring death (R16, v2.36.0):** if the
+  estimate ran whole-file (`sections_applied: false`) AND the task's `affected_specs` entry in
+  `triage.json` lists `sections`, re-run the estimator once with `--sections`. Exit 0 on the
+  retry → proceed as above (section-scoped spawn is mandatory). Still exit 3 (or no sections
+  available) → do NOT spawn: emit `task_failed` with `reason: "context_budget_exceeded"`,
+  `retryable: false`, and remove the task from the batch before Step 5.3. The operator lever is
+  `.orch/config.json` → `context_budget.thresholds.sdd` (config-driven since v2.36.0).
 - **1** → the estimator itself failed; report its JSON error and treat the task as `monitor`
   rather than blocking on a broken measurement.
 
@@ -1437,7 +1444,13 @@ If `dlq_count > 0`, emit escalation and stop — do not run exit criterion scrip
 python3 .claude/skills/orch-log/scripts/append.py \
   --agent orchestrator-sdd \
   --event-type escalation \
-  --data '{"code":"E13_dlq_blocks_exit","severity":"critical","reason":"DLQ_ESCALATION: cannot approve SDD phase exit while tasks remain in DLQ.","evidence":[<last_seq>],"dlq_tasks":<dlq_tasks>,"suggested_actions":["inspect each DLQ task","fix underlying issue","manually resolve and re-invoke"]}'
+  --data '{"code":"E13_dlq_blocks_exit","severity":"critical","reason":"DLQ_ESCALATION: cannot approve SDD phase exit while tasks remain in DLQ. <one line per DLQ task: task_id + last_error verbatim>","evidence":[<last_seq>],"dlq_tasks":<dlq_tasks>,"suggested_actions":["triage the DLQ buckets: python3 .claude/scripts/dlq_triage.py --json","context_budget_exceeded: raise the phase ceiling in .orch/config.json (context_budget.thresholds.sdd.block) and re-invoke — the orchestrator re-creates the revision attempt for a REAL worker","if a human resolved the cause outside the pipeline: record it via python3 .claude/scripts/respond_escalation.py --escalation-seq <seq> --action <what_was_done> --operator <name>, then re-invoke","NEVER suggest editing spec artifacts directly or appending terminal events by hand — remediation routes through config, re-dispatch, or human_response (flow discipline)"]}'
+
+> **Escalation composition rule (W12):** `suggested_actions` in ANY escalation you emit must route
+> through sanctioned mechanisms only — config changes, `dlq_triage`/re-dispatch, `/u-improve`
+> re-adoption, `respond_escalation.py`. Never instruct manual artifact edits or direct
+> `append.py` terminal writes: a completed event for work no worker performed is terminal
+> forgery, and the flow guard blocks the manual-edit path by design.
 ```
 
 Output `{"status": "escalated", "last_seq": <last_seq>, "summary": "DLQ blocks exit: <count> task(s) in DLQ"}` and stop.

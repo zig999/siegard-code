@@ -79,6 +79,54 @@ THRESHOLDS = {
     "test": (30000, 60000),
 }
 
+
+def _config_thresholds(phase: str) -> tuple[int, int]:
+    """Per-phase thresholds, config-overridable (v2.36.0).
+
+    .orch/config.json:
+        {"context_budget": {"thresholds": {"sdd": {"warn": 30000, "block": 60000}}}}
+
+    Field lesson (mwoassistant): a 234KB spec estimated 6% over the hardcoded
+    block threshold and the workflow dead-ended in DLQ — the operator had no
+    lever short of patching this file. Hardcoded values remain the defaults."""
+    warn, block = THRESHOLDS.get(phase, THRESHOLDS["sdd"])
+    cfg_path = Path(os.environ.get("ORCH_PROJECT_DIR", ".")) / ".orch" / "config.json"
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        ph = ((cfg.get("context_budget") or {}).get("thresholds") or {}).get(phase) or {}
+        warn = int(ph.get("warn", warn))
+        block = int(ph.get("block", block))
+    except Exception:  # noqa: BLE001 — absent/broken config keeps defaults
+        pass
+    return warn, block
+
+
+def _section_tokens(spec_path: Path, sections: str) -> int | None:
+    """Token estimate for ONLY the requested sections (R16, v2.36.0).
+
+    Delegates to read_spec_sections.py — the same scoping the workers use, so
+    the estimate and the worker's actual read can never diverge. Returns None
+    (caller falls back to whole-file, the conservative floor) when extraction
+    fails or any selector goes unmatched — a silent partial match would
+    UNDER-estimate, which is the direction that overflows workers."""
+    import subprocess
+    reader = _CLAUDE_DIR / "skills" / "u-spec-templates" / "scripts" / "read_spec_sections.py"
+    if not reader.is_file():
+        return None
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(reader), "--file", str(spec_path), "--sections", sections],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode != 0:
+            return None
+        out = json.loads(proc.stdout)
+        if out.get("unmatched_selectors"):
+            return None
+        return len(out.get("content", "")) // CHARS_PER_TOKEN
+    except Exception:  # noqa: BLE001
+        return None
+
 # Framework paths a worker declares in its Expected Inputs. Project artifacts
 # (`{SPECS_DIR}/...`, `domains/...`) are counted separately via --spec-file,
 # because their size depends on the project, not on the framework.
@@ -138,7 +186,7 @@ def _tokens_for(path: str) -> tuple[int, bool]:
 
 
 def estimate(worker: str, phase: str, spec_file: str | None,
-             requirement_chars: int) -> dict:
+             requirement_chars: int, sections: str | None = None) -> dict:
     worker_md = find_worker(worker)
     if worker_md is None:
         raise FileNotFoundError(f"worker definition not found: {worker}")
@@ -156,15 +204,21 @@ def estimate(worker: str, phase: str, spec_file: str | None,
         worker_inputs += tokens
 
     spec_tokens = 0
+    sections_applied = False
     if spec_file:
         p = Path(spec_file)
         if p.is_file():
             spec_tokens = p.stat().st_size // CHARS_PER_TOKEN
+            if sections:
+                scoped = _section_tokens(p, sections)
+                if scoped is not None:
+                    spec_tokens = scoped
+                    sections_applied = True
 
     requirement_tokens = max(0, requirement_chars) // CHARS_PER_TOKEN
     total = BASE_PROMPT_TOKENS + worker_inputs + requirement_tokens + spec_tokens
 
-    warn, block = THRESHOLDS.get(phase, THRESHOLDS["sdd"])
+    warn, block = _config_thresholds(phase)
     if total >= block:
         mitigation = "blocked"
     elif total >= warn:
@@ -191,6 +245,10 @@ def estimate(worker: str, phase: str, spec_file: str | None,
         "threshold_warn": warn,
         "threshold_block": block,
         "mitigation": mitigation,
+        # R16 (v2.36.0): True when spec_file was estimated section-scoped —
+        # the caller uses this to know a blocked whole-file estimate can still
+        # be retried with --sections before declaring the task dead.
+        "sections_applied": sections_applied,
     }
 
 
@@ -203,10 +261,14 @@ def main() -> None:
                     help="project artifact passed as task.spec")
     ap.add_argument("--requirement-chars", type=int, default=0,
                     help="len(triage.requirement)")
+    ap.add_argument("--sections", default=None,
+                    help="comma-separated section selectors (R16) — estimate only "
+                         "these sections of --spec-file, matching what a "
+                         "section-scoped worker will actually read")
     args = ap.parse_args()
 
     result = estimate(args.worker, args.phase, args.spec_file,
-                      args.requirement_chars)
+                      args.requirement_chars, args.sections)
     print(json.dumps(result))
     sys.exit(3 if result["mitigation"] == "blocked" else 0)
 

@@ -58,6 +58,14 @@ Defined in `orchestrator-sdd.md`. Do not duplicate here — when in doubt, consu
 
 ## Execution Process
 
+**Section-scoped reads on targeted/revision tasks (R16, v2.36.0 — MANDATORY when applicable):**
+when your dispatch prompt or the task's `affected_specs` entry lists `sections`, load the target
+spec via `python3 .claude/skills/u-spec-templates/scripts/read_spec_sections.py --file <spec>
+--sections "<selectors>"` and work ONLY on those sections plus the version/changelog header —
+never read the whole file. Rationale: large specs (measured: 234KB) exceed the spawn context
+ceiling whole-file but fit comfortably section-scoped; the orchestrator's budget estimate assumed
+the scoped read, so a whole-file read overflows the very budget that admitted you.
+
 ### Step 1: Analyze approved spec
 1. Read the complete `openapi.yaml` — understand endpoints, schemas, security
 2. Read the `.spec.md` sections listed in Expected Inputs (§Use Cases, §Business Rules,

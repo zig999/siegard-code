@@ -409,6 +409,44 @@ def _check_w11_inline_env(content: str, path: Path) -> list[Violation]:
 
 
 # ---------------------------------------------------------------------------
+# W12 — escalation templates must not teach terminal forgery
+#
+# Origin (v2.36.0 / mwoassistant field incident): E13's suggested_actions told
+# the operator to "resolve DLQ tasks manually via append.py task_completed
+# events" — instructing the exact anti-pattern the flow guard and PROV exist to
+# stop. A downstream session dutifully proposed that plan to its human. An
+# escalation's remediation vocabulary is part of the enforcement surface:
+# sanctioned routes only (config, dlq_triage/re-dispatch, /u-improve
+# re-adoption, respond_escalation). Any escalation --data payload that
+# references append.py is teaching a bypass.
+# ---------------------------------------------------------------------------
+
+def _check_w12_escalation_no_forgery(content: str, path: Path) -> list[Violation]:
+    violations: list[Violation] = []
+    for m in re.finditer(
+        r"--event-type\s+escalation(.{0,4000}?)(?=\n```|\Z)", content, re.DOTALL
+    ):
+        block = m.group(0)
+        data_str = _extract_data_str(block)
+        if not data_str:
+            continue
+        if "append.py" in data_str:
+            violations.append(Violation(
+                rule="W12",
+                severity="critical",
+                detail=(
+                    "escalation template references append.py inside its data payload — "
+                    "suggested_actions must route through sanctioned mechanisms (config, "
+                    "dlq_triage, /u-improve re-adoption, respond_escalation.py), never "
+                    "direct log appends: a task_completed for work no worker performed "
+                    "is terminal forgery"
+                ),
+                line=content[: m.start()].count("\n") + 1,
+            ))
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Single file validation
 # ---------------------------------------------------------------------------
 
@@ -432,6 +470,7 @@ def check_file(path: Path) -> FileResult:
     violations.extend(_check_w09_review_only_artifacts(content, path))
     violations.extend(_check_w10_description_gate(content, path))
     violations.extend(_check_w11_inline_env(content, path))
+    violations.extend(_check_w12_escalation_no_forgery(content, path))
 
     return FileResult(
         file=str(path),

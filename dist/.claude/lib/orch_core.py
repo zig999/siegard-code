@@ -2963,6 +2963,25 @@ def default_config() -> dict[str, Any]:
         # re-invoke a stalled phase orchestrator, capped so a persistently stuck workflow
         # escalates to a human (E23_resume_budget_exhausted) instead of looping forever.
         # All accounting is derived from the log (orchestrator_resumed / _resume_requested).
+        # v2.36.0: liveness gate for recovery_tick's E26 — a log with events
+        # newer than quiet_seconds is being driven (possibly by another
+        # session's orchestrator); "left unattended" would be a false alarm.
+        # Calibration: false alarm measured at 107s after a live dispatch; the
+        # real "estalo" stall was ~324s quiet — 300s separates the two.
+        "recovery_policy": {
+            "quiet_seconds": 300,
+        },
+        # v2.36.0: context-budget thresholds, config-overridable (were hardcoded
+        # in estimate_spawn_context.py — a 234KB spec 6% over the ceiling had no
+        # operator lever). Values mirror the script's defaults.
+        "context_budget": {
+            "thresholds": {
+                "sdd":    {"warn": 30000, "block": 60000},
+                "dev":    {"warn": 40000, "block": 50000},
+                "review": {"warn": 20000, "block": 25600},
+                "test":   {"warn": 30000, "block": 60000},
+            },
+        },
         "supervisor_policy": {
             "enabled": True,
             "max_auto_resumes": 3,          # per phase, since its last phase_entered
