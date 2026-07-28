@@ -36,7 +36,18 @@ def main() -> int:
     print(f"Last seq : {state.last_seq}")
 
     if state.escalation:
-        print(f"ESCALATION: {state.escalation.get('code', '?')} — {state.escalation.get('reason', '')}")
+        # v2.36.0: an escalation followed by later log activity is history, not
+        # the current headline — flag it so a reader does not mistake a stale
+        # E26 for a live blocker (field incident: user alarmed by an escalation
+        # emitted 2 minutes into an actively-driven phase).
+        esc_seq = state.escalation.get("seq")
+        stale = ""
+        if isinstance(esc_seq, int) and state.last_seq > esc_seq:
+            stale = (
+                f" [stale? {state.last_seq - esc_seq} event(s) recorded after it — "
+                "activity continued]"
+            )
+        print(f"ESCALATION: {state.escalation.get('code', '?')} — {state.escalation.get('reason', '')}{stale}")
 
     if state.circuit_breaker:
         print(f"CIRCUIT BREAKER: {state.circuit_breaker.get('status', '?')}")

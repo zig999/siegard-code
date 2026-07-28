@@ -102,9 +102,13 @@ Default to surfacing uncertainty, not hiding it.
 ## Configuration
 
 <!-- MACHINE-PARSED — read via regex by orchestrator-dev and u-spec/u-dev.
-     These two fields are required. Do not rename or nest them. -->
+     These two fields are required. Do not rename or nest them.
+     template_version is a drift marker (v2.36.0): keep it equal to the value in
+     the shipped .claude/claude-md-target-template.md — preflight warns when your
+     CLAUDE.md falls behind the template it was authored from. -->
 domain: {frontend|backend|fullstack}
 specs_dir: {e.g. docs/specs}
+template_version: 2.36.0
 
 <!-- CONTEXT — read as LLM context by workers. Not parsed mechanically. -->
 

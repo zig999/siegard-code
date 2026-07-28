@@ -205,6 +205,31 @@ def _known_workflows(project_dir: Path, limit: int = 3) -> list[str]:
         return []
 
 
+def _touch_status(project_dir: Path, outcome: str) -> None:
+    """v2.36.0 guard telemetry — best-effort, never raises, races may drop a
+    count (acceptable). Written on every PROTECTED-PATH adjudication, so
+    'is the hook firing at all?' becomes a file-mtime question instead of the
+    40-minute forensic investigation it took in the field (marker absent was
+    ambiguous between hook-not-firing / CLI-without-agent_id / nobody-wrote)."""
+    try:
+        path = project_dir / ".orch" / "guard_status.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            status = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            status = {}
+        counts = status.get("counts") or {}
+        counts[outcome] = int(counts.get(outcome, 0)) + 1
+        status.update({
+            "last_adjudication": now_iso(),
+            "last_outcome": outcome,
+            "counts": counts,
+        })
+        path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _audit_warn(project_dir: Path, record: dict) -> None:
     """Best-effort append to the warn-mode audit file. Never raises."""
     try:
@@ -297,8 +322,10 @@ def main() -> int:
         if mode == "warn":
             record["status"] = "warned"
             _audit_warn(project_dir, {**record, "ts": now_iso(), "tool": tool_name})
+            _touch_status(project_dir, "warn")
             print(json.dumps(record, ensure_ascii=False), file=sys.stderr)
             return 0
+        _touch_status(project_dir, "deny")
         return _deny(record)
 
     # Pipeline-owned spec artifact.
@@ -312,6 +339,7 @@ def main() -> int:
             "tool": tool_name,
         }
         _audit_warn(project_dir, record)
+        _touch_status(project_dir, "warn")
         print(json.dumps(record, ensure_ascii=False), file=sys.stderr)
         return 0
 
@@ -334,6 +362,7 @@ def main() -> int:
             str(e.get("worker_id", "")).startswith(caller_agent_type)
             for e in in_flight
         ):
+            _touch_status(project_dir, "allow")
             return 0
         deny_reason = (
             f"subagent '{caller_agent_type or caller_agent_id}' does not match any "
@@ -344,6 +373,7 @@ def main() -> int:
             # Coarse mode: this host has never shown agent identity in a
             # PreToolUse payload, so "no agent_id" cannot distinguish the main
             # session from a worker — allow (documented residual).
+            _touch_status(project_dir, "allow")
             return 0
         # Exact mode: this host tags subagent payloads (capability marker
         # recorded from real evidence), so a payload WITHOUT agent_id is the
@@ -355,6 +385,7 @@ def main() -> int:
     else:
         deny_reason = "no pipeline worker is in flight"
 
+    _touch_status(project_dir, "deny")
     return _deny({
         "status": "blocked",
         "hook": "flow_guard",

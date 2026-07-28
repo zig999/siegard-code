@@ -456,3 +456,44 @@ class TestExactMode:
                 agent_id="abc", agent_type="u-spec-writer")
         caps2 = json.loads(self._marker(tmp_path).read_text(encoding="utf-8"))
         assert caps2["first_seen"] == first_seen
+
+
+# ─── telemetry (v2.36.0) — "is the hook firing?" as a file question ───────────
+
+class TestGuardTelemetry:
+    SPEC = "docs/specs/domains/auth/auth.spec.md"
+
+    def _status(self, tmp_path):
+        p = tmp_path / ".orch" / "guard_status.json"
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+    def test_deny_writes_status(self, tmp_path, monkeypatch, capsys):
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, tmp_path / self.SPEC)
+        assert rc == 2
+        status = self._status(tmp_path)
+        assert status["last_outcome"] == "deny"
+        assert status["counts"]["deny"] == 1
+
+    def test_allow_writes_status_and_counts_accumulate(self, tmp_path, monkeypatch, capsys):
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        _seed_task()
+        orch_core.register_worker("u-spec-writer-sdd_wf_writer-auth",
+                                  "sdd_wf_writer-auth", 1, phase="sdd")
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, tmp_path / self.SPEC)
+        assert rc == 0
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, tmp_path / self.SPEC)
+        assert rc == 0
+        status = self._status(tmp_path)
+        assert status["last_outcome"] == "allow"
+        assert status["counts"]["allow"] == 2
+
+    def test_unprotected_path_leaves_no_status(self, tmp_path, monkeypatch, capsys):
+        """Fast path stays fast — telemetry only on protected-path adjudications."""
+        _isolate_orch(tmp_path, monkeypatch)
+        _write_claude_md(tmp_path)
+        rc, _ = _invoke(monkeypatch, capsys, tmp_path, tmp_path / "src" / "app.py")
+        assert rc == 0
+        assert self._status(tmp_path) is None

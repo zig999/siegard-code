@@ -144,6 +144,23 @@ worker via its transcript (`ORCH_WORKER_ID` in the spawn prompt) and
 synthesizes missing terminals immediately instead of waiting out the stale
 threshold — older CLIs fall back to the liveness-gated path unchanged.
 
+### v2.36.0 hardening (field lessons)
+
+Context-budget thresholds are config-overridable
+(`context_budget.thresholds.<phase>` in `.orch/config.json`) and the estimator
+accepts `--sections` (R16): a large spec is estimated — and the worker spawned
+— section-scoped before a budget block can DLQ the task. Escalation
+`suggested_actions` are restricted to sanctioned remediation routes (rule W12
+in CI: no `append.py` inside escalation payloads — terminal forgery is never a
+remediation). `recovery_tick` gates E26 on log recency
+(`recovery_policy.quiet_seconds`, default 300s) so a workflow actively driven
+by another session no longer alarms as "left unattended", and `summary.py`
+flags escalations followed by later activity as stale. The flow guard writes
+`.orch/guard_status.json` on every protected-path adjudication, and preflight
+gained two soft checks (never blocking): `flow_guard_wired` and
+`template_version` (drift marker in the target CLAUDE.md machine-parsed
+block).
+
 ---
 
 ## Architecture invariants (P1–P12)
