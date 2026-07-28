@@ -145,6 +145,27 @@ def _provenance_errors(
     wid = workflow_id or baseline_data.get("workflow_id")
     baseline = baseline_data.get("artifacts") or {}
 
+    # v2.35.1 diagnostic degradation: a baseline recorded against the WRONG
+    # specs_dir (the mwoassistant field incident — env-default "specs" while
+    # CLAUDE.md declared docs/specs) cannot anchor provenance: every untouched
+    # pinned file would false-positive PROV-010 and the once-per-workflow
+    # idempotency blocks re-recording. Detect the mismatch deterministically
+    # and degrade to a diagnosed warning instead of failing the handoff.
+    try:
+        from orch_core import claude_md_specs_dir
+        declared = claude_md_specs_dir(project_dir)
+    except Exception:  # noqa: BLE001
+        declared = None
+    recorded = (baseline_data.get("specs_dir") or "").replace("\\", "/").strip("/")
+    if declared and recorded and recorded != declared:
+        return [], [
+            f"PROV: skipped — baseline (seq {baseline_seq}) was recorded against "
+            f"specs_dir {recorded!r} but CLAUDE.md declares {declared!r}; an empty/"
+            "misdirected baseline cannot anchor provenance for this workflow. "
+            "Provenance not enforced (diagnostic degradation, v2.35.1) — the next "
+            "workflow records a correct baseline via the shared resolver."
+        ]
+
     # Latest worker-notarized hash per path since the baseline (seq order —
     # read_events yields ascending seq, so plain assignment keeps the latest).
     notarized: dict[str, str] = {}

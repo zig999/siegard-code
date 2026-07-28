@@ -3043,6 +3043,81 @@ def default_config() -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Canonical specs_dir resolution (v2.35.1)
+#
+# Field incident (mwoassistant, 2026-07-28): record_spec_baseline.py resolved
+# specs_dir from env alone (default "specs") while the target's CLAUDE.md
+# declared `specs_dir: docs/specs` — the adoption baseline was recorded EMPTY
+# against the wrong directory, guaranteeing PROV-010 false positives at
+# handoff. generate_handoff_manifest.py and the sdd checkers carried the same
+# latent env-default. flow_guard.py already had the correct 4-tier chain; this
+# module-level resolver is that chain, extracted as THE single source. Any
+# component that needs specs_dir MUST call this — never os.environ directly.
+# ---------------------------------------------------------------------------
+
+# Machine-parsed contract line in the target CLAUDE.md (see
+# claude-md-target-template.md — "Do not rename or nest them").
+_SPECS_DIR_LINE_RE = re.compile(r"^specs_dir:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def claude_md_specs_dir(project_dir: Path | None = None) -> str | None:
+    """The specs_dir declared in the target CLAUDE.md machine-parsed block,
+    normalized (posix, no surrounding slashes), or None when absent/unfilled.
+    Template placeholders ({e.g. docs/specs}) are not values."""
+    root = project_dir if project_dir is not None else _orch_root
+    claude_md = Path(root) / "CLAUDE.md"
+    if not claude_md.exists():
+        return None
+    try:
+        m = _SPECS_DIR_LINE_RE.search(claude_md.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    if not m:
+        return None
+    value = m.group(1).replace("\\", "/").strip("/")
+    if not value or "{" in value or "}" in value:
+        return None
+    return value
+
+
+def resolve_specs_dir(
+    project_dir: Path | None = None, config: dict[str, Any] | None = None
+) -> str:
+    """Canonical specs_dir as a project-relative posix string.
+
+    Chain (first valid wins):
+      1. config guard.specs_dir (explicit operator override)
+      2. CLAUDE.md machine-parsed `specs_dir:` line
+      3. SPECS_DIR environment variable
+      4. "specs"
+    Never raises — resolution failures fall through the chain.
+    """
+    root = Path(project_dir) if project_dir is not None else _orch_root
+    if config is None:
+        try:
+            config = load_config()
+        except Exception:  # noqa: BLE001
+            config = {}
+    candidates: list[str] = []
+    override = (config.get("guard") or {}).get("specs_dir")
+    if isinstance(override, str) and override.strip():
+        candidates.append(override)
+    declared = claude_md_specs_dir(root)
+    if declared:
+        candidates.append(declared)
+    env = os.environ.get("SPECS_DIR")
+    if env:
+        candidates.append(env)
+    candidates.append("specs")
+    for cand in candidates:
+        cand = cand.replace("\\", "/").strip("/")
+        if not cand or "{" in cand or "}" in cand:
+            continue
+        return cand
+    return "specs"
+
+
 def load_config(config_path: Path | None = None) -> dict[str, Any]:
     """
     Loads .orch/config.json with defaults for missing fields.
@@ -3932,6 +4007,8 @@ __all__ = [
     # Config and retry
     "default_config",
     "load_config",
+    "claude_md_specs_dir",
+    "resolve_specs_dir",
     "RetryPolicy",
     "backoff_seconds",
     "load_retry_policy",

@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.35.0",
+  "version": "2.35.1",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-28T14:52:58Z",
+  "generated_at": "2026-07-28T19:09:25Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -57,7 +57,7 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "57220385e55b7f3a5d5b61bb58e129e27562760ef5a99077165bb0771b99870e"
+      "sha256": "9256f59e08480bab391e7b551a5fb95de0e2b530c5d2fc444f5793da1a8012ba"
     },
     {
       "path": "agents/orchestrator-review.md",
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "5daef53e38d6d0a45d83194ec0e070eb410e607e275e02c223b068c4a45b4669"
+      "sha256": "aa6643ac1d01c4392e07f5ab8f2486eda5d1996420bd53e4b5ec8a8fea2ce1cb"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -169,7 +169,7 @@
     },
     {
       "path": "hooks/flow_guard.py",
-      "sha256": "92b5c0ea1e80de901d5047ba43ae3275ac14b4a0e2982f59d64f8515761907cf"
+      "sha256": "03276069a9a25ee3a1b69a8f3bea5a74e21415ada51d0bae26886ee8e7f0e0ab"
     },
     {
       "path": "hooks/on_stop.py",
@@ -189,7 +189,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "822ad63a31c9ea54646b7b3e79d8cdc49dd85f74536cb642bb9fb3b4724205e0"
+      "sha256": "6775f0bc6a76b66f7bd64610e1fb05caf302d76bd160c321739febca627458e4"
     },
     {
       "path": "lib/sm_runner.py",
@@ -509,11 +509,11 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py",
-      "sha256": "09e355896b61ba288b8ec7b3e1b6afc75a1a2f180c6624e3152578402a528be4"
+      "sha256": "ab000a3852984923f12119d19a87ee3f9134fb72ea45637596d2f59e67a3956b"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py",
-      "sha256": "6f25c9bb649616456d868883e411fed6310cb1f3f568a89fc54436f430f31d36"
+      "sha256": "baeb899fb0645bf84640c3f489b9506021188c2a65202902cdd471dba66de7ca"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_spec_drift_reviewed.py",
@@ -529,7 +529,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/generate_handoff_manifest.py",
-      "sha256": "2076367a58acf3fc81954821abea5f431473a918e1b72bbd06119b9b533170c9"
+      "sha256": "ce7fb93f978e34dc7a369e13b84b9a21a1e32a764bc803c2e2e1317d6d253ea2"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/identify_invalid_domains.py",
@@ -537,7 +537,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/record_spec_baseline.py",
-      "sha256": "94ead8a58e6a9439da4468868c428631f3245f07d44879a89801f125844e788c"
+      "sha256": "8288c5ecc6490305b97c2f771d94e3f58ef33320eb04ebc694e18572da374c8f"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/scope.py",
@@ -701,7 +701,7 @@
     },
     {
       "path": "skills/u-handoff-validator/validate.py",
-      "sha256": "ba04902321e1117f6891378c4a036d6c374790f1dfc8d211c015f8d42c2a4522"
+      "sha256": "1369bf93b7b634560567d88ecf6567ac15d8aaaa9dae3468743c1e2fd284397a"
     },
     {
       "path": "skills/u-improve/SKILL.md",
@@ -1045,7 +1045,7 @@
     },
     {
       "path": "skills/u-worker-compliance/scripts/check_worker.py",
-      "sha256": "e91ed39a74e529cf71624d69c75414e2fb67abf36bd6bb81ad4078de2018897f"
+      "sha256": "0a943c253680447ec0d4e863b41e7ec2c1309a7ee300ee985b682396433170ff"
     }
   ]
 }

@@ -534,7 +534,8 @@ export SPECS_DIR="<SPECS_DIR from spawn prompt inputs>"
 **Record the spec adoption baseline (PROV, v2.35.0 — idempotent, before any dispatch):**
 
 ```bash
-python3 .claude/skills/phase-sdd-rules/scripts/record_spec_baseline.py --workflow-id "<workflow_id>"
+# Inline env (W11): exports do NOT survive across Bash calls — never rely on an earlier block.
+ORCH_PROJECT_DIR=<ORCH_PROJECT_DIR> SPECS_DIR=<SPECS_DIR> python3 .claude/skills/phase-sdd-rules/scripts/record_spec_baseline.py --workflow-id "<workflow_id>"
 ```
 
 The baseline snapshots the spec tree as "inherited state accepted" — provenance
@@ -1457,10 +1458,11 @@ python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py --wor
 
 # 2. Generate the handoff manifest (deterministic; reached only when both checks above are ok).
 #    generate_handoff_manifest.py applies the same scope to its handoff_allowed/compliance scan.
-python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
+#    Inline env (W11): exports do NOT survive across Bash calls.
+ORCH_PROJECT_DIR=<ORCH_PROJECT_DIR> SPECS_DIR=<SPECS_DIR> python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
 
-# 3. Validate the just-generated manifest (13 rules + sha256).
-python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
+# 3. Validate the just-generated manifest (13 rules + sha256 + PROV provenance).
+ORCH_PROJECT_DIR=<ORCH_PROJECT_DIR> SPECS_DIR=<SPECS_DIR> WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
 ```
 
 Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<ISO-8601>", "evidence": {...}}` and exits 0 when `status == "ok"` or 1 when `status == "blocked"`.
@@ -1500,10 +1502,11 @@ ORCH_WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-sdd-rules/scripts/ch
 python3 .claude/skills/phase-sdd-rules/scripts/check_error_codes_synced.py --workflow-id <workflow_id>
 
 # 2. Generate the handoff manifest (reached only when both checks above are ok).
-python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
+#    Inline env (W11): exports do NOT survive across Bash calls.
+ORCH_PROJECT_DIR=<ORCH_PROJECT_DIR> SPECS_DIR=<SPECS_DIR> python3 .claude/skills/phase-sdd-rules/scripts/generate_handoff_manifest.py --workflow-id <workflow_id>
 
-# 3. Validate the just-generated manifest (13 rules + sha256).
-python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
+# 3. Validate the just-generated manifest (13 rules + sha256 + PROV provenance).
+ORCH_PROJECT_DIR=<ORCH_PROJECT_DIR> SPECS_DIR=<SPECS_DIR> WORKFLOW_ID=<workflow_id> python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
 ```
 
 Each script returns `{"status": "ok"|"blocked", "check": "<id>", "timestamp": "<ISO-8601>", "evidence": {...}}` and exits 0 when `status == "ok"` or 1 when `status == "blocked"`.
@@ -1531,7 +1534,8 @@ git -C "$ORCH_PROJECT_DIR" add "$SPECS_DIR"
 git -C "$ORCH_PROJECT_DIR" commit -m "spec(sdd): handoff artifacts for <workflow_id>" || true
 
 # Deterministic gate: every artifact path in handoff-manifest.yaml is tracked and clean.
-python3 .claude/skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py
+# Inline env (W11): exports do NOT survive across Bash calls.
+ORCH_PROJECT_DIR=<ORCH_PROJECT_DIR> SPECS_DIR=<SPECS_DIR> python3 .claude/skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py
 ```
 
 If `check_sdd_artifacts_committed.py` returns `blocked` (an artifact untracked or with uncommitted changes) → fall through to the "criterion not met" handling; do NOT approve the exit.
