@@ -1,6 +1,6 @@
 ---
 name: u-fe-ui
-description: Translates feature.spec.md UI states (§2), transitions (§3), and flow.md navigation (FL-NN) into visual specifications — adds layout, component, token, and accessibility layer to what the Spec Team already defined. Produces one ui-epic-XX.md per Epic. Invoked by orchestrator-dev before the Developer agent starts an Epic.
+description: Spawned exclusively by orchestrator-dev under an active claim — never invoke directly; route work through /u-dev or /u-improve. Translates feature.spec.md UI states (§2), transitions (§3), and flow.md navigation (FL-NN) into visual specifications — adds layout, component, token, and accessibility layer to what the Spec Team already defined. Produces one ui-epic-XX.md per Epic. Invoked by orchestrator-dev before the Developer agent starts an Epic.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

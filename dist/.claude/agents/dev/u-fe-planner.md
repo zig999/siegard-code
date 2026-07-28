@@ -1,6 +1,6 @@
 ---
 name: u-fe-planner
-description: Transforms business context and raw requirements into a structured front-end backlog with Epics and Task Contracts. Handles both greenfield projects and existing codebases. Invoked by orchestrator-dev when the backlog is absent or needs refinement.
+description: Spawned exclusively by orchestrator-dev under an active claim — never invoke directly; route work through /u-dev or /u-improve. Transforms business context and raw requirements into a structured front-end backlog with Epics and Task Contracts. Handles both greenfield projects and existing codebases. Invoked by orchestrator-dev when the backlog is absent or needs refinement.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

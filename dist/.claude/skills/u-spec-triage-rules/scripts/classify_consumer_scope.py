@@ -32,8 +32,14 @@ pipeline time; a wrong `internal` skips the cross-domain validator on a publishe
 contract. The two errors are not symmetric, so the default is not symmetric.
 
 Usage:
-    python3 classify_consumer_scope.py --triage <path/to/triage.json>
+    # Production path — triage passes the array it holds in memory (Step 2.5b).
     python3 classify_consumer_scope.py --affected-specs '<json array>'
+
+    # Inspection path — for a triage.json that ALREADY exists. Do not use this
+    # from the triage skill itself: triage.json is written in Step 3, after this
+    # classification runs, so on a new workflow the file is absent (exit 1) and on
+    # a resumed workflow it still holds the previous run's affected_specs.
+    python3 classify_consumer_scope.py --triage <path/to/triage.json>
 
 Output (stdout, JSON, exit 0):
     {
@@ -149,9 +155,12 @@ def classify(affected_specs: list[dict]) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     group = ap.add_mutually_exclusive_group(required=True)
-    group.add_argument("--triage", help="path to triage.json")
     group.add_argument("--affected-specs",
-                       help="affected_specs as a JSON array (for testing)")
+                       help="affected_specs as a JSON array — the production path; "
+                            "pass the array the caller holds in memory")
+    group.add_argument("--triage",
+                       help="path to an EXISTING triage.json (inspection only — see "
+                            "the module docstring for why triage must not use this)")
     args = ap.parse_args()
 
     if args.triage:

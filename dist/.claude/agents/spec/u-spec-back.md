@@ -1,6 +1,6 @@
 ---
 name: u-spec-back
-description: Back-end spec specialist. Produces the .back.md for each domain with back-end technical decisions (stack, database, events, integrations). Never writes code, only specifications.
+description: Spawned exclusively by orchestrator-sdd under an active claim — never invoke directly; route requirements through /u-spec or /u-improve. Back-end spec specialist. Produces the .back.md for each domain with back-end technical decisions (stack, database, events, integrations). Never writes code, only specifications.
 user-invocable: false
 model: claude-opus-4-7
 tools:

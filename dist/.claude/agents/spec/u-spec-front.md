@@ -1,6 +1,6 @@
 ---
 name: u-spec-front
-description: Front-end spec specialist. Produces front.md (global), .feature.spec.md, .component.spec.md, and .flow.md. Thinks about user experience, UI states, navigation, and how the UI reacts to each API state. Runs after all Back Spec Agents complete — features may compose multiple domains.
+description: Spawned exclusively by orchestrator-sdd under an active claim — never invoke directly; route requirements through /u-spec or /u-improve. Front-end spec specialist. Produces front.md (global), .feature.spec.md, .component.spec.md, and .flow.md. Thinks about user experience, UI states, navigation, and how the UI reacts to each API state. Runs after all Back Spec Agents complete — features may compose multiple domains.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

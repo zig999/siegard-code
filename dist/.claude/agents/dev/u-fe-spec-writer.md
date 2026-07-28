@@ -1,6 +1,6 @@
 ---
 name: u-fe-spec-writer
-description: Creates component specification files (.component.spec.md) for shared frontend components identified during backlog planning. Activated by orchestrator-dev when a Task Contract has type "spec" and origin "component-spec-gate".
+description: Spawned exclusively by orchestrator-dev under an active claim — never invoke directly; route work through /u-dev or /u-improve. Creates component specification files (.component.spec.md) for shared frontend components identified during backlog planning. Activated by orchestrator-dev when a Task Contract has type "spec" and origin "component-spec-gate".
 user-invocable: false
 model: claude-opus-4-7
 tools:

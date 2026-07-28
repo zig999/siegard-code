@@ -305,6 +305,64 @@ def _check_w09_review_only_artifacts(content: str, path: Path) -> list[Violation
 
 
 # ---------------------------------------------------------------------------
+# W10 — the description must gate dispatch, not advertise capability
+#
+# Origin (v2.34.0 flow-discipline incident): a downstream host session offered
+# to execute the SDD flow inline — "write the spec insertions, regenerate the
+# manifest, run the five gates" — instead of routing through /u-improve. Agent
+# descriptions are the host model's auto-delegation routing signal; a
+# capability-only description ("Initial spec author. Transforms natural
+# language requirements into OpenAPI contracts...") is bait for exactly that
+# bypass. Every non-entry-point agent must therefore open its description with
+# a dispatch gate: who exclusively spawns it, plus "never invoke directly" and
+# the entry command to use instead. The gate clause comes FIRST — it is the
+# part the routing decision reads.
+# ---------------------------------------------------------------------------
+
+# Agents that ARE legitimate direct-invocation entry points (commands route to
+# them via the Agent tool): the meta-orchestrator and the reverse-spec pipeline
+# orchestrator. Everything else is dispatched by an orchestrator or a command
+# and must gate its description.
+ENTRY_POINT_AGENTS: frozenset[str] = frozenset({"orchestrator", "orchestrator-reverse-spec"})
+
+_W10_DISPATCH_RE = re.compile(r"(?:spawned|activated|dispatched)\s+exclusively\s+by", re.IGNORECASE)
+_W10_NEVER_RE = re.compile(r"never\s+invoke\s+directly", re.IGNORECASE)
+
+
+def _check_w10_description_gate(content: str, path: Path) -> list[Violation]:
+    if path.stem in ENTRY_POINT_AGENTS:
+        return []
+    fm = _parse_frontmatter(content)
+    desc = fm.get("description")
+    if not isinstance(desc, str):
+        desc = "" if desc is None else str(desc)
+    violations: list[Violation] = []
+    if not _W10_DISPATCH_RE.search(desc):
+        violations.append(Violation(
+            rule="W10",
+            severity="error",
+            detail=(
+                "description missing the dispatch-gate clause ('Spawned exclusively by "
+                "<dispatcher>') — descriptions are the host model's auto-delegation "
+                "routing signal; a capability-only description invites direct invocation "
+                "that bypasses claim/triage/validation"
+            ),
+        ))
+    if not _W10_NEVER_RE.search(desc):
+        violations.append(Violation(
+            rule="W10",
+            severity="error",
+            detail=(
+                "description missing 'never invoke directly' + the entry command to "
+                "route through (/u-spec, /u-improve, /u-dev, /u-drift, ...) — a blocked "
+                "path without a signposted correct door produces workarounds, not "
+                "compliance"
+            ),
+        ))
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Single file validation
 # ---------------------------------------------------------------------------
 
@@ -326,6 +384,7 @@ def check_file(path: Path) -> FileResult:
     violations.extend(_check_w05_register_worker_phase(content, path))
     violations.extend(_check_w08_gate_fields_declared(content, path))
     violations.extend(_check_w09_review_only_artifacts(content, path))
+    violations.extend(_check_w10_description_gate(content, path))
 
     return FileResult(
         file=str(path),

@@ -1,6 +1,6 @@
 ---
 name: u-fe-qa
-description: Tests front-end implementation against acceptance criteria, checks edge cases and regression, classifies bugs by severity, and produces a QA report. Updates documentation when relevant. Executes test-gate and full validation in sequential flow within a single invocation.
+description: Spawned exclusively by orchestrator-dev under an active claim — never invoke directly; route work through /u-dev or /u-improve. Tests front-end implementation against acceptance criteria, checks edge cases and regression, classifies bugs by severity, and produces a QA report. Updates documentation when relevant. Executes test-gate and full validation in sequential flow within a single invocation.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

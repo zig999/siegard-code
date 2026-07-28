@@ -6,7 +6,7 @@ description: >
   and requires human approval before transitioning. If verdicts are rejected, returns
   failing tasks to the dev phase. Semi-autonomous: QA runs without human intervention;
   final approval gate is mandatory.
-  Spawned exclusively by the meta-orchestrator.
+  Spawned exclusively by the meta-orchestrator — never invoke directly; workflows enter via /u-spec, /u-dev, /u-improve, or /u-orchestrator.
 model: claude-sonnet-4-6
 tools:
   - Agent

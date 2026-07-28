@@ -1,6 +1,6 @@
 ---
 name: u-be-developer
-description: Implements back-end Task Contracts one at a time — routes, controllers, services, repositories, models, migrations, middleware, and integrations. Also handles bug corrections from QA reports. Invoked by orchestrator-dev when a Task Contract is ready for development or correction.
+description: Spawned exclusively by orchestrator-dev under an active claim — never invoke directly; route work through /u-dev or /u-improve. Implements back-end Task Contracts one at a time — routes, controllers, services, repositories, models, migrations, middleware, and integrations. Also handles bug corrections from QA reports. Invoked by orchestrator-dev when a Task Contract is ready for development or correction.
 user-invocable: false
 model: claude-opus-4-7
 tools:

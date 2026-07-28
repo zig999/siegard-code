@@ -275,6 +275,45 @@ design_system:
 
 **Utility commands (ad-hoc, not phase entry points):** `/u-drift` (audit spec↔code drift, read-only report under `specs/_validation/`), `/u-fe-validate` (frontend spec-gate check), `/u-doc-cleanup` (strip historical noise from docs), `/u-cleanup` (runtime `.orch/` cleanup), `/u-orchestrator` (inspect derived phase/task state from the log).
 
+### Flow discipline (MANDATORY — applies to the assistant in this session)
+
+The entry points above are the ONLY doors into the pipeline. The main session
+(the assistant answering the user) MUST NOT execute pipeline steps itself.
+
+**Why:** spec artifacts pass through triage → writer → reviewer → validator →
+compliance before the dev phase consumes them. An artifact written directly by
+the main session skips every one of those checks but is indistinguishable from
+validated output once the manifest is regenerated — the dev phase would build
+on an unreviewed spec as if it were truth.
+
+**Artifact ownership:**
+
+| Artifact class | Owner | Main session may |
+|---|---|---|
+| `{specs_dir}/**` (specs, `handoff-manifest.yaml`, `_validation/`, `error-codes.md`) | Pipeline workers under an active claim | Read only |
+| `.orch/log.jsonl` | `append.py` / `emit.py` (append-only, hash-chained) | Read only |
+| `.orch/sessions/**` | Entry commands | Write via command steps |
+| `.orch/config.json`, `.orch/workflow.json` | Human operator | Edit only when the user asks |
+| Application source code | Dev-phase workers during workflows | Edit freely outside a workflow |
+
+**Intent → command routing (execute the command; do not simulate its steps):**
+
+| User intent | Route |
+|---|---|
+| New feature, new domain, new spec | `/u-spec` |
+| Change to an existing spec or behavior — bug fix, tweak, enhancement | `/u-improve` |
+| Resume, inspect, or advance a stalled workflow | `/u-orchestrator {workflow_id}` |
+| Generate specs from existing code | `/u-reverse-spec` |
+
+Never offer "I can just edit the spec / regenerate the manifest / run the gates
+myself" as a faster alternative — that is the exact bypass this section forbids.
+A `flow_guard` PreToolUse hook enforces this deterministically: a blocked
+Write/Edit on a pipeline-owned path returns `{"status":"blocked", ...}` with the
+command to run instead. Being blocked is expected behavior, not an error to
+work around — relay the redirect to the user. A human operator (never the
+assistant on their own initiative) may relax the guard via
+`{"guard": {"enforce": "warn"}}` in `.orch/config.json`.
+
 ### Retry policy (`.orch/config.json`)
 
 The engine uses exponential backoff with per-tier defaults. Override when project needs differ:

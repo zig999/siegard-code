@@ -1,6 +1,6 @@
 ---
 name: u-spec-writer
-description: Initial spec author. Transforms natural language requirements into OpenAPI contracts and business specification documents (.spec.md). First agent to act on a new domain.
+description: Spawned exclusively by orchestrator-sdd under an active claim — never invoke directly; route requirements through /u-spec or /u-improve. Initial spec author. Transforms natural language requirements into OpenAPI contracts and business specification documents (.spec.md). First agent to act on a new domain.
 user-invocable: false
 model: claude-opus-4-7
 tools:

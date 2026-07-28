@@ -1,6 +1,6 @@
 ---
 name: u-spec-triage
-description: Spec triage agent for the SDD phase. Always runs first via dedicated worker spawned by orchestrator-sdd. Detects trigger type (standard /u-spec vs improve /u-improve), classifies the requirement, identifies affected specs and domains, determines mode_hint and execution_policy, and writes triage.json to the session directory. Orchestrator-sdd reads triage.json to derive effective_mode and dispatch downstream workers. Not user-invocable.
+description: Spawned exclusively by orchestrator-sdd under an active claim — never invoke directly; route requirements through /u-spec or /u-improve. Spec triage agent for the SDD phase. Always runs first via dedicated worker spawned by orchestrator-sdd. Detects trigger type (standard /u-spec vs improve /u-improve), classifies the requirement, identifies affected specs and domains, determines mode_hint and execution_policy, and writes triage.json to the session directory. Orchestrator-sdd reads triage.json to derive effective_mode and dispatch downstream workers. Not user-invocable.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

@@ -1,6 +1,6 @@
 ---
 name: u-reverse-spec-analyzer
-description: Source code analysis agent for reverse engineering. Scans code using Glob, Grep, and Read to identify entities, endpoints, business rules, events, and UI structure. Produces analysis-report.md as input for the Reverse Spec Writer.
+description: Spawned exclusively by orchestrator-reverse-spec — never invoke directly; run /u-reverse-spec. Source code analysis agent for reverse engineering. Scans code using Glob, Grep, and Read to identify entities, endpoints, business rules, events, and UI structure. Produces analysis-report.md as input for the Reverse Spec Writer.
 user-invocable: false
 model: claude-sonnet-4-6
 tools:

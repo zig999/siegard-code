@@ -30,14 +30,45 @@ SGD-001 hardening:
   - structural precedence: an optional --project-domain (the target CLAUDE.md
     `domain:`) resolves a LOW-confidence decision in code instead of escalating.
 
+SGD-002 — artifact refinement (--affected-specs):
+    The conservative default above is a guess made from text alone, and it was
+    measured costing 2 workers (spec-front + front validator) on every
+    backend-only `/u-improve` whose description happens to use domain vocabulary
+    ("FSM", "máquina de estados", "remover campo X") — none of which is in either
+    signal list, so the classifier sees NO signals and defaults to fullstack. In
+    `/u-improve` the E99 gate that offers `force_backend_only` is bypassed, so the
+    guess was never correctable in the flow where it fired.
+
+    Once Step 2.1 has resolved `affected_specs`, the structural answer is already
+    on hand: every front artifact the front leg would write lives under
+    `{SPECS_DIR}/front/`. If the text carried no UI signal AND no affected spec is
+    a front artifact, there is no evidence anywhere that a front leg is needed.
+
+    This is not a new doctrine — `generate_handoff_manifest.py` already fails
+    closed on `stack in (fullstack, fe)` with no front artifacts present. That is
+    the same predicate, evaluated at the END of the phase, after the two workers
+    already ran. Here it is evaluated before dispatch, where it is free.
+
+    Deliberately narrow, so it can never recreate P0-1 from the other side:
+      - fires ONLY when ui_signals == [] (positive UI evidence always wins),
+      - fires ONLY on `fullstack` (it narrows the conservative default; it never
+        overturns a decision that had a signal behind it),
+      - fires ONLY when every affected_specs entry has a readable path (a missing
+        path is absence of evidence, which must not license a narrowing),
+      - never runs in the `-> fe` direction: with `greenfield:false` the back leg
+        is already gated by an empty `domains` list, so there is no cost to remove
+        and the symmetric change would be risk without return.
+
 Usage:
     classify_stack.py --requirement "<text>" [--project-domain frontend|backend]
+                      [--affected-specs '<json array>']
 
 Output (exit 0; exit 1 only on internal error):
     {"stack": "fe", "ui_task": true,
      "ui_signals": ["component"], "backend_signals": [],
      "rationale": "ui signals only -> fe", "confidence": "high",
-     "confidence_hint": "...", "structural_override": null}
+     "confidence_hint": "...", "structural_override": null,
+     "artifact_refinement": null}
 """
 from __future__ import annotations
 
@@ -175,13 +206,68 @@ def _confidence(stack: str, ui: list[str], backend: list[str]) -> tuple[str, str
     return "high", "ui+backend both clearly present -> fullstack"
 
 
-def classify(requirement: str, project_domain: str | None = None) -> dict:
+# --------------------------------------------------------------------------- #
+# SGD-002 — front-artifact predicate                                           #
+# Every artifact the front leg writes lives under `{SPECS_DIR}/front/`:         #
+#   front/front.md, front/features/*.feature.spec.md,                           #
+#   front/components/*.component.spec.md, front/_flows/*.flow.md,               #
+#   front/design-system/**, front/design-system-rules.md                        #
+# The path segment is matched exactly, so a domain named `storefront` is not a  #
+# front artifact. The filename suffixes are a second, independent route to the  #
+# same answer, for a triage entry recorded without the `front/` prefix.         #
+# --------------------------------------------------------------------------- #
+_FRONT_SEGMENTS: frozenset[str] = frozenset({"front", "design-system"})
+_FRONT_FILE_SUFFIXES: tuple[str, ...] = (
+    ".feature.spec.md", ".component.spec.md", ".flow.md",
+)
+_FRONT_FILENAMES: frozenset[str] = frozenset({"front.md", "design-system-rules.md"})
+
+
+def _is_front_artifact(path: str) -> bool:
+    """True when ``path`` is an artifact the front leg would author."""
+    segments = [s for s in path.replace("\\", "/").lower().split("/") if s]
+    if not segments:
+        return False
+    if _FRONT_SEGMENTS & set(segments):
+        return True
+    name = segments[-1]
+    return name.endswith(_FRONT_FILE_SUFFIXES) or name in _FRONT_FILENAMES
+
+
+def _readable_paths(affected_specs: list) -> list[str] | None:
+    """Paths of every affected spec, or None when ANY entry has no usable path.
+
+    The refinement below only ever narrows the stack, so it must not run on
+    partial evidence: one unreadable entry could be the front artifact that
+    justifies the front leg. None disables the refinement entirely.
+    """
+    paths: list[str] = []
+    for entry in affected_specs:
+        if isinstance(entry, str):
+            candidate = entry.strip()
+        elif isinstance(entry, dict):
+            candidate = str(entry.get("path") or "").strip()
+        else:
+            return None
+        if not candidate:
+            return None
+        paths.append(candidate)
+    return paths
+
+
+def classify(requirement: str, project_domain: str | None = None,
+             affected_specs: list | None = None) -> dict:
     """Pure function: requirement text -> stack decision envelope.
 
     ``project_domain`` (optional) is the target project's declared CLAUDE.md
     ``domain:`` — a structural signal stronger than incidental keywords. It is
     applied ONLY to resolve a low-confidence decision (never to override a
     high-confidence one), so a genuine fullstack requirement still surfaces.
+
+    ``affected_specs`` (optional, SGD-002) is the Step 2.1 output. It refines the
+    conservative `fullstack` default to `be` when neither the text nor the
+    affected artifacts carry any front evidence. See the module docstring for the
+    four guards that keep this from recreating P0-1 in reverse.
     """
     text = requirement or ""
     ui = _matches(text, _UI_PATTERNS)
@@ -213,6 +299,23 @@ def classify(requirement: str, project_domain: str | None = None) -> dict:
         if structural_override:
             confidence_hint = f"structural override applied ({structural_override}) — declared project domain"
 
+    # SGD-002: artifact refinement. Runs after the domain override so an
+    # explicitly declared `domain: frontend` (which yields `fe`) is never
+    # narrowed by it — an author's declaration outranks inferred structure.
+    artifact_refinement = None
+    if affected_specs and stack == "fullstack" and not ui:
+        paths = _readable_paths(affected_specs)
+        if paths is not None and not any(_is_front_artifact(p) for p in paths):
+            artifact_refinement = "fullstack->be"
+            stack, confidence = "be", "high"
+            rationale = ("no UI signal in the text and no front artifact among "
+                         "affected_specs -> be")
+            confidence_hint = (
+                f"artifact refinement applied ({artifact_refinement}) — "
+                f"{len(paths)} affected spec(s), none under front/; "
+                "the front leg would have had nothing to write"
+            )
+
     return {
         "stack": stack,
         "ui_task": stack in ("fe", "fullstack"),
@@ -222,6 +325,7 @@ def classify(requirement: str, project_domain: str | None = None) -> dict:
         "confidence": confidence,
         "confidence_hint": confidence_hint,
         "structural_override": structural_override,
+        "artifact_refinement": artifact_refinement,
     }
 
 
@@ -233,8 +337,27 @@ def main() -> int:
     ap.add_argument("--project-domain", default=None,
                     help="Target project's declared CLAUDE.md domain (frontend|backend); "
                          "structural tie-breaker for low-confidence decisions.")
+    ap.add_argument("--affected-specs", default=None,
+                    help="Step 2.1 affected_specs as a JSON array (objects with a "
+                         "`path`, or plain path strings). Refines the conservative "
+                         "fullstack default to `be` when no front artifact is in scope.")
     args = ap.parse_args()
-    print(json.dumps(classify(args.requirement, args.project_domain)))
+
+    affected: list | None = None
+    if args.affected_specs is not None:
+        try:
+            affected = json.loads(args.affected_specs)
+        except json.JSONDecodeError as exc:
+            print(json.dumps({"error": "invalid_json",
+                              "detail": f"--affected-specs: {exc}"}), file=sys.stderr)
+            return 1
+        if not isinstance(affected, list):
+            print(json.dumps({"error": "invalid_json",
+                              "detail": "--affected-specs must be a JSON array"}),
+                  file=sys.stderr)
+            return 1
+
+    print(json.dumps(classify(args.requirement, args.project_domain, affected)))
     return 0
 
 
