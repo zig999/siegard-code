@@ -41,6 +41,14 @@ GLOBAL_SCAN_ALLOWLIST: dict[str, str] = {
         "scope is derivable yet. It gates nothing per-domain and repairs nothing: "
         "it only classifies the entry point as greenfield or not."
     ),
+    "record_spec_baseline.py": (
+        "v2.35.0 PROV adoption baseline. Global BY REQUIREMENT: the baseline is "
+        "the 'inherited state accepted' snapshot that legitimizes every file NOT "
+        "touched by the workflow — scoping it to affected domains would leave the "
+        "rest of the tree unprovenanced and fail PROV-010 on every untouched "
+        "domain at handoff. It gates nothing per-domain and repairs nothing: it "
+        "records hashes once per workflow, before any dispatch."
+    ),
 }
 
 _GLOB_RE = re.compile(r"\.r?glob\(")

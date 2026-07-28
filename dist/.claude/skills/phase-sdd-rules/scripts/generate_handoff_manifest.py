@@ -368,6 +368,33 @@ def generate(project_dir: Path, specs_dir: Path, workflow_id: str) -> dict:
     manifest_path = specs_dir / "handoff-manifest.yaml"
     manifest_path.write_text(_to_yaml(manifest), encoding="utf-8")
 
+    # A2' (v2.35.0): notarize the generated manifest in the log. The event proves
+    # the manifest on disk is the one THIS deterministic generator produced —
+    # u-handoff-validator PROV-020/030 verify against it instead of trusting the
+    # self-asserted delivered_by string. Best-effort: a missing/broken log must
+    # not block generation (the validator then degrades PROV to a warning, A6').
+    notarized = False
+    try:
+        _lib = Path(__file__).resolve().parents[3] / "lib"
+        if str(_lib) not in sys.path:
+            sys.path.insert(0, str(_lib))
+        from orch_core import EventType, append_event  # noqa: PLC0415
+        append_event(
+            agent="handoff-generator",
+            event_type=EventType.HANDOFF_MANIFEST_GENERATED.value,
+            data={
+                "workflow_id": workflow_id,
+                "manifest_path": str(manifest_path),
+                "manifest_id": manifest["handoff"]["id"],
+                "manifest_sha256": hashlib.sha256(
+                    manifest_path.read_bytes()
+                ).hexdigest(),
+            },
+        )
+        notarized = True
+    except Exception:  # noqa: BLE001
+        pass
+
     return {
         "status": "ok",
         "check": CHECK_ID,
@@ -376,6 +403,7 @@ def generate(project_dir: Path, specs_dir: Path, workflow_id: str) -> dict:
         "domains": [d["name"] for d in domains],
         "stack_implied": stack_implied,
         "reason": triage_reason,
+        "notarized": notarized,
     }
 
 

@@ -76,11 +76,20 @@ def evaluate() -> dict:
     validator_status = None
     validator_errors: list = []
     try:
+        # v2.35.0: forward project/workflow context so validate.py can evaluate
+        # PROV (provenance vs the log). WORKFLOW_ID env is optional — validate.py
+        # derives it from the newest baseline when absent, and degrades PROV to
+        # warnings when no baseline exists (A6' migration).
+        cmd = [sys.executable, str(_VALIDATE),
+               "--manifest", str(_MANIFEST_FILE),
+               "--specs-dir", str(_PROJECT_DIR),
+               "--caller", "u-spec-orchestrator",
+               "--project-dir", str(_PROJECT_DIR)]
+        wid = os.environ.get("WORKFLOW_ID")
+        if wid:
+            cmd += ["--workflow-id", wid]
         proc = subprocess.run(
-            [sys.executable, str(_VALIDATE),
-             "--manifest", str(_MANIFEST_FILE),
-             "--specs-dir", str(_PROJECT_DIR),
-             "--caller", "u-spec-orchestrator"],
+            cmd,
             capture_output=True, text=True,
         )
         env = json.loads(proc.stdout or "{}")

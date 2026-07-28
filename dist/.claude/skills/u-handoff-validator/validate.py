@@ -7,11 +7,42 @@ including sha256 content integrity, emits a handoff-validation-envelope to stdou
 and exits non-zero on any blocking error. Replaces the prompt-trusted skill
 (A3-F1) and gives the SDD->dev gate a real fail-closed check (C3/C4).
 
+PROV rules (v2.35.0 — provenance, not just integrity). HDF-020/021 prove the
+manifest matches the FILES; they cannot prove the files came from the PIPELINE
+— a freelance edit followed by manifest regeneration passes every integrity
+gate. PROV closes that: the append-only, hash-chained log acts as a notary
+(worker task_completed events carry artifacts_sha256 computed by emit.py; the
+sdd phase records a spec_baseline_recorded snapshot at entry; the generator
+appends handoff_manifest_generated), and PROV verifies the manifest against
+the log — which does not rewrite.
+
+  PROV-010  every pinned artifact sha256 equals the latest log-notarized hash
+            for that path (worker terminal after the baseline, latest seq wins)
+            OR the baseline hash (file untouched during the workflow)
+  PROV-020  the manifest file's own sha256 equals the hash recorded by the
+            latest handoff_manifest_generated event for this workflow.
+            Scope note: this proves the manifest is the generator's output
+            (freshness/derivation), not WHO ran the generator — content
+            authorship is PROV-010's job
+  PROV-030  a handoff_manifest_generated event exists for this workflow —
+            delivered_by is backed by generation evidence (P8), not by the
+            self-asserted const string alone
+
+Degradation (A6', migration): PROV runs only when a spec_baseline_recorded
+event exists for the workflow. No baseline (pre-2.35 workflow, or log absent)
+-> PROV checks are emitted as warnings, never errors — upgrading mid-flight
+targets must not break.
+
 FLOW-060..063 (chain consistency vs validation-result) are intentionally out of
 scope here — this validates a single manifest, not the spec->handoff chain.
 
 Usage:
     validate.py --manifest <path> --specs-dir <dir> [--caller u-spec-orchestrator]
+                [--project-dir <dir>] [--workflow-id <wid>]
+
+--workflow-id omitted -> derived from the newest spec_baseline_recorded event
+(single-active-workflow heuristic; concurrent workflows in one project should
+always pass it explicitly).
 
 Exit codes: 0 = valid, 1 = invalid OR internal error (fail-closed).
 """
@@ -20,6 +51,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -61,6 +93,121 @@ def _sha256_errors(pkgs: list, specs_dir: Path, code: str) -> list[str]:
                 f"(pinned {str(pinned)[:12]}…, actual {actual[:12]}…)"
             )
     return errs
+
+
+def _load_event_data(event) -> dict:
+    """Event data with blob refs resolved (baselines can be externalized)."""
+    from orch_core import is_blob_ref, load_blob_data
+    data = event.data
+    if is_blob_ref(data):
+        try:
+            return load_blob_data(event)
+        except Exception:  # noqa: BLE001
+            return {}
+    return data
+
+
+def _provenance_errors(
+    manifest: dict, manifest_path: Path, specs_dir: Path,
+    project_dir: Path, workflow_id: str | None,
+) -> tuple[list[str], list[str]]:
+    """PROV-010/020/030 — returns (errors, warnings). See module docstring."""
+    try:
+        import orch_core
+        from orch_core import EventType, read_events
+        # orch_core resolves its path globals from ORCH_PROJECT_DIR at import
+        # time; honor the explicit --project-dir regardless of import order.
+        base = project_dir / ".orch"
+        orch_core.ORCH_DIR = base
+        orch_core.LOG_PATH = base / "log.jsonl"
+        orch_core.BLOBS_DIR = base / "blobs"
+        events = list(read_events())
+    except Exception as exc:  # noqa: BLE001
+        return [], [f"PROV: skipped — log unreadable ({exc})"]
+    if not events:
+        return [], ["PROV: skipped — no orchestration log"]
+
+    # Locate the workflow's baseline (latest one for the id; without an id,
+    # the newest baseline overall — single-active-workflow heuristic).
+    baseline_event = None
+    for event in events:
+        if event.event_type != EventType.SPEC_BASELINE_RECORDED.value:
+            continue
+        data = _load_event_data(event)
+        if workflow_id is None or data.get("workflow_id") == workflow_id:
+            baseline_event = (event.seq, data)
+    if baseline_event is None:
+        return [], [
+            "PROV: skipped — no spec_baseline_recorded for this workflow "
+            "(pre-2.35 workflow); provenance not enforced (A6' migration)"
+        ]
+    baseline_seq, baseline_data = baseline_event
+    wid = workflow_id or baseline_data.get("workflow_id")
+    baseline = baseline_data.get("artifacts") or {}
+
+    # Latest worker-notarized hash per path since the baseline (seq order —
+    # read_events yields ascending seq, so plain assignment keeps the latest).
+    notarized: dict[str, str] = {}
+    generated = None
+    for event in events:
+        if event.seq <= baseline_seq:
+            continue
+        if event.event_type == EventType.TASK_COMPLETED.value:
+            data = _load_event_data(event)
+            for path, digest in (data.get("artifacts_sha256") or {}).items():
+                notarized[path.replace("\\", "/")] = digest
+        elif event.event_type == EventType.HANDOFF_MANIFEST_GENERATED.value:
+            data = _load_event_data(event)
+            if data.get("workflow_id") == wid:
+                generated = data
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # PROV-010 — pinned hashes must be log-notarized (worker) or baseline (untouched)
+    project_res = project_dir.resolve()
+    for code, pkgs in (("backend_package", manifest.get("backend_package") or []),
+                       ("frontend_package", manifest.get("frontend_package") or [])):
+        for p in pkgs:
+            if not isinstance(p, dict) or not p.get("path") or p.get("sha256") is None:
+                continue  # structural problems are HDF-020/021's job
+            rel = p["path"]
+            try:
+                key = (specs_dir / rel).resolve().relative_to(project_res).as_posix()
+            except (ValueError, OSError):
+                key = str(rel).replace("\\", "/")
+            pinned = p["sha256"]
+            worker_hash = notarized.get(key)
+            baseline_hash = baseline.get(key)
+            if pinned == worker_hash:
+                continue  # produced by a pipeline worker during this workflow
+            if worker_hash is None and pinned == baseline_hash:
+                continue  # untouched since adoption baseline
+            errors.append(
+                f"PROV-010: {key} ({code}) has no provenance — pinned "
+                f"{str(pinned)[:12]}… matches neither a worker-notarized hash "
+                f"({str(worker_hash)[:12] + '…' if worker_hash else 'none'}) nor the "
+                f"adoption baseline ({str(baseline_hash)[:12] + '…' if baseline_hash else 'absent'}). "
+                "The file was modified outside the pipeline after the baseline."
+            )
+
+    # PROV-020 / PROV-030 — manifest backed by generation evidence
+    if generated is None:
+        errors.append(
+            "PROV-030: no handoff_manifest_generated event for this workflow — "
+            "delivered_by has no generation evidence in the log (P8)"
+        )
+    else:
+        actual = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        recorded = generated.get("manifest_sha256")
+        if actual != recorded:
+            errors.append(
+                f"PROV-020: manifest sha256 {actual[:12]}… differs from the hash "
+                f"recorded at generation ({str(recorded)[:12]}…) — the manifest on "
+                "disk is not the generator's output"
+            )
+
+    return errors, warnings
 
 
 def validate(manifest: dict, specs_dir: Path, caller: str) -> dict:
@@ -143,6 +290,10 @@ def main() -> int:
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--specs-dir", required=True)
     ap.add_argument("--caller", default="u-spec-orchestrator")
+    ap.add_argument("--project-dir", default=os.environ.get("ORCH_PROJECT_DIR", "."),
+                    help="project root for provenance log lookup (PROV rules)")
+    ap.add_argument("--workflow-id", default=os.environ.get("WORKFLOW_ID") or None,
+                    help="workflow to scope PROV against; derived from the newest baseline when omitted")
     args = ap.parse_args()
 
     manifest_path = Path(args.manifest)
@@ -165,6 +316,21 @@ def main() -> int:
         return 1
 
     result = validate(manifest, Path(args.specs_dir), args.caller)
+
+    # PROV (v2.35.0) — provenance against the log; fail-soft on internal errors
+    # (a broken PROV lookup must not mask the 13 structural rules' verdict).
+    try:
+        prov_errors, prov_warnings = _provenance_errors(
+            manifest, manifest_path, Path(args.specs_dir),
+            Path(args.project_dir), args.workflow_id,
+        )
+        result["errors"].extend(prov_errors)
+        result["warnings"].extend(prov_warnings)
+        if prov_errors:
+            result["status"] = "invalid"
+    except Exception as exc:  # noqa: BLE001
+        result["warnings"].append(f"PROV: internal error, provenance not evaluated ({exc})")
+
     print(json.dumps(result))
     return 0 if result["status"] == "valid" else 1
 

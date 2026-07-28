@@ -1,15 +1,15 @@
 {
   "framework": "siegard-code",
-  "version": "2.34.0",
+  "version": "2.35.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-28T13:49:44Z",
+  "generated_at": "2026-07-28T14:52:58Z",
   "hash_normalization": "text-lf",
   "files": [
     {
       "path": "ESCALATION_CODES.md",
-      "sha256": "81ad2efe898b3da6169c7bbde0f450e3562ef556cb1cbac27888d4c3b01eeb2d"
+      "sha256": "9535280994b8fa832f34fdf5950e6099753e74bedf008bb7379bb3f5b69c6bb2"
     },
     {
       "path": "agents/dev/u-architecture-reviewer.md",
@@ -57,7 +57,7 @@
     },
     {
       "path": "agents/orchestrator-dev.md",
-      "sha256": "4c3afd7b3ac4457a5985fda048daa3df9dd1ffb657e2c16fd35f9fddb1d94d3f"
+      "sha256": "57220385e55b7f3a5d5b61bb58e129e27562760ef5a99077165bb0771b99870e"
     },
     {
       "path": "agents/orchestrator-review.md",
@@ -65,7 +65,7 @@
     },
     {
       "path": "agents/orchestrator-sdd.md",
-      "sha256": "fd91b267b371de81c7ca71f4a808a3e106297228461a95eb3526e29eef9ae3c7"
+      "sha256": "5daef53e38d6d0a45d83194ec0e070eb410e607e275e02c223b068c4a45b4669"
     },
     {
       "path": "agents/orchestrator-test.md",
@@ -169,7 +169,7 @@
     },
     {
       "path": "hooks/flow_guard.py",
-      "sha256": "565150e3b54d4a6e216c87c62c51cc2fc294d9000090440e10fdf7f9314c7036"
+      "sha256": "92b5c0ea1e80de901d5047ba43ae3275ac14b4a0e2982f59d64f8515761907cf"
     },
     {
       "path": "hooks/on_stop.py",
@@ -177,7 +177,7 @@
     },
     {
       "path": "hooks/on_subagent_stop.py",
-      "sha256": "40ce6e22a14c83b6faf1d3ceb28c56b66206b62a07a54254ea3445c4d5f95abf"
+      "sha256": "bf76f84cb68498491017d1d110f85d5aa6500b11e9c75b15a3325fca83d095b0"
     },
     {
       "path": "lib/__init__.py",
@@ -189,7 +189,7 @@
     },
     {
       "path": "lib/orch_core.py",
-      "sha256": "b5e0cf7a32e1b3c2a4dda1f586bad6a1a594d83ddf5be04f0dd0addc00bb4108"
+      "sha256": "822ad63a31c9ea54646b7b3e79d8cdc49dd85f74536cb642bb9fb3b4724205e0"
     },
     {
       "path": "lib/sm_runner.py",
@@ -349,7 +349,7 @@
     },
     {
       "path": "skills/orch-report/scripts/emit.py",
-      "sha256": "caca976b0802f03cb759caa551d784d2f2b55be05f0408e6bcd3ae608a7421cc"
+      "sha256": "41954ab7e2d6b89d0f06122faf331adf76e0cb73b9a21aa69c7ab7f393ed23da"
     },
     {
       "path": "skills/orch-state/SKILL.md",
@@ -509,7 +509,7 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py",
-      "sha256": "e4f83b147ff348f8d83d9f79738751925a3402dc2854a5efc3d6dd6e9e9ecc0f"
+      "sha256": "09e355896b61ba288b8ec7b3e1b6afc75a1a2f180c6624e3152578402a528be4"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/check_sdd_artifacts_committed.py",
@@ -529,11 +529,15 @@
     },
     {
       "path": "skills/phase-sdd-rules/scripts/generate_handoff_manifest.py",
-      "sha256": "eb3df4e1e1cea2e8404391703dae358787853642075ac04cd6b008d1e653acce"
+      "sha256": "2076367a58acf3fc81954821abea5f431473a918e1b72bbd06119b9b533170c9"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/identify_invalid_domains.py",
       "sha256": "79f854a23d8b7e5d07d1f92faf295edee0588cda5da0b975bb6e22e486f26a49"
+    },
+    {
+      "path": "skills/phase-sdd-rules/scripts/record_spec_baseline.py",
+      "sha256": "94ead8a58e6a9439da4468868c428631f3245f07d44879a89801f125844e788c"
     },
     {
       "path": "skills/phase-sdd-rules/scripts/scope.py",
@@ -689,7 +693,7 @@
     },
     {
       "path": "skills/u-handoff-validator/SKILL.md",
-      "sha256": "c7d98c130de2cb06f18f86f372419c4374ffd8d52c3209a7c12b4f9f158087e5"
+      "sha256": "70d607681dbac6098936419e8b5254d6f6f05f98638bd11ea625f737fc03bc06"
     },
     {
       "path": "skills/u-handoff-validator/rules.yaml",
@@ -697,7 +701,7 @@
     },
     {
       "path": "skills/u-handoff-validator/validate.py",
-      "sha256": "4f7d8383302b476b5e05b314369c37190cf87f36e88e7b183bcfbe3b5520703e"
+      "sha256": "ba04902321e1117f6891378c4a036d6c374790f1dfc8d211c015f8d42c2a4522"
     },
     {
       "path": "skills/u-improve/SKILL.md",

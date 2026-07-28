@@ -317,17 +317,61 @@ print(json.dumps({'stack': stack}))
 Store `stack`. Set `handoff_type = "fast_track"`, `dev_impact = ""`, `changed_files = []`.
 Proceed directly to Step 3 — do NOT run `check_handoff_manifest_approved.py`.
 
-Run the criterion checker to validate the manifest (standard and spec_change_required improve flows only):
+Run the criterion checker to validate the manifest (standard and spec_change_required improve flows only). Export `WORKFLOW_ID` first so provenance (PROV, v2.35.0) is scoped to this workflow:
 
 ```bash
+export WORKFLOW_ID="$workflow_id"
 python3 .claude/skills/phase-sdd-rules/scripts/check_handoff_manifest_approved.py
 ```
 
-If `"met": false`:
+If `"met": false` AND any entry in `evidence.validator_errors` starts with `PROV-`:
+
+The manifest failed **provenance**, not structure — a spec artifact was modified outside the pipeline after the adoption baseline (or the manifest on disk is not the generator's output). Emit the dedicated escalation and stop (substitute placeholders):
+
+```bash
+python3 .claude/skills/orch-log/scripts/append.py \
+  --agent orchestrator-dev \
+  --event-type escalation \
+  --data '{"code":"E25_unprovenanced_artifact","severity":"critical","reason":"handoff manifest failed provenance validation: <first PROV-* errors, verbatim>","evidence":[<last_seq>],"suggested_actions":["run /u-improve <workflow_id> to re-adopt the out-of-pipeline change through triage -> writer -> reviewer -> validator (check_structural_diff re-legitimizes it)","if a human made the edit deliberately and accepts it as-is: re-run /u-spec so the pipeline re-validates and re-notarizes the tree","inspect .orch/guard_warnings.jsonl and the log around the baseline seq to identify what wrote the file"]}'
+```
+
+```json
+{"status": "escalated", "last_seq": <last_seq>, "summary": "handoff manifest failed PROV — spec artifacts modified outside the pipeline; see E25_unprovenanced_artifact"}
+```
+Stop.
+
+If `"met": false` (no `PROV-` errors — structural/integrity failure):
 ```json
 {"status": "blocked", "last_seq": <last_seq>, "summary": "handoff-manifest.yaml not found or not approved — sdd phase must complete first"}
 ```
 Stop.
+
+If `"met": true` — **emit the consumption receipt (task-08 loop closure)** before proceeding, so consumed/orphan handoff state is derivable from the log (P1/P12). Read `handoff.id` from the manifest and compute its hash:
+
+```bash
+python3 -c "
+import hashlib, json, os, sys
+sys.path.insert(0, '.claude/lib')
+from pathlib import Path
+from orch_core import EventType, append_event
+from minimal_yaml import load
+specs_dir = Path(os.environ.get('SPECS_DIR', 'specs'))
+mp = specs_dir / 'handoff-manifest.yaml'
+manifest = load(mp.read_text(encoding='utf-8'))
+event = append_event(
+    agent='orchestrator-dev',
+    event_type=EventType.HANDOFF_RECEIPT.value,
+    data={
+        'manifest_id': (manifest.get('handoff') or {}).get('id', 'unknown'),
+        'manifest_sha256': hashlib.sha256(mp.read_bytes()).hexdigest(),
+        'consumed_by': 'orchestrator-dev',
+    },
+)
+print(json.dumps({'receipt_seq': event.seq}))
+"
+```
+
+Idempotency note: on re-invocation a duplicate receipt for the same `manifest_id` is harmless — `consumed_manifest_ids()` derives a set.
 
 **Detect stack and handoff context:**
 
