@@ -259,6 +259,25 @@ python3 .claude/skills/u-spec-validation/scripts/verify_evidence.py \
 Claims marked `unverified: true` are **warnings**, not blockers: the worker admitted a gap instead of
 inventing a value, which is the behaviour being encouraged. List them so a human can decide.
 
+## BR pair discipline (mandatory, deterministic)
+
+`.spec.md` is the single normative source for WHAT each rule is; a `.back.md` BR cites its
+`Source rule` and declares only HOW it is enforced (TEMPLATE.back.md §3). Duplicated rule text
+removes the incentive to compare the two files — measured in the field: copies diverged
+(spec said 8 columns, back said 9; numbering claimed to mirror and did not) and no gate noticed.
+Like R04b, this check is a script and its exit code is binding:
+
+```bash
+python3 .claude/skills/u-spec-validation/scripts/check_br_pairs.py \
+  --specs-dir "$SPECS_DIR" --domain <domain>
+```
+
+- **exit 0** → every back BR cites a resolvable `Source rule`. `restatement_suspected` entries in
+  `violations[]` are **warnings** — list them with `responsible: u-spec-back`.
+- **exit 2** → `missing_source_citation` or `unresolved_citation`. **Blocking** issue with
+  `responsible: u-spec-back`. Record each entry from `violations[]` verbatim.
+- **exit 1** → script error; report it and return blocked rather than passing silently.
+
 > **Why a script and not a reading.** Your other checks are internal-consistency checks — cross-refs,
 > error codes, state coverage — and they are all satisfiable without the spec being *true about the
 > code*. That is how a spec passed five workers while declaring three method signatures that do not

@@ -19,11 +19,16 @@ user-invocable: false
 
 ## Business Rules Checklist
 
+- [ ] Each BR cites its `Source rule` (`{domain}.spec.md BR-NN`) — the `.spec.md` is the single normative source; the back BR never restates WHAT the rule is
+- [ ] `Description` declares only HOW the rule is enforced: guards, edge cases, extension strategy, implementation artifacts
+- [ ] `Where to validate` holds pointers (layer · file · symbol · test name) — never test plans or fixture code (test requirements live in u-be-standards)
+- [ ] `Error returned` points to the `.spec.md` §6 Error Behaviors row — never redeclares the error table
 - [ ] Each BR references the UC that originates it (`UC-NN`)
 - [ ] Validation layer specified for each BR (API gateway | service | repository)
 - [ ] Error code registered in global catalog for each BR violation
 - [ ] Edge cases documented for each BR (what happens at boundary values)
 - [ ] Conflict resolution documented when two BRs can contradict each other
+- [ ] BR titles and bodies describe the current state only — no version markers (`(v1.2.0: ...)`) or migration narratives; history belongs to the Changelog, git, and `decisions.md`
 - [ ] If a domain concept supports multiple implementations that may grow (e.g., payment method, notification channel, export format), extension strategy declared: `polymorphism` | `strategy pattern` | `closed enum + factory`. If closed (variants will not grow), say so explicitly. Never left implicit.
 
 ## State Machine Checklist
@@ -41,6 +46,12 @@ user-invocable: false
 - [ ] Payload schema fields typed with JSON schema or TypeScript equivalent
 - [ ] At-least-once or exactly-once delivery semantics declared
 - [ ] Event versioning strategy declared (if events are persisted or shared cross-service)
+
+## Changelog Checklist
+
+- [ ] Each entry `Description` is a single sentence, max 200 characters (what changed + which sections touched)
+- [ ] No incident narratives, before/after comparisons, or rationale in entries — that detail lives in git history and the orchestration log
+- [ ] Max 10 rows — oldest rows collapsed into a single `rollup` row when exceeded
 
 ## Quality Gate
 

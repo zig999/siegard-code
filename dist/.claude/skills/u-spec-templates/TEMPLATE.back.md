@@ -46,12 +46,16 @@
 ## 3. Business Rules (BR)
 
 > Every BR references a UC from .spec.md. BR without UC = orphan (Validator blocking).
+> `.spec.md` is the single normative source for WHAT each rule is. A back BR never restates
+> the rule — it cites its source BR and declares only HOW the rule is enforced.
+> Restatement is a Validator finding (`check_br_pairs.py`).
 
 ### BR-01 -- {Name}
 **Related UC:** UC-{NN}
-**Where to validate:** {controller \| service \| middleware}
-**Description:** {objective and testable rule}
-**Error returned:** HTTP {status} -- error.code: `{CODE}`
+**Source rule:** `{domain}.spec.md` BR-{NN}
+**Where to validate:** {controller \| service \| middleware} · `{path/to/file.ts}` · `{exportedSymbol}` · `{test file that enforces it}` — pointers only; test requirements live in u-be-standards. Never test plans or fixture code here.
+**Description:** {HOW the rule is enforced — never the rule itself: technical guards, edge cases (null \| empty \| 0 \| out-of-enum), extension strategy (closed \| append-only \| strategy), implementation artifacts (Zod schema, SQL literal name, helper signature)}
+**Error returned:** HTTP {status} -- error.code: `{CODE}` — pointer to the matching `.spec.md` §6 Error Behaviors row; never redeclare the error table here.
 
 ---
 
@@ -107,7 +111,11 @@
 
 ## Changelog
 
-> Mandatory — never remove previous entries.
+> Mandatory — one row per version. Entry discipline:
+> - `Description` is a single sentence, max 200 characters: what changed and which sections (§) it touched.
+> - No incident narratives, no before/after comparisons, no rationale — that detail lives in git history and the orchestration log, never here.
+> - Max 10 rows. When adding a row beyond 10, collapse the oldest rows into one `rollup` row: Type `rollup`, Version `<=X.Y.Z`, Description `N entries (X.Y.Z..A.B.C) rolled up; full history in git`.
+> - Body sections describe the current state only — version markers (e.g., `(v1.2.0: ...)`) outside this section are review findings.
 
 | Version | Date | Author | Type | Description | CR |
 |---------|------|--------|------|-------------|----|

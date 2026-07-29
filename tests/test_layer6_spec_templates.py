@@ -17,6 +17,16 @@ _template_files = [
     ("TEMPLATE.design-system/tokens.md", TOKENS_TEMPLATE),
 ]
 
+_changelog_templates = [
+    "TEMPLATE.back.md",
+    "TEMPLATE.spec.md",
+    "TEMPLATE.front.md",
+    "TEMPLATE.feature.spec.md",
+    "TEMPLATE.flow.md",
+    "TEMPLATE.component.spec.md",
+    "TEMPLATE.design-system/_index.md",
+]
+
 
 def _has_section(content, heading):
     return f"## {heading}" in content
@@ -80,6 +90,39 @@ class TestLayer6SpecTemplates:
         assert "Deep Links" in content, "Deep Links section missing"
         assert "**Fallback:**" in content, "Navigation rules require explicit Fallback field"
         assert _has_section(content, "Changelog"), "Changelog section missing"
+
+    def test_back_template_br_pair_discipline(self):
+        """TEMPLATE.back.md must not re-induce normative duplication: the BR block
+        cites its .spec.md source and describes HOW the rule is enforced — asking
+        the back writer for another 'objective and testable rule' is what produced
+        72/72 duplicated BR numbers in the field."""
+        content = (DIST_DIR / "skills" / "u-spec-templates" / "TEMPLATE.back.md") \
+            .read_text(encoding="utf-8")
+        for marker in (
+            "**Source rule:**",
+            "single normative source",
+            "HOW the rule is enforced",
+            "pointers only",
+            "never redeclare the error table",
+        ):
+            assert marker in content, f'BR discipline marker "{marker}" missing'
+        assert "{objective and testable rule}" not in content, \
+            "Description field must not ask for the rule the .spec.md already states"
+
+    @pytest.mark.parametrize("rel_path", _changelog_templates)
+    def test_changelog_discipline_policy(self, rel_path):
+        """Every changelog-bearing template must carry the entry-discipline policy
+        (one-line entries, 10-row cap with rollup, current-state-only body) and must
+        not reintroduce the unbounded-growth mandate that caused specs to exceed the
+        worker context budget."""
+        path = DIST_DIR / "skills" / "u-spec-templates" / rel_path
+        content = path.read_text(encoding="utf-8")
+        assert _has_section(content, "Changelog"), f"Changelog section missing in {rel_path}"
+        for marker in ("max 200 characters", "rollup", "current state"):
+            assert marker in content, \
+                f'Changelog discipline marker "{marker}" missing in {rel_path}'
+        assert "never remove previous entries" not in content, \
+            f"Unbounded changelog mandate must not reappear in {rel_path}"
 
     def test_tokens_template_sections_and_content(self):
         content = TOKENS_TEMPLATE.read_text(encoding="utf-8")

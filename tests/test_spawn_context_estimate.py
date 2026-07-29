@@ -41,11 +41,15 @@ SDD = dist / "agents" / "orchestrator-sdd.md"
 # Measured at the time of the fix. These are a REGRESSION FENCE, not a spec: if a
 # worker's declared inputs grow, the test should fail and be re-measured
 # deliberately — silently drifting is how 18,000 survived.
+# Re-measured 2026-07-28 (v2.37.0): changelog-discipline rules (u-spec-writing,
+# u-spec-back-writing, u-spec-review) and BR pair discipline (TEMPLATE.back.md
+# Source rule contract, check_br_pairs.py wiring in u-spec-validation and the
+# validator agent) grew writer/back/reviewer/validator inputs by 96-503 tokens.
 MEASURED_INPUT_TOKENS = {
-    "u-spec-back": 2436,
-    "u-spec-validator": 2869,
-    "u-spec-reviewer": 3090,
-    "u-spec-writer": 6666,
+    "u-spec-back": 3056,
+    "u-spec-validator": 3211,
+    "u-spec-reviewer": 3186,
+    "u-spec-writer": 7169,
 }
 
 

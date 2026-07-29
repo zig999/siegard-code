@@ -1,6 +1,6 @@
 ---
 name: u-spec-validation
-description: Cross-validation skill for specs - cross-reference, error code consistency, state coverage, and orphan spec detection. Ships scripts/verify_evidence.py, which re-executes the evidence a spec cites about the source code (R04b) — the only check in the pipeline that can detect a spec that is internally consistent but false about the code.
+description: Cross-validation skill for specs - cross-reference, error code consistency, state coverage, and orphan spec detection. Ships scripts/verify_evidence.py, which re-executes the evidence a spec cites about the source code (R04b) — the only check in the pipeline that can detect a spec that is internally consistent but false about the code — and scripts/check_br_pairs.py, which enforces BR pair discipline between .spec.md and .back.md (source citation required, restatement detected).
 user-invocable: false
 allowed-tools: Bash(python3 *), Read, Glob, Grep
 ---
@@ -32,6 +32,7 @@ UC-01 (spec.md)
 
 **For each BR in .back.md:**
 - [ ] References an existing UC
+- [ ] Cites its `Source rule` (`{domain}.spec.md BR-NN`) and does not restate it — mechanical via `scripts/check_br_pairs.py` (see BR Pair Discipline)
 - [ ] error.code in global catalog
 - [ ] HTTP status matches openapi.yaml
 
@@ -70,6 +71,28 @@ Cross-check between navigation rules in `flow.md §4` and state transitions in `
 2. For each source feature in the map, read `feature.spec.md §3` and extract Side Effects containing redirects
 3. Cross-reference: every FL-NN redirect must appear as a Side Effect; every cross-feature §3 redirect must have a FL-NN or `front.md §5` entry
 4. Mismatches → warning entries in the Inconsistencies table
+
+---
+
+## BR Pair Discipline (.spec.md ↔ .back.md)
+
+`.spec.md` is the single normative source for WHAT each rule is; the `.back.md` BR declares only
+HOW it is enforced and cites its source (TEMPLATE.back.md §3). Deterministic check:
+
+```bash
+python3 .claude/skills/u-spec-validation/scripts/check_br_pairs.py \
+  --specs-dir "$SPECS_DIR" [--domain <domain>]
+```
+
+| Violation | Severity |
+|-----------|----------|
+| `missing_source_citation` — back BR has no `Source rule` citation | blocking |
+| `unresolved_citation` — cited BR-NN absent from the domain's .spec.md | blocking |
+| `restatement_suspected` — back BR body reproduces ≥60% of the cited spec BR's content words | warning |
+
+Word overlap is a same-language heuristic only — cross-language duplicates score near zero, which
+is why the **citation** is the contract, not similarity. Exit codes mirror `verify_evidence.py`:
+0 = clean, 2 = blocking violations (`responsible: u-spec-back`), 1 = script error.
 
 ---
 
@@ -117,7 +140,7 @@ Executed during full validation (when both `.back.md` and `openapi.yaml` are rea
 
 | Trigger | What to validate |
 |---------|-----------------|
-| .back.md ready | UC <-> BR, error codes back <-> catalog |
+| .back.md ready | UC <-> BR, error codes back <-> catalog, BR pair discipline (`check_br_pairs.py`), evidence re-execution (`verify_evidence.py`, R04b) |
 | .feature.spec.md ready | UI states (§2), error mapping (§6), fetching (§4), component adapters (§7) |
 | All ready | Full validation across all layers |
 
