@@ -66,6 +66,11 @@ Provide the Spec Reviewer with checklists and objective criteria for evaluating 
 - [ ] Preconditions are programmatically verifiable
 - [ ] Postconditions describe an observable change
 
+### Changelog Discipline
+- [ ] Every entry `Description` is a single sentence, max 200 characters — no incident narratives, no before/after comparisons
+- [ ] Max 10 rows — older entries collapsed into a single `rollup` row
+- [ ] No version markers (`(v1.2.0: ...)`, "added in v1.4.0") in body sections — body describes the current state only; history belongs to the Changelog
+
 ## Ambiguity Detection
 
 | Forbidden term | Replace with |

@@ -89,6 +89,23 @@ ErrorResponse:
 4. If new, register in the catalog BEFORE using it
 5. Include in the "Error Behaviors" section of .spec.md
 
+## Changelog and History Discipline
+
+Applies to every spec artifact with a `## Changelog` section (.spec.md, .back.md, front.md, feature/component/flow specs, design-system `_index.md`).
+
+### Changelog entries
+- One row per version. `Description` is a single sentence, max 200 characters: what changed and which sections (§) it touched.
+- Never write incident narratives, before/after comparisons, or rationale into the Changelog — that detail lives in git history and the orchestration log. Durable decision context goes to `decisions.md` (DEC-NN), not the Changelog.
+- Cap: 10 rows. When adding a row beyond 10, collapse the oldest rows into one `rollup` row (Type `rollup`, Version `<=X.Y.Z`, Description `N entries (X.Y.Z..A.B.C) rolled up; full history in git`).
+
+### Current-state rule
+Body sections describe the CURRENT state of the domain only:
+- No version markers in headings or body text (`(v1.2.0: ...)`, "added in v1.4.0", "post-v1.9.0").
+- No migration narratives ("migrates from V0 to V2") — state the current behavior; the transition story lives in git and `decisions.md`.
+- When editing a section, rewrite it to the new truth — never append the new truth after the old one.
+
+**Why this is enforced:** spec files are read whole by workers under a hard context budget. History embedded in specs grows without bound and eventually blocks the pipeline (`context_budget_exceeded` → DLQ).
+
 ---
 
 ## AI-First Principle

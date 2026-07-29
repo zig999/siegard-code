@@ -1,10 +1,10 @@
 {
   "framework": "siegard-code",
-  "version": "2.36.0",
+  "version": "2.37.0",
   "source": {
     "repository": "git@github.com:zig999/siegard-code.git"
   },
-  "generated_at": "2026-07-28T21:29:12Z",
+  "generated_at": "2026-07-29T02:00:45Z",
   "hash_normalization": "text-lf",
   "files": [
     {
@@ -113,7 +113,7 @@
     },
     {
       "path": "agents/spec/u-spec-validator.md",
-      "sha256": "bccf8693dbc2df9bf7caef8b695dbb7e0d53b19db7fcf0e426782dd7ed8494e0"
+      "sha256": "94f9c5f329ead7986cdc4a6bd405bc2f572974bea45914b49eaf47debf8960b9"
     },
     {
       "path": "agents/spec/u-spec-writer.md",
@@ -917,7 +917,7 @@
     },
     {
       "path": "skills/u-spec-back-writing/SKILL.md",
-      "sha256": "9df9bd5d5e977a38d01e5cad050ac6ba44af6fa0ece718e863df88972420439e"
+      "sha256": "4ea3f9087bd651643a0ede154a615f566b805173aff5fc56dfc20b25df877415"
     },
     {
       "path": "skills/u-spec-globals/SKILL.md",
@@ -937,7 +937,7 @@
     },
     {
       "path": "skills/u-spec-review/SKILL.md",
-      "sha256": "38e2938e12730ad4fe2ffc3ff2ee2216cabcd4749877006871ed050860816ba9"
+      "sha256": "d01322a8172e236d86d8d301716815870812a36311f09b99f292240180be17ca"
     },
     {
       "path": "skills/u-spec-templates/FRONTEND-MANDATORY-ARTIFACTS.md",
@@ -949,11 +949,11 @@
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.back.md",
-      "sha256": "01e80d3d1286f958cd2218d4436916c3492ad1c6625097851301357a213fa7ca"
+      "sha256": "6535c8fcbc68ddb3e73fb9dbca7a0bf3f14a3b300ff238c46ad1b69caf88e89e"
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.component.spec.md",
-      "sha256": "f9d8a67205f1c187cb267886ab049acbd1ad6469c6af1bd2e097ff75904853a5"
+      "sha256": "de925329bfdba952be2b50cb08a7bc6925817d2aac1d6ebcc5637d2efb4c4950"
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.decisions.md",
@@ -965,7 +965,7 @@
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.design-system/_index.md",
-      "sha256": "d1c781b96fabcc51b5b14e4010652c9b9cb54f558e68d14e56310df06ef75cd0"
+      "sha256": "ec75b077f0c13c194cee81c51a8c15635a559acda8f046e8dd8ac87ee20e2cef"
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.design-system/components.md",
@@ -985,19 +985,19 @@
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.feature.spec.md",
-      "sha256": "037edb7f2eb461fea996b9163db7c5c9e3ae580619303885b1cbd0b012096475"
+      "sha256": "702916cb99982b9945774995bc16d38550682d615a486deb4e239ca1360e8113"
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.flow.md",
-      "sha256": "68aa80281c8e5a25704a8d9a1ae54e21b4352db86c5c0fec054a65afd555afbc"
+      "sha256": "c56003b96caa4e2ed99074535ce292813843f5b75fd4e5b4ed727b5d697d9e1b"
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.front.md",
-      "sha256": "0eab30595a7a6d949467388aa157c1d1d346129ea9b430c5eb3bc7d7a00324a9"
+      "sha256": "18a839aec92781835d165b4482e12c30caa3127b33eae03c19194cf92307ee1b"
     },
     {
       "path": "skills/u-spec-templates/TEMPLATE.spec.md",
-      "sha256": "c5c2d653db750b8805f1958e54089f57226c4ea7b5b94c4b49d95abf9675adb7"
+      "sha256": "1dbe2c32e3332dab7253b0f8b3a8e12ed55a6e67f450baa7d949938dbbdd5f99"
     },
     {
       "path": "skills/u-spec-templates/scripts/read_spec_sections.py",
@@ -1017,7 +1017,11 @@
     },
     {
       "path": "skills/u-spec-validation/SKILL.md",
-      "sha256": "258d20e07c270e496efb70a07fd4038dbb787c9f535a82df8ae6a20710b55e5f"
+      "sha256": "cc835ce9e459883927d60edcc1c72e64c2eb170f684866d9b986e80d5e14c65d"
+    },
+    {
+      "path": "skills/u-spec-validation/scripts/check_br_pairs.py",
+      "sha256": "a070201878bf61c959845912a7226f59eb727d8ebb5492944207a6e77f5c7d6b"
     },
     {
       "path": "skills/u-spec-validation/scripts/verify_evidence.py",
@@ -1025,7 +1029,7 @@
     },
     {
       "path": "skills/u-spec-writing/SKILL.md",
-      "sha256": "8867bea5a76eedb700a870dbdff828e6252c3e4ed9ad29b5247ff69fa28aa010"
+      "sha256": "638991c5388962044ef1d5b8913c8a4f2a923535b98d8c8ab48ed0f73dfc261a"
     },
     {
       "path": "skills/u-ui-brief/SKILL.md",

@@ -106,7 +106,11 @@
 
 ## Changelog
 
-> Mandatory — never remove previous entries.
+> Mandatory — one row per version. Entry discipline:
+> - `Description` is a single sentence, max 200 characters: what changed and which sections (§) it touched.
+> - No incident narratives, no before/after comparisons, no rationale — that detail lives in git history and the orchestration log, never here.
+> - Max 10 rows. When adding a row beyond 10, collapse the oldest rows into one `rollup` row: Type `rollup`, Version `<=X.Y.Z`, Description `N entries (X.Y.Z..A.B.C) rolled up; full history in git`.
+> - Body sections describe the current state only — version markers (e.g., `(v1.2.0: ...)`) outside this section are review findings.
 
 | Version | Date | Author | Type | Description | CR |
 |---------|------|--------|------|-------------|----|
